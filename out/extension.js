@@ -689,11 +689,20 @@ const denizenMCommandArgs = [
         markdown: "`resourcepack add ...`\n\nAdds an additional resource pack instead of replacing the existing stack."
     }
 ];
+const denizenMEvents = [
+    {
+        label: "player unchecked sign edits",
+        insertText: "player unchecked sign edits:",
+        detail: "DenizenM Paper event",
+        markdown: "`on player unchecked sign edits:` or `after player unchecked sign edits:`\n\nPaper-specific event for unchecked sign edit handling."
+    }
+];
 const denizenMKnownTerms = [
     "&sprite", "&shadow_color", "&shadow_gradient", "&dual_gradient", "&player_head",
     ".shadow_color", ".shadow_gradient", ".dual_gradient", ".rarity_color", ".unsorted",
     " custom_model_data", "remove_resource_pack", "remove_resource_packs",
-    " resourcepack ", " teleport ", " playeffect ", " async", " forced"
+    " resourcepack ", " teleport ", " playeffect ", " async", " forced",
+    "player unchecked sign edits"
 ];
 function makeDenizenMCompletion(doc, range) {
     const item = new vscode.CompletionItem(doc.label, vscode.CompletionItemKind.Function);
@@ -783,8 +792,28 @@ function getContainerSnippetCompletions(document, position) {
     const dialogSnippet = "${1:my_dialog}:\n  type: dialog\n  base:\n    type: multi\n    title: <gray>${2:Добро пожаловать!}\n    columns: 1\n  bodies:\n    header:\n      type: message\n      message: <gray>${3:Введите отображаемое имя}\n  inputs:\n    1:\n      type: text\n      label: ${4:Имя}\n      key: ${5:display_name}\n  buttons:\n    1:\n      label: ${6:Подтвердить}\n      script:\n      - define name <context.${5:display_name}>\n      - narrate <[name]>";
     return [makeSnippetCompletion("dialog", "Denizen dialog container", dialogSnippet, range)];
 }
+function getDenizenMEventCompletions(document, position) {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const eventMatch = /^\s*(on|after)\s+([A-Za-z ]*)$/i.exec(linePrefix);
+    if (!eventMatch) {
+        return [];
+    }
+    const typed = eventMatch[2].trimStart().toLowerCase();
+    if (typed.length == 0 || "player".startsWith(typed)) {
+        return [];
+    }
+    if (!"player unchecked sign edits".startsWith(typed) && !"unchecked sign edits".startsWith(typed)) {
+        return [];
+    }
+    const range = getCompletionRange(document, position, eventMatch[2].length);
+    return denizenMEvents.map(doc => makeDenizenMCompletion(doc, range));
+}
 function getDenizenCompletions(document, position) {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const eventCompletions = getDenizenMEventCompletions(document, position);
+    if (eventCompletions.length > 0) {
+        return eventCompletions;
+    }
     const containerSnippets = getContainerSnippetCompletions(document, position);
     if (containerSnippets.length > 0) {
         return containerSnippets;
@@ -831,7 +860,7 @@ function getDenizenCompletions(document, position) {
 }
 function getDenizenMDocByLabel(label) {
     const cleanLabel = label.toLowerCase();
-    return denizenMEscapeTags.concat(denizenMDotTags).concat(denizenMCommandArgs)
+    return denizenMEscapeTags.concat(denizenMDotTags).concat(denizenMCommandArgs).concat(denizenMEvents)
         .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 function getDenizenMHover(document, position) {

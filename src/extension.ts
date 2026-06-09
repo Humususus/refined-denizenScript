@@ -740,11 +740,21 @@ const denizenMCommandArgs : DenizenMDoc[] = [
     }
 ];
 
+const denizenMEvents : DenizenMDoc[] = [
+    {
+        label: "player unchecked sign edits",
+        insertText: "player unchecked sign edits:",
+        detail: "DenizenM Paper event",
+        markdown: "`on player unchecked sign edits:` or `after player unchecked sign edits:`\n\nPaper-specific event for unchecked sign edit handling."
+    }
+];
+
 const denizenMKnownTerms : string[] = [
     "&sprite", "&shadow_color", "&shadow_gradient", "&dual_gradient", "&player_head",
     ".shadow_color", ".shadow_gradient", ".dual_gradient", ".rarity_color", ".unsorted",
     " custom_model_data", "remove_resource_pack", "remove_resource_packs",
-    " resourcepack ", " teleport ", " playeffect ", " async", " forced"
+    " resourcepack ", " teleport ", " playeffect ", " async", " forced",
+    "player unchecked sign edits"
 ];
 
 function makeDenizenMCompletion(doc: DenizenMDoc, range: vscode.Range) : vscode.CompletionItem {
@@ -842,8 +852,29 @@ function getContainerSnippetCompletions(document: vscode.TextDocument, position:
     return [makeSnippetCompletion("dialog", "Denizen dialog container", dialogSnippet, range)];
 }
 
+function getDenizenMEventCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const eventMatch = /^\s*(on|after)\s+([A-Za-z ]*)$/i.exec(linePrefix);
+    if (!eventMatch) {
+        return [];
+    }
+    const typed = eventMatch[2].trimStart().toLowerCase();
+    if (typed.length == 0 || "player".startsWith(typed)) {
+        return [];
+    }
+    if (!"player unchecked sign edits".startsWith(typed) && !"unchecked sign edits".startsWith(typed)) {
+        return [];
+    }
+    const range = getCompletionRange(document, position, eventMatch[2].length);
+    return denizenMEvents.map(doc => makeDenizenMCompletion(doc, range));
+}
+
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const eventCompletions = getDenizenMEventCompletions(document, position);
+    if (eventCompletions.length > 0) {
+        return eventCompletions;
+    }
     const containerSnippets = getContainerSnippetCompletions(document, position);
     if (containerSnippets.length > 0) {
         return containerSnippets;
@@ -891,7 +922,7 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
 
 function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
     const cleanLabel = label.toLowerCase();
-    return denizenMEscapeTags.concat(denizenMDotTags).concat(denizenMCommandArgs)
+    return denizenMEscapeTags.concat(denizenMDotTags).concat(denizenMCommandArgs).concat(denizenMEvents)
         .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 
