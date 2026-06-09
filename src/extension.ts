@@ -58,13 +58,10 @@ function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : s
         },
         middleware: {
             provideCompletionItem: (document: vscode.TextDocument, position: vscode.Position, context: any, token: vscode.CancellationToken, next: Function) => {
-                if (isIndexedCompletionContext(document, position)) {
-                    return [];
-                }
                 return next(document, position, context, token);
             },
             handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
-                next(uri, diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic)));
+                next(uri, diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic) && !isDenizenMDiagnostic(uri, diagnostic)));
             }
         }
     }
@@ -641,6 +638,132 @@ function makeCompletion(label: string, kind: vscode.CompletionItemKind, detail: 
     return item;
 }
 
+function makeSnippetCompletion(label: string, detail: string, snippet: string, range: vscode.Range) : vscode.CompletionItem {
+    const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Snippet);
+    item.detail = detail;
+    item.insertText = new vscode.SnippetString(snippet);
+    item.range = range;
+    return item;
+}
+
+interface DenizenMDoc {
+    label: string;
+    insertText: string;
+    detail: string;
+    markdown: string;
+}
+
+const denizenMEscapeTags : DenizenMDoc[] = [
+    {
+        label: "&sprite",
+        insertText: "sprite[$1]",
+        detail: "DenizenM text formatting tag",
+        markdown: "`<&sprite[minecraft:items:item/porkchop]>`\n\nRenders a resource-pack sprite in formatted text."
+    },
+    {
+        label: "&shadow_color",
+        insertText: "shadow_color[$1]",
+        detail: "DenizenM text formatting tag",
+        markdown: "`<&shadow_color[#51a2ff]>`\n\nApplies a text shadow color. Use a hex color value."
+    },
+    {
+        label: "&shadow_gradient",
+        insertText: "shadow_gradient[from=$1;to=$2]",
+        detail: "DenizenM text formatting tag",
+        markdown: "`<&shadow_gradient[from=#51a2ff;to=#FFF085]>`\n\nApplies a gradient to text shadow color."
+    },
+    {
+        label: "&dual_gradient",
+        insertText: "dual_gradient[from=$1;to=$2;s_from=$3;s_to=$4]",
+        detail: "DenizenM text formatting tag",
+        markdown: "`<&dual_gradient[from=#51a2ff;to=#FFF085;s_from=#FFF085;s_to=#51a2ff]>`\n\nApplies both normal text gradient and shadow gradient."
+    },
+    {
+        label: "&player_head",
+        insertText: "player_head[$1]",
+        detail: "DenizenM text formatting tag",
+        markdown: "`<&player_head[Tjtoxshpilivili1]>` or `<&player_head[!Tjtoxshpilivili1]>`\n\nRenders a player head texture. Prefix the name with `!` for face-only texture."
+    }
+];
+
+const denizenMDotTags : DenizenMDoc[] = [
+    {
+        label: "shadow_color",
+        insertText: "shadow_color[$1]",
+        detail: "DenizenM ElementTag tag",
+        markdown: "`<element.shadow_color[#51a2ff]>`\n\nAdds text shadow color formatting to an element."
+    },
+    {
+        label: "shadow_gradient",
+        insertText: "shadow_gradient[from=$1;to=$2]",
+        detail: "DenizenM ElementTag tag",
+        markdown: "`<element.shadow_gradient[from=#51a2ff;to=#FFF085]>`\n\nAdds text shadow gradient formatting to an element."
+    },
+    {
+        label: "dual_gradient",
+        insertText: "dual_gradient[from=$1;to=$2;s_from=$3;s_to=$4]",
+        detail: "DenizenM ElementTag tag",
+        markdown: "`<element.dual_gradient[from=#51a2ff;to=#FFF085;s_from=#FFF085;s_to=#51a2ff]>`\n\nAdds normal text gradient and shadow gradient formatting to an element."
+    },
+    {
+        label: "rarity_color",
+        insertText: "rarity_color",
+        detail: "DenizenM ItemTag tag",
+        markdown: "`<player.item_in_hand.rarity_color>`\n\nReturns the item's rarity color as a ColorTag."
+    },
+    {
+        label: "unsorted",
+        insertText: "unsorted",
+        detail: "DenizenM entity search tag",
+        markdown: "`<location.find_entities[...].within[...].unsorted>`\n\nBypasses distance-based sorting for better performance when order is not needed."
+    }
+];
+
+const denizenMCommandArgs : DenizenMDoc[] = [
+    {
+        label: "async",
+        insertText: "async",
+        detail: "DenizenM teleport argument",
+        markdown: "`teleport <player> <location> async`\n\nTeleports asynchronously to avoid loading-chunk lag."
+    },
+    {
+        label: "forced",
+        insertText: "forced",
+        detail: "DenizenM playeffect argument",
+        markdown: "`playeffect effect:END_ROD <location> visibility:100 forced`\n\nForces extended particle visibility."
+    },
+    {
+        label: "add",
+        insertText: "add",
+        detail: "DenizenM resourcepack argument",
+        markdown: "`resourcepack add ...`\n\nAdds an additional resource pack instead of replacing the existing stack."
+    }
+];
+
+const denizenMKnownTerms : string[] = [
+    "&sprite", "&shadow_color", "&shadow_gradient", "&dual_gradient", "&player_head",
+    ".shadow_color", ".shadow_gradient", ".dual_gradient", ".rarity_color", ".unsorted",
+    " custom_model_data", "remove_resource_pack", "remove_resource_packs",
+    " resourcepack ", " teleport ", " playeffect ", " async", " forced"
+];
+
+function makeDenizenMCompletion(doc: DenizenMDoc, range: vscode.Range) : vscode.CompletionItem {
+    const item = new vscode.CompletionItem(doc.label, vscode.CompletionItemKind.Function);
+    item.detail = doc.detail;
+    item.documentation = new vscode.MarkdownString(doc.markdown);
+    item.insertText = new vscode.SnippetString(doc.insertText);
+    item.filterText = doc.label.startsWith("&") ? doc.label.substring(1) : doc.label;
+    item.range = range;
+    return item;
+}
+
+function makeDenizenMEscapeCompletion(doc: DenizenMDoc, range: vscode.Range) : vscode.CompletionItem {
+    const item = makeDenizenMCompletion(doc, range);
+    item.insertText = new vscode.SnippetString(doc.label + doc.insertText.substring(doc.label.substring(1).length));
+    item.filterText = doc.label;
+    return item;
+}
+
 function isTopLevelContainerLine(line: string) : boolean {
     return /^[A-Za-z_][A-Za-z0-9_\-]*\s*:\s*(#.*)?$/.test(line);
 }
@@ -679,8 +802,75 @@ function getContainerDefines(document: vscode.TextDocument, position: vscode.Pos
     return defines;
 }
 
+function getDialogInputKeys(document: vscode.TextDocument, position: vscode.Position) : Set<string> {
+    const keys = new Set<string>();
+    const lines = getContainerText(document, position).replace(/\r/g, "").split("\n");
+    let isDialog = false;
+    let inputsIndent = -1;
+    const keyMatcher = /^(\s*)key\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:#.*)?$/i;
+    for (const rawLine of lines) {
+        const trimmed = rawLine.trim();
+        if (/^type\s*:\s*dialog\s*(?:#.*)?$/i.test(trimmed)) {
+            isDialog = true;
+        }
+        const indent = rawLine.length - rawLine.trimStart().length;
+        if (/^inputs\s*:\s*(?:#.*)?$/i.test(trimmed)) {
+            inputsIndent = indent;
+            continue;
+        }
+        if (inputsIndent != -1 && trimmed.length > 0 && indent <= inputsIndent) {
+            inputsIndent = -1;
+        }
+        if (inputsIndent != -1) {
+            const keyMatch = keyMatcher.exec(rawLine);
+            if (keyMatch) {
+                keys.add(keyMatch[2]);
+            }
+        }
+    }
+    return isDialog ? keys : new Set<string>();
+}
+
+function getContainerSnippetCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const match = /^(\s*)([A-Za-z_]*)$/i.exec(linePrefix);
+    if (!match || match[1].length != 0) {
+        return [];
+    }
+    const range = getCompletionRange(document, position, match[2].length);
+    const dialogSnippet = "${1:my_dialog}:\n  type: dialog\n  base:\n    type: multi\n    title: <gray>${2:Добро пожаловать!}\n    columns: 1\n  bodies:\n    header:\n      type: message\n      message: <gray>${3:Введите отображаемое имя}\n  inputs:\n    1:\n      type: text\n      label: ${4:Имя}\n      key: ${5:display_name}\n  buttons:\n    1:\n      label: ${6:Подтвердить}\n      script:\n      - define name <context.${5:display_name}>\n      - narrate <[name]>";
+    return [makeSnippetCompletion("dialog", "Denizen dialog container", dialogSnippet, range)];
+}
+
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const containerSnippets = getContainerSnippetCompletions(document, position);
+    if (containerSnippets.length > 0) {
+        return containerSnippets;
+    }
+    const escapeTagMatch = /<(&?[A-Za-z0-9_]*)$/i.exec(linePrefix);
+    if (escapeTagMatch) {
+        const range = getCompletionRange(document, position, escapeTagMatch[1].length);
+        return denizenMEscapeTags.map(doc => makeDenizenMEscapeCompletion(doc, range));
+    }
+    const contextMatch = /<context\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
+    if (contextMatch) {
+        const range = getCompletionRange(document, position, contextMatch[1].length);
+        return sortedSetValues(getDialogInputKeys(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Property, "Dialog input context", range));
+    }
+    const dotTagMatch = /<[^\s<>]*\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
+    if (dotTagMatch) {
+        const range = getCompletionRange(document, position, dotTagMatch[1].length);
+        return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
+    }
+    const commandArgMatch = /^\s*-\s*(?:~)?(teleport|playeffect|resourcepack)\b.*\s([A-Za-z_]*)$/i.exec(linePrefix);
+    if (commandArgMatch) {
+        const range = getCompletionRange(document, position, commandArgMatch[2].length);
+        const command = commandArgMatch[1].toLowerCase();
+        return denizenMCommandArgs
+            .filter(doc => (command == "teleport" && doc.label == "async") || (command == "playeffect" && doc.label == "forced") || (command == "resourcepack" && doc.label == "add"))
+            .map(doc => makeDenizenMCompletion(doc, range));
+    }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
         const range = getCompletionRange(document, position, defineMatch[1].length);
@@ -699,11 +889,43 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
     return [];
 }
 
-function isIndexedCompletionContext(document: vscode.TextDocument, position: vscode.Position) : boolean {
-    const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    return /<\[([A-Za-z0-9_]*)$/i.test(linePrefix)
-        || /<player\.flag\[([A-Za-z0-9_\-.]*)$/i.test(linePrefix)
-        || /<server\.flag\[([A-Za-z0-9_\-.]*)$/i.test(linePrefix);
+function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
+    const cleanLabel = label.toLowerCase();
+    return denizenMEscapeTags.concat(denizenMDotTags).concat(denizenMCommandArgs)
+        .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
+}
+
+function getDenizenMHover(document: vscode.TextDocument, position: vscode.Position) : vscode.Hover | undefined {
+    const line = document.lineAt(position).text;
+    const char = position.character;
+    const tagStart = line.lastIndexOf("<", char);
+    const tagEnd = line.indexOf(">", char);
+    if (tagStart != -1 && tagEnd != -1 && tagStart < char) {
+        const tagText = line.substring(tagStart + 1, tagEnd);
+        const escapeMatch = /^(&[A-Za-z0-9_]+)(?:[\[\.]|$)/.exec(tagText);
+        if (escapeMatch) {
+            const doc = getDenizenMDocByLabel(escapeMatch[1]);
+            if (doc) {
+                return new vscode.Hover(new vscode.MarkdownString(doc.markdown));
+            }
+        }
+        const dotParts = tagText.split(/[.\[\]]/).filter(part => part.length > 0);
+        for (const part of dotParts) {
+            const doc = getDenizenMDocByLabel(part);
+            if (doc) {
+                return new vscode.Hover(new vscode.MarkdownString(doc.markdown));
+            }
+        }
+    }
+    const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_]+/);
+    if (wordRange) {
+        const word = document.getText(wordRange);
+        const doc = getDenizenMDocByLabel(word);
+        if (doc) {
+            return new vscode.Hover(new vscode.MarkdownString(doc.markdown), wordRange);
+        }
+    }
+    return undefined;
 }
 
 function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
@@ -713,7 +935,12 @@ function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
             workspaceIndex.updateDocument(document);
             return getDenizenCompletions(document, position);
         }
-    }, "[", "."));
+    }, "<", "[", ".", "&", " "));
+    context.subscriptions.push(vscode.languages.registerHoverProvider("denizenscript", {
+        provideHover(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.Hover> {
+            return getDenizenMHover(document, position);
+        }
+    }));
     const watcher = vscode.workspace.createFileSystemWatcher("**/*.dsc");
     watcher.onDidCreate(uri => {
         workspaceIndex.updateUri(uri);
@@ -929,6 +1156,14 @@ function isDialogScriptDiagnostic(uri: vscode.Uri, diagnostic: vscode.Diagnostic
         }
     }
     return false;
+}
+
+function isDenizenMDiagnostic(uri: vscode.Uri, diagnostic: vscode.Diagnostic) : boolean {
+    const document = vscode.workspace.textDocuments.filter(doc => pathKey(doc.uri) == pathKey(uri))[0];
+    const message = diagnostic.message.toLowerCase();
+    const lineText = document && diagnostic.range.start.line < document.lineCount ? document.lineAt(diagnostic.range.start.line).text.toLowerCase() : "";
+    const combined = message + "\n" + lineText;
+    return denizenMKnownTerms.some(term => combined.indexOf(term) != -1);
 }
 
 let refreshTimer: NodeJS.Timer | undefined = undefined;
