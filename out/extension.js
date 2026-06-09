@@ -317,12 +317,64 @@ function githubGetJson(url) {
         }).on("error", reject);
     });
 }
+function downloadFile(url, targetPath) {
+    return new Promise((resolve, reject) => {
+        https.get(url, {
+            headers: {
+                "User-Agent": "refined-denizenscript-vscode"
+            }
+        }, response => {
+            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                downloadFile(response.headers.location, targetPath).then(resolve, reject);
+                return;
+            }
+            if (response.statusCode != 200) {
+                const error = new Error("GitHub asset returned HTTP " + response.statusCode);
+                error.statusCode = response.statusCode;
+                reject(error);
+                response.resume();
+                return;
+            }
+            ensureDirectory(path.dirname(targetPath));
+            const file = fs.createWriteStream(targetPath);
+            response.pipe(file);
+            file.on("finish", () => {
+                file.close();
+                resolve();
+            });
+            file.on("error", err => {
+                file.close();
+                reject(err);
+            });
+        }).on("error", reject);
+    });
+}
 function getReleaseVsixUrl(release) {
     if (!release.assets) {
         return undefined;
     }
     const asset = release.assets.filter(item => item.name.toLowerCase().endsWith(".vsix"))[0];
     return asset ? asset.browser_download_url : undefined;
+}
+function installVsixUpdate(context, downloadUrl, version) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const fileName = "refined-denizenscript-" + normalizeVersion(version) + ".vsix";
+        const targetPath = path.join(context.globalStorageUri.fsPath, "updates", fileName);
+        yield vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Installing Refined DenizenScript update",
+            cancellable: false
+        }, (progress) => __awaiter(this, void 0, void 0, function* () {
+            progress.report({ message: "Downloading VSIX..." });
+            yield downloadFile(downloadUrl, targetPath);
+            progress.report({ message: "Installing extension..." });
+            yield vscode.commands.executeCommand("workbench.extensions.installExtension", vscode.Uri.file(targetPath));
+        }));
+        const choice = yield vscode.window.showInformationMessage("Refined DenizenScript update was installed. Reload VS Code to activate it.", "Reload Window");
+        if (choice == "Reload Window") {
+            vscode.commands.executeCommand("workbench.action.reloadWindow");
+        }
+    });
 }
 function checkForUpdates(context, manual) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -355,8 +407,18 @@ function checkForUpdates(context, manual) {
                 return;
             }
             const downloadUrl = getReleaseVsixUrl(release);
-            const choice = yield vscode.window.showInformationMessage("Refined DenizenScript " + latestVersion + " is available. Current version: " + currentVersion + ".", "Open Release", downloadUrl ? "Download VSIX" : "");
-            if (choice == "Open Release") {
+            const choice = yield vscode.window.showInformationMessage("Refined DenizenScript " + latestVersion + " is available. Current version: " + currentVersion + ".", downloadUrl ? "Install Update" : "", "Open Release", downloadUrl ? "Download VSIX" : "");
+            if (choice == "Install Update" && downloadUrl) {
+                try {
+                    yield installVsixUpdate(context, downloadUrl, latestVersion);
+                }
+                catch (err) {
+                    outputChannel.appendLine("Failed to install Refined DenizenScript update: " + err);
+                    vscode.window.showErrorMessage("Failed to install update automatically. Opening VSIX download instead.");
+                    vscode.env.openExternal(vscode.Uri.parse(downloadUrl));
+                }
+            }
+            else if (choice == "Open Release") {
                 vscode.env.openExternal(vscode.Uri.parse(release.html_url));
             }
             else if (choice == "Download VSIX" && downloadUrl) {
