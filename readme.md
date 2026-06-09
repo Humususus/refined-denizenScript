@@ -70,6 +70,47 @@ If you make any changes that could benefit the community as a whole, please cont
 
 ---
 
+## Build
+
+Use these steps to build the extension locally.
+
+### Requirements
+
+- Node.js and npm
+- Visual Studio Code
+- .NET 8 runtime, or the VS Code .NET Runtime extension
+
+### Install dependencies
+
+Run this from the extension directory:
+
+```powershell
+cd D:\vsi\denizenscript.denizenscript-1.4.9\extension
+npm install
+```
+
+### Compile TypeScript
+
+```powershell
+npm run compile
+```
+
+This writes the compiled extension entry point to `out/extension.js`.
+
+### Package VSIX
+
+```powershell
+npm run package
+```
+
+This runs the prepublish compile step and creates:
+
+```text
+refined-denizenscript-1.4.11.vsix
+```
+
+---
+
 ## The MIT License (MIT)
 
 Copyright (c) 2026 Tjtoxshpilivili1
