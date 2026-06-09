@@ -319,7 +319,9 @@ function githubGetJson(url: string) : Promise<any> {
                 return;
             }
             if (response.statusCode != 200) {
-                reject(new Error("GitHub returned HTTP " + response.statusCode));
+                const error = new Error("GitHub returned HTTP " + response.statusCode);
+                (error as any).statusCode = response.statusCode;
+                reject(error);
                 response.resume();
                 return;
             }
@@ -389,6 +391,12 @@ async function checkForUpdates(context: vscode.ExtensionContext, manual: boolean
         }
     }
     catch (err) {
+        if ((err as any).statusCode == 404 || (err + "").indexOf("HTTP 404") != -1) {
+            if (manual) {
+                vscode.window.showInformationMessage("No Refined DenizenScript GitHub releases were found yet.");
+            }
+            return;
+        }
         outputChannel.appendLine("Failed to check Refined DenizenScript updates: " + err);
         if (manual) {
             vscode.window.showErrorMessage("Failed to check Refined DenizenScript updates. See Denizen output for details.");
