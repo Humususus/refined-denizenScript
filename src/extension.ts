@@ -639,12 +639,50 @@ function makeCompletion(label: string, kind: vscode.CompletionItemKind, detail: 
     return item;
 }
 
+function isTopLevelContainerLine(line: string) : boolean {
+    return /^[A-Za-z_][A-Za-z0-9_\-]*\s*:\s*(#.*)?$/.test(line);
+}
+
+function getContainerText(document: vscode.TextDocument, position: vscode.Position) : string {
+    let startLine = 0;
+    for (let line = position.line; line >= 0; line--) {
+        if (isTopLevelContainerLine(document.lineAt(line).text)) {
+            startLine = line;
+            break;
+        }
+    }
+    let endLine = document.lineCount;
+    for (let line = startLine + 1; line < document.lineCount; line++) {
+        if (isTopLevelContainerLine(document.lineAt(line).text)) {
+            endLine = line;
+            break;
+        }
+    }
+    const lines : string[] = [];
+    for (let line = startLine; line < endLine; line++) {
+        lines.push(document.lineAt(line).text);
+    }
+    return lines.join("\n");
+}
+
+function getContainerDefines(document: vscode.TextDocument, position: vscode.Position) : Set<string> {
+    const defines = new Set<string>();
+    const defineMatcher = /^\s*-\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\b/i;
+    for (const rawLine of getContainerText(document, position).replace(/\r/g, "").split("\n")) {
+        const defineMatch = defineMatcher.exec(rawLine);
+        if (defineMatch) {
+            defines.add(defineMatch[1]);
+        }
+    }
+    return defines;
+}
+
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
         const range = getCompletionRange(document, position, defineMatch[1].length);
-        return sortedSetValues(workspaceIndex.defines).map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range));
+        return sortedSetValues(getContainerDefines(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range));
     }
     const playerFlagMatch = /<player\.flag\[([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
     if (playerFlagMatch) {
