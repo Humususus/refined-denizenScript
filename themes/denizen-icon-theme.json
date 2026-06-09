@@ -1,0 +1,150 @@
+{
+    "iconDefinitions": {
+        "_denizen_dsc": {
+            "iconPath": "../icons/dsc.svg"
+        },
+        "_denizen_dsc_light": {
+            "iconPath": "../icons/dsc_light.svg"
+        },
+        "_denizen_handle": {
+            "iconPath": "../icons/handle_d_icon.svg"
+        },
+        "_denizen_handle_light": {
+            "iconPath": "../icons/handle_d_icon_light.svg"
+        },
+        "_denizen_data": {
+            "iconPath": "../icons/data_d_icon.svg"
+        },
+        "_denizen_data_light": {
+            "iconPath": "../icons/data_d_icon_light.svg"
+        },
+        "_denizen_dialog": {
+            "iconPath": "../icons/dialog_d_icon.svg"
+        },
+        "_denizen_dialog_light": {
+            "iconPath": "../icons/dialog_d_icon_light.svg"
+        },
+        "_denizen_utils": {
+            "iconPath": "../icons/utils_d_icon.svg"
+        },
+        "_denizen_utils_light": {
+            "iconPath": "../icons/utils_d_icon_light.svg"
+        },
+        "_denizen_worlds": {
+            "iconPath": "../icons/worlds_d_icon.svg"
+        },
+        "_denizen_worlds_light": {
+            "iconPath": "../icons/worlds_d_icon_light.svg"
+        },
+        "_denizen_main": {
+            "iconPath": "../icons/main_d_icon.svg"
+        },
+        "_denizen_main_light": {
+            "iconPath": "../icons/main_d_icon_light.svg"
+        },
+        "_denizen_animation": {
+            "iconPath": "../icons/animation_d_icon.svg"
+        },
+        "_denizen_animation_light": {
+            "iconPath": "../icons/animation_d_icon_light.svg"
+        }
+    },
+    "fileExtensions": {
+        "dsc": "_denizen_dsc"
+    },
+    "languageIds": {
+        "denizenscript": "_denizen_dsc"
+    },
+    "folderNames": {
+        "handle": "_denizen_handle",
+        "handlers": "_denizen_handle",
+        "handles": "_denizen_handle",
+        "data": "_denizen_data",
+        "datas": "_denizen_data",
+        "dialog": "_denizen_dialog",
+        "dialogs": "_denizen_dialog",
+        "util": "_denizen_utils",
+        "utils": "_denizen_utils",
+        "extension": "_denizen_utils",
+        "extensions": "_denizen_utils",
+        "extens": "_denizen_utils",
+        "world": "_denizen_worlds",
+        "worlds": "_denizen_worlds",
+        "main": "_denizen_main",
+        "mains": "_denizen_main",
+        "animation": "_denizen_animation",
+        "animations": "_denizen_animation",
+        "anim": "_denizen_animation"
+    },
+    "folderNamesExpanded": {
+        "handle": "_denizen_handle",
+        "handlers": "_denizen_handle",
+        "handles": "_denizen_handle",
+        "data": "_denizen_data",
+        "datas": "_denizen_data",
+        "dialog": "_denizen_dialog",
+        "dialogs": "_denizen_dialog",
+        "util": "_denizen_utils",
+        "utils": "_denizen_utils",
+        "extension": "_denizen_utils",
+        "extensions": "_denizen_utils",
+        "extens": "_denizen_utils",
+        "world": "_denizen_worlds",
+        "worlds": "_denizen_worlds",
+        "main": "_denizen_main",
+        "mains": "_denizen_main",
+        "animation": "_denizen_animation",
+        "animations": "_denizen_animation",
+        "anim": "_denizen_animation"
+    },
+    "light": {
+        "fileExtensions": {
+            "dsc": "_denizen_dsc_light"
+        },
+        "languageIds": {
+            "denizenscript": "_denizen_dsc_light"
+        },
+        "folderNames": {
+            "handle": "_denizen_handle_light",
+            "handlers": "_denizen_handle_light",
+            "handles": "_denizen_handle_light",
+            "data": "_denizen_data_light",
+            "datas": "_denizen_data_light",
+            "dialog": "_denizen_dialog_light",
+            "dialogs": "_denizen_dialog_light",
+            "util": "_denizen_utils_light",
+            "utils": "_denizen_utils_light",
+            "extension": "_denizen_utils_light",
+            "extensions": "_denizen_utils_light",
+            "extens": "_denizen_utils_light",
+            "world": "_denizen_worlds_light",
+            "worlds": "_denizen_worlds_light",
+            "main": "_denizen_main_light",
+            "mains": "_denizen_main_light",
+            "animation": "_denizen_animation_light",
+            "animations": "_denizen_animation_light",
+            "anim": "_denizen_animation_light"
+        },
+        "folderNamesExpanded": {
+            "handle": "_denizen_handle_light",
+            "handlers": "_denizen_handle_light",
+            "handles": "_denizen_handle_light",
+            "data": "_denizen_data_light",
+            "datas": "_denizen_data_light",
+            "dialog": "_denizen_dialog_light",
+            "dialogs": "_denizen_dialog_light",
+            "util": "_denizen_utils_light",
+            "utils": "_denizen_utils_light",
+            "extension": "_denizen_utils_light",
+            "extensions": "_denizen_utils_light",
+            "extens": "_denizen_utils_light",
+            "world": "_denizen_worlds_light",
+            "worlds": "_denizen_worlds_light",
+            "main": "_denizen_main_light",
+            "mains": "_denizen_main_light",
+            "animation": "_denizen_animation_light",
+            "animations": "_denizen_animation_light",
+            "anim": "_denizen_animation_light"
+        }
+    }
+}

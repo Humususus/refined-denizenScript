@@ -1,0 +1,185 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "DenizenScript",
+    "scopeName": "source.denizenscript",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#tags"
+        },
+        {
+            "include": "#commands"
+        },
+        {
+            "include": "#keys"
+        },
+        {
+            "include": "#operators"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.number-sign.denizenscript",
+                    "match": "#.*$"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.denizenscript",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "include": "#tags"
+                        },
+                        {
+                            "name": "constant.character.escape.denizenscript",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.denizenscript",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "include": "#tags"
+                        }
+                    ]
+                }
+            ]
+        },
+        "tags": {
+            "patterns": [
+                {
+                    "name": "meta.tag.denizenscript",
+                    "begin": "<",
+                    "end": ">",
+                    "patterns": [
+                        {
+                            "name": "variable.other.readwrite.denizenscript",
+                            "match": "\\[([A-Za-z_][A-Za-z0-9_]*)\\]"
+                        },
+                        {
+                            "name": "entity.name.function.denizenscript",
+                            "match": "[A-Za-z_&][A-Za-z0-9_&-]*"
+                        },
+                        {
+                            "name": "punctuation.separator.period.denizenscript",
+                            "match": "\\."
+                        },
+                        {
+                            "name": "punctuation.definition.arguments.begin.denizenscript",
+                            "match": "\\["
+                        },
+                        {
+                            "name": "punctuation.definition.arguments.end.denizenscript",
+                            "match": "\\]"
+                        }
+                    ]
+                }
+            ]
+        },
+        "commands": {
+            "patterns": [
+                {
+                    "name": "keyword.control.denizenscript",
+                    "match": "^\\s*-\\s+([A-Za-z_][A-Za-z0-9_-]*)\\b",
+                    "captures": {
+                        "1": {
+                            "name": "support.function.denizenscript"
+                        }
+                    }
+                },
+                {
+                    "name": "variable.other.definition.denizenscript",
+                    "match": "\\bdef\\.([A-Za-z_][A-Za-z0-9_]*)\\b",
+                    "captures": {
+                        "1": {
+                            "name": "variable.other.readwrite.denizenscript"
+                        }
+                    }
+                }
+            ]
+        },
+        "keys": {
+            "patterns": [
+                {
+                    "name": "meta.event.switch.denizenscript",
+                    "match": "^(\\s*)((?:on|after)\\b.*?\\s)([A-Za-z_][A-Za-z0-9_-]*:)([^:\\s]+)(:)\\s*$",
+                    "captures": {
+                        "2": {
+                            "name": "entity.name.section.denizenscript"
+                        },
+                        "3": {
+                            "name": "entity.name.section.denizenscript"
+                        },
+                        "4": {
+                            "name": "constant.language.denizenscript"
+                        },
+                        "5": {
+                            "name": "entity.name.section.denizenscript"
+                        }
+                    }
+                },
+                {
+                    "name": "meta.event.denizenscript",
+                    "match": "^(\\s*)((?:on|after)\\b.*)(:)\\s*$",
+                    "captures": {
+                        "2": {
+                            "name": "entity.name.section.denizenscript"
+                        },
+                        "3": {
+                            "name": "entity.name.section.denizenscript"
+                        }
+                    }
+                },
+                {
+                    "name": "meta.mapping.value.denizenscript",
+                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^#\\s]+)",
+                    "captures": {
+                        "2": {
+                            "name": "entity.name.section.denizenscript"
+                        },
+                        "3": {
+                            "name": "entity.name.section.denizenscript"
+                        },
+                        "4": {
+                            "name": "constant.language.denizenscript"
+                        }
+                    }
+                },
+                {
+                    "name": "meta.mapping.key.denizenscript",
+                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:)\\s*$",
+                    "captures": {
+                        "2": {
+                            "name": "entity.name.section.denizenscript"
+                        },
+                        "3": {
+                            "name": "entity.name.section.denizenscript"
+                        }
+                    }
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.denizenscript",
+                    "match": "(==|!=|<=|>=|&&|\\|\\||:->:|:<-:|:\\|:|:\\+\\+|:--|:\\+:|:-:|:\\*:|:/:|[<>:])"
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,1651 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>SharpDenizenTools</name>
+    </assembly>
+    <members>
+        <member name="T:SharpDenizenTools.MetaHandlers.ExtraData">
+            <summary>Helper class for processing extra minecraft-related data.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.EXTRA_DATA_SOURCE">
+            <summary>Source link for the extra-data FDS document.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Data">
+            <summary>The current extra data object (if loaded).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.CachePath">
+            <summary>Cache path for the extra data file.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.ForceCache">
+            <summary>If true, the cache file MUST be loaded (if it exists).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.DataSection">
+            <summary>The processed data section.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Blocks">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Items">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Particles">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Effects">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Sounds">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Entities">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Enchantments">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Biomes">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Attributes">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Gamerules">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.PotionEffects">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Potions">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Statistics">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.Materials">
+            <summary>The raw relevant data sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.All">
+            <summary>A combination set of all enum keywords.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.ItemArray">
+            <summary>Relevant data sets as arrays.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.BlockArray">
+            <summary>Relevant data sets as arrays.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.EntityArray">
+            <summary>Relevant data sets as arrays.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.Load">
+            <summary>Loads an <see cref="T:SharpDenizenTools.MetaHandlers.ExtraData"/> instance.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.SuggestExampleFor(System.String)">
+            <summary>Suggests a random example value for the given type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.SpecialEntityMatchables">
+            <summary>Known always-valid entity labels.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchEntity(System.String,System.Boolean)">
+            <summary>Type matcher for EntityTag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.ItemCouldMatchPrefixes">
+            <summary>Known always-valid item labels.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchItem(System.String,System.Boolean)">
+            <summary>Type matcher for ItemTag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.InventoryMatchers">
+            <summary>Known always-valid inventory labels.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchInventory(System.String,System.Boolean)">
+            <summary>Type matcher for InventoryTag.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchBlock(System.String,System.Boolean)">
+            <summary>Type matcher for blocks.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchMaterial(System.String,System.Boolean)">
+            <summary>Type matcher for MaterialTag.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchArea(System.String,System.Boolean)">
+            <summary>Type matcher for areas.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.MatchWorld(System.String,System.Boolean)">
+            <summary>Type matcher for WorldTag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.ExtraData.KnownValidatorTypes">
+            <summary>Validator type data for event matching.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.ExtraData.#ctor">
+            <summary>Constructs an instance of <see cref="T:SharpDenizenTools.MetaHandlers.ExtraData"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaHandlers.MetaDocs">
+            <summary>Helper class to contain the full set of meta documentation.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.CurrentMeta">
+            <summary>The current meta documentation (the instance will change if meta is reloaded).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_COMMAND">
+            <summary>The "command" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_MECHANISM">
+            <summary>The "mechanism" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_EVENT">
+            <summary>The "event" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_ACTION">
+            <summary>The "action" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_LANGUAGE">
+            <summary>The "language" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_TAG">
+            <summary>The "tag" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_OBJECT">
+            <summary>The "object type" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_PROPERTY">
+            <summary>The "property" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_GUIDEPAGE">
+            <summary>The "guide page" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.META_TYPE_EXTENSION">
+            <summary>The "extension" meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.MetaTypesData">
+            <summary>Data for all meta types, by name.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Commands">
+            <summary>All known commands.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Mechanisms">
+            <summary>All known mechanisms.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Tags">
+            <summary>All known tags.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.ObjectTypes">
+            <summary>All known object types.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Properties">
+            <summary>All known properties.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Events">
+            <summary>All known events.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Actions">
+            <summary>All known actions.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Languages">
+            <summary>All known languages.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.GuidePages">
+            <summary>All known guide pages.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Extensions">
+            <summary>All known meta extensions.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.TagBases">
+            <summary>A set of all known tag bases.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.TagParts">
+            <summary>A set of all known tag bits.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.TagDeprecations">
+            <summary>A mapping of tag bits to deprecation notices.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.ObjectTagType">
+            <summary>Core object types.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.ElementTagType">
+            <summary>Core object types.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.EventLookupOpti">
+            <summary>Special mapping of first-word to contents for event lookup optimization.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.LegacyCouldMatchEvents">
+            <summary>Events that can't fit into <see cref="F:SharpDenizenTools.MetaHandlers.MetaDocs.EventLookupOpti"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.DataValueSets">
+            <summary>Internal data value sets.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.RawAdjustables">
+            <summary>Set of raw adjustable keys.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.#ctor">
+            <summary>Creates a new instance of <see cref="T:SharpDenizenTools.MetaHandlers.MetaDocs"/> and registers its <see cref="T:SharpDenizenTools.MetaObjects.MetaTypeData`1"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.RegisterMetaData``1(SharpDenizenTools.MetaObjects.MetaType,System.Collections.Generic.Dictionary{System.String,``0})">
+            <summary>Registers a new <see cref="T:SharpDenizenTools.MetaObjects.MetaTypeData`1"/> with the provided values.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.RegisterMetaData``1(System.String,System.Collections.Generic.Dictionary{System.String,``0})">
+            <summary>Registers a new <see cref="T:SharpDenizenTools.MetaObjects.MetaTypeData`1"/> with the provided values.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.IsInDataValueSet(System.String,System.String)">
+            <summary>Returns whether the given text value is in the named data set.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.Data">
+            <summary>Associated ExtraData instance, if any.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.FindEventsFor(System.String,System.Boolean,System.Boolean)">
+            <summary>Returns the event that best matches the input text.</summary>
+            <param name="text">The text to match events against.</param>
+            <param name="allowPartial">If false: full event must match. If true: can just be first few words.</param>
+            <param name="precise">If true: object matchers must be valid. If false: object matchers must look vaguely close to correct.</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.GetEventMatchesFor(System.String,System.Boolean,System.Boolean)">
+            <summary>Returns event match details for the given input text, as pair of event and match quality.</summary>
+            <param name="text">The text to match events against.</param>
+            <param name="allowPartial">If false: full event must match. If true: can just be first few words.</param>
+            <param name="precise">If true: object matchers must be valid. If false: object matchers must look vaguely close to correct.</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.AllMetaObjects">
+            <summary>Returns an enumerable of all objects in the meta documentation.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocs.FindTag(System.String)">
+            <summary>
+            Finds the exact tag for the input text.
+            Does not perform partial matching or chain parsing.
+            </summary>
+            <param name="tagText">The input text to search for.</param>
+            <returns>The matching tag, or null if not found.</returns>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocs.LoadErrors">
+            <summary>A list of load-time errors, if any.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaHandlers.MetaDocsLoader">
+            <summary>Helper class for logic to load meta documentation in from source.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DENIZEN_SOURCES">
+            <summary>Primary Denizen official sources.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DENIZEN_ADDON_SOURCES">
+            <summary>Denizen secondary addon sources.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.SourcesToUse">
+            <summary>The actual source array to use, by default built from <see cref="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DENIZEN_SOURCES"/> and <see cref="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DENIZEN_ADDON_SOURCES"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.AlternateZipSourcer">
+            <summary>Optional alternative source for zips (for things like caching).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DENIZEN_GUIDE_SOURCE">
+            <summary>Source link for the Denizen beginner's guide.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DENIZEN_GUIDE_SUBPAGES">
+            <summary>Guide sub-pages to scan headers from.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.MetaDocsLoader.LoadGuideData">
+            <summary>Whether links to the guides need to be loaded. Defaults to false.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DownloadAll">
+            <summary>Download all docs.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DownloadAll(System.String[])">
+            <summary>Download all docs.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.PostDownloadVerify(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary>Verify all objects after <see cref="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DownloadAll"/>. Automatically called.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.ReadGuides(SharpDenizenTools.MetaHandlers.MetaDocs,System.Net.Http.HttpClient)">
+            <summary>Downloads guide source info.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.DownloadData(System.Net.Http.HttpClient,System.String)">
+            <summary>Download a zip file from a URL.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.ReadLines(System.IO.Compression.ZipArchive,System.String)">
+            <summary>Read lines of meta docs from Java files in a zip.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.SeparateDataLines(System.Collections.Generic.List{System.ValueTuple{System.Int32,System.String,System.String}},System.String,System.Collections.Generic.IEnumerable{System.String})">
+            <summary>Internal call for <see cref="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.ReadLines(System.IO.Compression.ZipArchive,System.String)"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.LoadDataFromLines(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.ValueTuple{System.Int32,System.String,System.String}[])">
+            <summary>Load the meta doc data from lines.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.GetCorrectURL(System.String,System.String,System.Int32)">
+            <summary>Gets a clean proper URL for a file path, if possible.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.MetaDocsLoader.LoadInObject(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String,System.String[])">
+            <summary>Load an object into the meta docs from the object's text definition.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaHandlers.TagHelper">
+            <summary>Helper to parse tags.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.TagHelper.Whitespace">
+            <summary>Matcher for basic whitespace characters.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.TagHelper.Parse(System.String,System.Action{System.String})">
+            <summary>Parses the plaintext of a tag into something analyzable.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaHandlers.SingleTag">
+            <summary>Represents a single parsed tag.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaHandlers.SingleTag.Part">
+            <summary>Represents a single part (between dots) of a tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Part.Text">
+            <summary>The tag text (tag name).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Part.Parameter">
+            <summary>The tag context parameter (if any).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Part.StartChar">
+            <summary>The index in the original string where this tag-part started.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Part.EndChar">
+            <summary>The index in the original string where this tag-part ended.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Part.PossibleTags">
+            <summary>The traced possible tag object for this part (if known).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Part.PossibleSubTypes">
+            <summary>The possibly valid object types after this part (if known).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Parts">
+            <summary>The parts of the tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.Fallback">
+            <summary>The tag fallback text (if any).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.SingleTag.EndChar">
+            <summary>Index of either where the tag ends, or a fallback starts.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaHandlers.TagTracer">
+            <summary>Helper class to trace and analyze a written tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.TagTracer.Docs">
+            <summary>The relevant docs object.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.TagTracer.Tag">
+            <summary>The relevant tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.TagTracer.Error">
+            <summary>An action to display error messages.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.TagTracer.DeprecationError">
+            <summary>An action to display deprecation error messages.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaHandlers.TagTracer.LegacySpecialTags">
+            <summary>Special tags that used to exist and get special handling.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.TagTracer.Trace">
+            <summary>Traces through a written tag, trying to find the documented tag parts inside it.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.TagTracer.ParsePossibleTypes(System.String,SharpDenizenTools.MetaObjects.MetaObjectType)">
+            <summary>Converts tag return data to something usable for the trace.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.TagTracer.TraceTagParts(System.Collections.Generic.HashSet{SharpDenizenTools.MetaObjects.MetaObjectType},System.Int32)">
+            <summary>Traces the parts of the tag, after the base has been traced.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.TagTracer.GetFullComplexSetFrom(System.Collections.Generic.HashSet{SharpDenizenTools.MetaObjects.MetaObjectType})">
+            <summary>Gets all possible object types from a set of known types, based on their bases and implements.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaHandlers.TagTracer.TraceTagPartSingle(System.Collections.Generic.HashSet{SharpDenizenTools.MetaObjects.MetaObjectType},System.Int32)">
+            <summary>Traces just one part of the tag, gathering a list of possible subtags.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaAction">
+            <summary>A documented action.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaAction.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaAction.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaAction.MultiNames">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.MultiNames"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaAction.Actions">
+            <summary>The names of the action.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaAction.CleanActions">
+            <summary>The names of the actions, autocleaned.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaAction.Triggers">
+            <summary>The trigger reason.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaAction.RegexMatcher">
+            <summary>A hacked-in regex matcher.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaAction.Context">
+            <summary>Context tags. One tag per string.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaAction.Determinations">
+            <summary>Determination options. One Determination per string.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaAction.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaAction.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaAction.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaCommand">
+            <summary>A documented command.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaCommand.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaCommand.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.CommandName">
+            <summary>The name of the command.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Required">
+            <summary>How many arguments are required, minimum.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Maximum">
+            <summary>How many arguments are allowed, maximum.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Syntax">
+            <summary>The syntax guide.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Short">
+            <summary>The short description.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Description">
+            <summary>The long-form description.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Tags">
+            <summary>Tags documented for this command. One tag per string.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Guide">
+            <summary>An associated beginner's guide link.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.ArgPrefixes">
+            <summary>A list of argument prefixes this command has in its syntax line.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.FlatArguments">
+            <summary>A list of plaintext no-tag arguments this command has in its syntax line.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.LinearArguments">
+            <summary>A list of linear (non-prefixed, but dynamic input) arguments this command has in its syntax line.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaCommand.ParseSyntax">
+            <summary>Parses this command's syntax data to create a list of helper data about the known arguments.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaCommand.Usages">
+            <summary>Sample usages.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaCommand.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaCommand.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaCommand.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaDataValue">
+            <summary>Internally tracked data values helper.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaDataValue.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaDataValue.DataKeyName">
+            <summary>The name of the data key to add this to.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaDataValue.Values">
+            <summary>The value set to add.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaDataValue.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaDataValue.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaDataValue.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaEvent">
+            <summary>A documented event.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.EventNameCleaner">
+            <summary>Symbols that are structural in event names and can be hidden.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaEvent.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaEvent.CleanName">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.CleanName"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaEvent.SearchName">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.SearchName"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaEvent.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaEvent.MultiNames">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.MultiNames"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Events">
+            <summary>The names of the event.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.CleanEvents">
+            <summary>The names of the events, autocleaned.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.OverlyCleanedEvents">
+            <summary>The names of the events, with optionals stripped and other symbols removed.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.CouldMatchers">
+            <summary>Could-Matchers for this event.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Switches">
+            <summary>Switches available to the event.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.SwitchNames">
+            <summary>Just the names of the event's switches.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Triggers">
+            <summary>The trigger reason.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Context">
+            <summary>Context tags. One tag per string.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Determinations">
+            <summary>Determination options. One Determination per string.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Player">
+            <summary>Whether there's a player attached to the event.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.NPC">
+            <summary>Whether there's an NPC attached to the event.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Cancellable">
+            <summary>Whether the event is cancellable.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.HasLocation">
+            <summary>Whether the event has a location for location switches.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaEvent.Examples">
+            <summary>Manual examples of this tag. One full script per entry.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaEvent.IsValidSwitch(System.String)">
+            <summary>Returns whether the switch name given is valid for this event.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaEvent.OverCleanEvent(System.String)">
+            <summary>Removes optional parts of an event, and strips all other symbols.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaEvent.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaEvent.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaEvent.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaExtension">
+            <summary>An extension to an existing meta object.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaExtension.Name">
+            <inheritdoc/>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaExtension.ExtensionName">
+            <summary>The name of the extension.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaExtension.ExtendType">
+            <summary>The type of the meta object this extension meta extends.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaExtension.ExtendName">
+            <summary>The name of the meta object this extension meta extends.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaExtension.IncludeExisting">
+            <summary>Whether the existing values from the extended meta should be included when adding the new values.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaExtension.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <inheritdoc/>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaExtension.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaExtension.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <inheritdoc/>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaGuidePage">
+            <summary>A page of the beginner's guide.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaGuidePage.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaGuidePage.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaGuidePage.PageName">
+            <summary>The name of the page.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaGuidePage.URL">
+            <summary>The URL to the page.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaGuidePage.IsSubPage">
+            <summary>If true, this is an entry within a page rather than its own page.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaGuidePage.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaLanguage">
+            <summary>A language documentation.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaLanguage.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaLanguage.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaLanguage.LangName">
+            <summary>The name of the language.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaLanguage.Description">
+            <summary>The long-form description.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaLanguage.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaLanguage.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaLanguage.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaMechanism">
+            <summary>A documented mechanism.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaMechanism.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaMechanism.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaMechanism.MultiNames">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.MultiNames"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.NameForms">
+            <summary>Both forms of the mech name (the full name, and the partial name).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.FullName">
+            <summary>The full mechanism name (Object.Name).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.MechObject">
+            <summary>The object the mechanism applies to.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.MechName">
+            <summary>The name of the mechanism.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.Input">
+            <summary>The input type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.Description">
+            <summary>The long-form description.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.Tags">
+            <summary>Tags documented for this mechanism. One tag per string.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaMechanism.Examples">
+            <summary>Manual examples of this tag. One full script per entry.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaMechanism.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaMechanism.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaMechanism.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaObject">
+            <summary>Abstract base for a type of meta object.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Type">
+            <summary>The meta type of the object.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaObject.Name">
+            <summary>Get the name of the object. May have capitals.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.HasMultipleNames">
+            <summary>Whether this object has multiple names.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaObject.MultiNames">
+            <summary>If the object has multiple names, returns the full set of names.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaObject.CleanName">
+            <summary>Get the clean lowercase name of the object.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaObject.SearchName">
+            <summary>The name to display for searchability purposes.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Synonyms">
+            <summary>Other words that mean the same thing.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Group">
+            <summary>What categorization group the object is in.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Warnings">
+            <summary>Any warnings applied to this object type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Plugin">
+            <summary>Required plugin(s) if applicable.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SourceFile">
+            <summary>The file in source code that defined this meta object.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Deprecated">
+            <summary>A deprecation notice, if any.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.Meta">
+            <summary>The backing <see cref="T:SharpDenizenTools.MetaHandlers.MetaDocs"/> instance.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.RawValues">
+            <summary>The original raw values specified for the object.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary>Apply a setting value to this meta object.</summary>
+            <param name="docs">The relevant meta docs instance.</param>
+            <param name="key">The setting key.</param>
+            <param name="value">The setting value.</param>
+            <returns>Whether the value was applied.</returns>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.FindClosingTagMark(System.String,System.Int32)">
+            <summary>Finds the closing tag mark, compensating for layered tags.</summary>
+            <param name="text">The raw text.</param>
+            <param name="startIndex">The index to start searching at.</param>
+            <returns>The closing symbol index, or -1 if not found.</returns>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary>Adds the object to the meta docs set.</summary>
+            <param name="docs">The docs set.</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary>Checks the object for validity, after all loading is done.</summary>
+            <param name="docs">The relevant docs object.</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.Require(SharpDenizenTools.MetaHandlers.MetaDocs,System.Object[])">
+            <summary>Post-check handler to require specific values be set (not-null).</summary>
+            <param name="docs">The relevant docs object.</param>
+            <param name="requiredValues">The values that are required.</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheckSynonyms``1(SharpDenizenTools.MetaHandlers.MetaDocs,System.Collections.Generic.Dictionary{System.String,``0})">
+            <summary>Post-check handler to validate synonyms don't duplicate existing values.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheckLinkableText(SharpDenizenTools.MetaHandlers.MetaDocs,System.String)">
+            <summary>Post-check handler for linkable text, to find bad links.</summary>
+            <param name="docs">The relevant docs object.</param>
+            <param name="linkedtext">The relevant linkable list.</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheckTags(SharpDenizenTools.MetaHandlers.MetaDocs,System.String[])">
+            <summary>Post-check handler for tags, used in <see cref="T:SharpDenizenTools.MetaObjects.MetaCommand"/> and <see cref="T:SharpDenizenTools.MetaObjects.MetaMechanism"/>.</summary>
+            <param name="docs">The relevant docs object.</param>
+            <param name="tags">The relevant tags list.</param>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers">
+            <summary>Class that contains data to help searching. All strings are lowercase.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.SearchQualityName">
+            <summary>Names for search quality levels.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.PerfectMatches">
+            <summary>Perfect match text, like a name.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.Synonyms">
+            <summary>Hand-chosen additional semiperfect search terms.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.Strongs">
+            <summary>Very important matchables.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.Decents">
+            <summary>Other normal matchables.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.Backups">
+            <summary>Any/all remaining text.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.SearchableHelpers.GetMatchQuality(System.String)">
+            <summary>Searches the object for text matches. Returns 0 for no match, 10 for a perfect match, 5 for an average match, etc.</summary>
+            <param name="search">Search text (all lowercase).</param>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.ValidateSearchables(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary>Cleans up and validates search data.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObject.SearchHelper">
+            <summary>Data to help object searches.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables">
+            <summary>Build the contents of <see cref="F:SharpDenizenTools.MetaObjects.MetaObject.SearchHelper"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaObjectType">
+            <summary>A documented type of object.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaObjectType.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaObjectType.CleanName">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.CleanName"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObjectType.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.TypeName">
+            <summary>The name of the object type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.Prefix">
+            <summary>The object identity prefix for this type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.BaseTypeName">
+            <summary>The name of the base type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.BaseType">
+            <summary>The base type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.Format">
+            <summary>A human-readable explanation of the identity format of the tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.Description">
+            <summary>A human-readable description of the object type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.ImplementsNames">
+            <summary>The names of other types or pseudo-types implemented by this type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.SubTags">
+            <summary>All tags available directly to this base (not counting base/implements).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.Implements">
+            <summary>Other types or pseudo-types implemented by this type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.ExtendedBy">
+            <summary>Other types or pseudo-types that extend this type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.GeneratedExampleTagBase">
+            <summary>The tag base component for generated examples, like 'player' for PlayerTag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.GeneratedExampleAdjust">
+            <summary>The object string for generated adjust examples, if mismatched from the tagbase, like '&lt;player&gt;' for PlayerTag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.GeneratedReturnUsageExample">
+            <summary>A set of example text blocks for usage with tag return example generation.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.ExampleValues">
+            <summary>Set of randomly selectable example values of this object type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaObjectType.Matchable">
+            <summary>Information about matchable options for this type.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObjectType.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObjectType.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaObjectType.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaProperty">
+            <summary>A documented object property.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaProperty.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaProperty.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaProperty.MultiNames">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.MultiNames"/></summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.NameForms">
+            <summary>Both forms of the mech name (the full name, and the partial name).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.FullName">
+            <summary>The full mechanism name (Object.Name).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.PropObject">
+            <summary>The object the property applies to.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.PropName">
+            <summary>The name of the property.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.Input">
+            <summary>The data type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.Description">
+            <summary>The long-form description.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.MechanismDescription">
+            <summary>Optional description specific to the property's mechanism.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.TagDescription">
+            <summary>Optional description specific to the property's tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.TagExamples">
+            <summary>Manual examples for the property's tag. One full script per entry.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaProperty.MechanismExamples">
+            <summary>Manual examples for the property's mechanism. One full script per entry.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaProperty.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaProperty.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaProperty.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaTag">
+            <summary>A documented tag.</summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaTag.Name">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.Name"/></summary>
+        </member>
+        <member name="P:SharpDenizenTools.MetaObjects.MetaTag.CleanName">
+            <summary><see cref="P:SharpDenizenTools.MetaObjects.MetaObject.CleanName"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTag.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.AddTo(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTag.CleanTag(System.String)">
+            <summary>Cleans tag text for searchability.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.CleanedName">
+            <summary>The cleaned (searchable) name.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.BeforeDot">
+            <summary>
+            The text before the first dot (with tag cleaning applied).
+            Will have capitalized characters.
+            </summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.AfterDotCleaned">
+            <summary>The text after the first dot (with tag cleaning applied).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.TagFull">
+            <summary>The full tag syntax text.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.Returns">
+            <summary>The return type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.ReturnType">
+            <summary>The return object type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.BaseType">
+            <summary>The base tag type (if any).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.Description">
+            <summary>The long-form description.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.AllowsParam">
+            <summary>Whether a parameter is allowed on the first part of this tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.RequiresParam">
+            <summary>Whether a parameter is required on the first part of this tag.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.Mechanism">
+            <summary>The associated mechanism, if any.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.Examples">
+            <summary>Manual examples of this tag. One full script per entry.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaTag.ParsedFormat">
+            <summary>The parsed <see cref="T:SharpDenizenTools.MetaHandlers.SingleTag"/> of this tag.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTag.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.ApplyValue(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.String)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTag.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.PostCheck(SharpDenizenTools.MetaHandlers.MetaDocs)"/></summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTag.BuildSearchables">
+            <summary><see cref="M:SharpDenizenTools.MetaObjects.MetaObject.BuildSearchables"/></summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaType">
+            <summary>Represents a type of meta documentations.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaType.Name">
+            <summary>The name of the object meta type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.MetaObjects.MetaType.WebPath">
+            <summary>The webpath for this object meta type (eg "Commands").</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.IMetaTypeData">
+            <summary>A generic-less <see cref="T:SharpDenizenTools.MetaObjects.MetaTypeData`1"/> interface.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.IMetaTypeData.CreateNewMeta">
+            <summary>Creates a new <see cref="T:SharpDenizenTools.MetaObjects.MetaObject"/> and sets its type.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.IMetaTypeData.TryGetMeta(System.String,SharpDenizenTools.MetaObjects.MetaObject@)">
+            <summary>Gets a <see cref="T:SharpDenizenTools.MetaObjects.MetaObject"/> by name, or <c>null</c> if one by that name doesn't exist.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.IMetaTypeData.AllMetaObjects">
+            <summary>Returns all <see cref="T:SharpDenizenTools.MetaObjects.MetaObject"/>s of this type.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.MetaObjects.MetaTypeData`1">
+            <summary>Data for a specific <see cref="T:SharpDenizenTools.MetaObjects.MetaType"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTypeData`1.#ctor(System.Collections.Generic.Dictionary{System.String,`0},SharpDenizenTools.MetaObjects.MetaType)">
+            <summary>Data for a specific <see cref="T:SharpDenizenTools.MetaObjects.MetaType"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTypeData`1.CreateNewMeta">
+            <inheritdoc/>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTypeData`1.TryGetMeta(System.String,SharpDenizenTools.MetaObjects.MetaObject@)">
+            <inheritdoc/>
+        </member>
+        <member name="M:SharpDenizenTools.MetaObjects.MetaTypeData`1.AllMetaObjects">
+            <inheritdoc/>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher">
+            <summary>Holder class for a replica of the Denizen advanced matcher engine.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper">
+            <summary>Entry point for the replica of the Denizen advanced matcher engine.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)">
+            <summary>True if the text is a match, otherwise false.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.AlwaysMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.AlwaysMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.ExactMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.ExactMatchHelper.#ctor(System.String)">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.ExactMatchHelper.Text">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.ExactMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PrefixAsteriskMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PrefixAsteriskMatchHelper.#ctor(System.String)">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PrefixAsteriskMatchHelper.Text">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PrefixAsteriskMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PostfixAsteriskMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PostfixAsteriskMatchHelper.#ctor(System.String)">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PostfixAsteriskMatchHelper.Text">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.PostfixAsteriskMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleAsteriskMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleAsteriskMatchHelper.#ctor(System.String[])">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleAsteriskMatchHelper.Texts">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleAsteriskMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.RegexMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.RegexMatchHelper.#ctor(System.String)">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.RegexMatchHelper.Pattern">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.RegexMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleMatchesHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleMatchesHelper.#ctor(SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper[])">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleMatchesHelper.Matches">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MultipleMatchesHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.InverseMatchHelper">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.InverseMatchHelper.#ctor(SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper)">
+            <summary>Implements <see cref="T:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.InverseMatchHelper.Matcher">
+            <summary>Required data.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.InverseMatchHelper.DoesMatch(System.String)">
+            <summary>Implements <see cref="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.MatchHelper.DoesMatch(System.String)"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.IsAdvancedMatchable(System.String)">
+            <summary>Returns true if the text uses the advanced matcher system.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.AdvancedMatcher.CreateMatcher(System.String)">
+            <summary>Creates a valid matcher out of the given text.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.EventTools">
+            <summary>Helper tools related to scriptevent processing.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.EventTools.NumbersMatcher">
+            <summary>Matcher for numerical digits 0-9 only.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.EventTools.SeparateSwitches(SharpDenizenTools.MetaHandlers.MetaDocs,System.String,System.Collections.Generic.List{System.Collections.Generic.KeyValuePair{System.String,System.String}}@)">
+            <summary>Separates the switches from an event line.</summary>
+            <param name="meta">The relevant meta docs.</param>
+            <param name="eventLine">The original full event line.</param>
+            <param name="switches">The output switch list.</param>
+            <returns>The cleaned event line.</returns>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.EventTools.ParseMatchers(System.String,System.Collections.Generic.Dictionary{System.String,System.Func{System.String,System.Boolean,System.Int32}},System.Action{System.String})">
+            <summary>Parse some event format input into a set of could-matchers.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet">
+            <summary>Represents a set of strings that may have only partial knowledge.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.ExactKnown">
+            <summary>The set of exactly-known strings.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.PartialKnown">
+            <summary>The set of partially-known strings.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.MinLength">
+            <summary>The lowest known length in the set.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.MaxLength">
+            <summary>The highest known length in the set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.MergeIn(SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet)">
+            <summary>Merges in all data from another set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.Add(System.String)">
+            <summary>Adds a new string to the set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.AddAll(System.String[])">
+            <summary>Adds all new strings to the set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.Any">
+            <summary>Returns true if there are any entries in the set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.Contains(System.String)">
+            <summary>Returns true if the input option string matches this set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.GetAllMatchesIn(System.Collections.Generic.IEnumerable{System.String})">
+            <summary>Gets the set of all matches for this set in another string set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.MixedKnowledgeSet.EnumerateAll">
+            <summary>Gets an enumerable of every string in the set, including partial ones.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptChecker">
+            <summary>Utility class to check a script's validity.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LogInternalMessage">
+            <summary>Action to log an internal message (defaults to <see cref="M:System.Console.WriteLine(System.String)"/>.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptTypes">
+            <summary>A set of all known script type names.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.AlwaysScriptKeys">
+            <summary>Keys that always mean a section is a script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.AlwaysDataKeys">
+            <summary>Keys that always mean simple data.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CommandsWithColonsAndArguments">
+            <summary>A non-complete set of Denizen commands that can end with a colon and contain arguments, for checking certain syntax errors.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CommandsWithColonsButNoArguments">
+            <summary>A non-complete set of Denizen commands that can end with a colon and do not have to contain any arguments, for checking certain syntax errors.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Meta">
+            <summary>The applicable MetaDocs set.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.FullOriginalScript">
+            <summary>The full original script text.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Lines">
+            <summary>All lines of the script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CleanedLines">
+            <summary>All lines, pre-trimmed and lowercased.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CommentLines">
+            <summary>The number of lines that were comments.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.BlankLines">
+            <summary>The number of lines that were blank.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.StructureLines">
+            <summary>The number of lines that were structural (ending with a colon).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CodeLines">
+            <summary>The number of lines that were code (starting with a dash).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.IgnoredWarnings">
+            <summary>The number of warnings that were ignored.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning">
+            <summary>Represents a warning about a script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning.WarningUniqueKey">
+            <summary>A unique key for this *type* of warning.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning.CustomMessageForm">
+            <summary>The locally customized message form.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning.Line">
+            <summary>The line this applies to.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning.StartChar">
+            <summary>The starting character position.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning.EndChar">
+            <summary>The ending character position.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Errors">
+            <summary>A list of all errors about this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Warnings">
+            <summary>A list of all warnings about this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.MinorWarnings">
+            <summary>A list of all minor warnings about this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Infos">
+            <summary>A list of informational notices about this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Debugs">
+            <summary>A list of debug notices about this script, generally don't actually show to users.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Injects">
+            <summary>A track of all script names that appear to be injected, for false-warning reduction.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.IgnoredWarningTypes">
+            <summary>A user-specified list of warning types to ignore.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.SurroundingWorkspace">
+            <summary>Optional workspace this script exists within.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.GeneratedWorkspace">
+            <summary>Generated workspace data about this script file alone.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.#ctor(System.String)">
+            <summary>Construct the ScriptChecker instance from a script string.</summary>
+            <param name="script">The script contents string.</param>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Warn(System.Collections.Generic.List{SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning},System.Int32,System.String,System.String,System.Int32,System.Int32)">
+            <summary>Adds a warning to track.</summary>
+            <param name="warnType">The warning type (the list object).</param>
+            <param name="line">The zero-indexed line the warning is regarding.</param>
+            <param name="key">The unique warning key, for compressing repeat warns.</param>
+            <param name="message">The warning message.</param>
+            <param name="start">The starting character index.</param>
+            <param name="end">The ending character index.</param>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Warn(System.Collections.Generic.List{SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning},System.String,System.String,SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString)">
+            <summary>Adds a warning to track.</summary>
+            <param name="warnType">The warning type (the list object).</param>
+            <param name="key">The unique warning key, for compressing repeat warns.</param>
+            <param name="message">The warning message.</param>
+            <param name="line">The line to warn about.</param>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ClearCommentsFromLines">
+            <summary>Clears all comment lines.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CleanScriptForYAMLProcessing">
+            <summary>Performs some minimal script cleaning, based on logic in DenizenCore, that matches a script load in as valid YAML, for use with <see cref="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckYAML"/>.</summary>
+            <returns>The cleaned YAML-friendly script.</returns>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckYAML">
+            <summary>Checks if the script is even valid YAML (if not, critical error).</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LoadInjects">
+            <summary>Looks for injects, to prevent issues with later checks.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.BasicLineFormatCheck">
+            <summary>Checks the basic format of every line of the script, to locate stray text or useless lines.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckForTabs">
+            <summary>Checks if "\t" tabs are used (instead of spaces). If so, warning.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckForBraces">
+            <summary>Checks if { braces } are used (instead of modern "colon:" syntax). If so, error.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckForOldDefs">
+            <summary>Checks if &lt;def[oldDefs]&gt; are used (instead of modern "&lt;[defname]&gt;" syntax). If so, warning.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckSingleTag(System.Int32,System.Int32,System.String,SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext)">
+            <summary>Performs the necessary checks on a single tag.</summary>
+            <param name="line">The line number.</param>
+            <param name="startChar">The index of the character where this tag starts.</param>
+            <param name="tag">The text of the tag.</param>
+            <param name="context">The script checking context (if any).</param>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.AllowedSimpleNoteName">
+            <summary>Matcher for characters allowed in a simple note name.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckTagParam(SharpDenizenTools.MetaHandlers.SingleTag.Part,SharpDenizenTools.MetaHandlers.SingleTag.Part,System.String,System.Action{SharpDenizenTools.MetaHandlers.SingleTag.Part,System.String,System.String})">
+            <summary>Helper to check a single tag parameter.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckSingleArgument(System.Int32,System.Int32,System.String,SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext,System.Boolean)">
+            <summary>Performs the necessary checks on a single argument.</summary>
+            <param name="line">The line number.</param>
+            <param name="startChar">The index of the character where this argument starts.</param>
+            <param name="argument">The text of the argument.</param>
+            <param name="context">The script checking context (if any).</param>
+            <param name="isCommand">Whether this is an argument to a command.</param>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckSingleDataLine(System.Int32,System.Int32,System.String,SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext)">
+            <summary>Performs the necessary checks on a single data key line.</summary>
+            <param name="line">The line number.</param>
+            <param name="startChar">The index of the character where this argument starts.</param>
+            <param name="argument">The text of the argument.</param>
+            <param name="context">The script checking context (if any).</param>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CommandArgument">
+            <summary>A single argument to a command.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CommandArgument.StartChar">
+            <summary>The character index that this argument starts at.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CommandArgument.Text">
+            <summary>The text of the argument.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.VALID_TAG_FIRST_CHAR">
+            <summary>Symbols that are allowed as the first character of a tag.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.BuildArgs(System.Int32,System.Int32,System.String,SharpDenizenTools.ScriptAnalysis.ScriptChecker)">
+            <summary>Build args, as copied from Denizen Core -> ArgumentHelper.</summary>
+            <param name="line">The line number.</param>
+            <param name="startChar">The index of the character where this argument starts.</param>
+            <param name="stringArgs">The raw arguments input.</param>
+            <param name="checker">Optionally linked checker for warnings.</param>
+            <returns>The argument array.</returns>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext">
+            <summary>Context for checking a single script-container.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext.Definitions">
+            <summary>Known definition names.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext.SaveEntries">
+            <summary>Known save-entry names.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext.HasUnknowableDefinitions">
+            <summary>If true, there are injects or other issues that make def names unknownable.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext.HasUnknowableSaveEntries">
+            <summary>If true, there are injects or other issues that make save entries names unknownable.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckSingleCommand(System.Int32,System.Int32,System.String,SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptCheckContext,SharpDenizenTools.ScriptAnalysis.ScriptContainerData)">
+            <summary>Performs the necessary checks on a single command line.</summary>
+            <param name="line">The line number.</param>
+            <param name="startChar">The index of the character where this argument starts.</param>
+            <param name="commandText">The text of the command line.</param>
+            <param name="context">The script checking context.</param>
+            <param name="script">The relevant script container.</param>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType">
+            <summary>Basic metadata about a known script type.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.RequiredKeys">
+            <summary>Keys that must always be present.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.LikelyBadKeys">
+            <summary>Keys that generally shouldn't be present unless something's gone wrong.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.ValueKeys">
+            <summary>Value-based keys.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.ListKeys">
+            <summary>Data list keys.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.ScriptKeys">
+            <summary>Script keys.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.Strict">
+            <summary>Whether to be strict in checks (if true, unrecognize keys will receive a warning).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.KnownScriptType.CanHaveRandomScripts">
+            <summary>Whether this type can have random extra scripts attached.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptTitleCharactersAllowed">
+            <summary>A matcher for the set of characters that a script title is allowed to have.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.MatchesSet(System.String,System.String[])">
+            <summary>Helper to check if a key matches a key-set (with asterisk support).</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CheckAllContainers">
+            <summary>Checks a dictionary full of script containers, performing all checks on the scripts from there on.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.AlphabetMatcher">
+            <summary>Matcher for A-Z only.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.OBJECT_NOTATION_LAST_LETTER_MATCHER">
+            <summary>Matcher for the letter right before the '@' symbol in existing ObjectTag types.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ContainsObjectNotation(System.String)">
+            <summary>Checks whether a line contains object notation, and returns a range of matches if so.</summary>
+            <param name="line">The line to check.</param>
+            <returns>The match range, or null.</returns>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString">
+            <summary>Helper class for strings that remember where they came from.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.#ctor(System.Int32,System.String,System.Int32)">
+            <summary>Helper class for strings that remember where they came from.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.Text">
+            <summary>The text of the line.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.Line">
+            <summary>The line number.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.StartChar">
+            <summary>The character index of where this line starts.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.GetHashCode">
+            <summary>HashCode impl, for Dictionary functionality.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.Equals(System.Object)">
+            <summary>Equals impl, for Dictionary functionality.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.ToString">
+            <summary>ToString override, returns <see cref="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString.Text"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CountPreSpaces(System.String)">
+            <summary>Counts the number of spaces in front of a line.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.GatherActualContainers">
+            <summary>Gathers a dictionary of all actual containers, checking for errors as it goes, and returning the dictionary.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CanWarnAboutCommandMissingDash(System.String[],System.Collections.Generic.Dictionary{SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString,System.Object})">
+            <summary>Helper method to determine whether a section key that looks like it might have been meant as a command should actually show a warning or not.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.CollectStatisticInfos">
+            <summary>Adds <see cref="F:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Infos"/> entries for basic statistics.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ConvertContainers(System.Collections.Generic.Dictionary{SharpDenizenTools.ScriptAnalysis.ScriptChecker.LineTrackedString,System.Object})">
+            <summary>Converts the raw container data to trackable container objects.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.PreprocContainer(SharpDenizenTools.ScriptAnalysis.ScriptContainerData)">
+            <summary>Converts the raw container data to trackable container objects.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.StartsWithAny(System.String,System.String[])">
+            <summary>Helper for 'StartsWith' over a set of options.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ContextValidatedGetScriptFor(System.String,System.String)">
+            <summary>Returns the first/best container if it is knowable and known.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.ContextValidatedIsValidScriptName(System.String)">
+            <summary>Returns true if the scriptname is null, unknowable, or valid.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.MergeData">
+            <summary>Merges generated data together.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Run">
+            <summary>Runs the full script check.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics">
+            <summary>Helper class to check command-specific things.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails">
+            <summary>The details of a single command-checking.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Checker">
+            <summary>The checker instance.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.CommandName">
+            <summary>The name of the relevant command.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.CommandText">
+            <summary>The full text of the command line.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.ArgCount">
+            <summary>The number of main arguments.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Line">
+            <summary>The command's line number.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Arguments">
+            <summary>The actual arguments.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Context">
+            <summary>The general backing context of the checking.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.StartChar">
+            <summary>The starting index of the text within the command.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Script">
+            <summary>The relevant script container.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Warn(System.Collections.Generic.List{SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning},System.String,System.String,System.Int32,System.Int32)">
+            <summary>Helper to produce a warning by calling <see cref="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Warn(System.Collections.Generic.List{SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning},System.Int32,System.String,System.String,System.Int32,System.Int32)"/>.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.Warn(System.Collections.Generic.List{SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning},System.String,System.String)">
+            <summary>Helper to produce a warning by calling <see cref="M:SharpDenizenTools.ScriptAnalysis.ScriptChecker.Warn(System.Collections.Generic.List{SharpDenizenTools.ScriptAnalysis.ScriptChecker.ScriptWarning},System.Int32,System.String,System.String,System.Int32,System.Int32)"/>, on the full command line.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails.TrackDefinition(System.String)">
+            <summary>Helper to add a definition to the context.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckers">
+            <summary>A mapping from command names to checker methods.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.Register(System.String[],System.Action{SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.CommandCheckDetails})">
+            <summary>Registers a new command checker.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.BadExecuteCommands">
+            <summary>A set of Bukkit commands that if they appear in an 'execute' script command should receive a warning automatically.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.PREFIX_FORBIDDEN_SYMBOLS">
+            <summary>Matcher for symbols that may not appear in an argument prefix, including the ':' that separates the prefix from suffix.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.ArgHasPrefix(System.String)">
+            <summary>Returns true if the argument has a valid non-tagged prefix.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptCheckerCommandSpecifics.#cctor">
+            <summary>Relevant command-specific error check impls.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptContainerData">
+            <summary>Represents the data of a script container.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.Name">
+            <summary>The name of the script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.LineNumber">
+            <summary>The line number in-file the script is found on (specifically the line of its title key).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.FileName">
+            <summary>The name of the file the script is from (sometimes will full or partial path data).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.Type">
+            <summary>What type the script is (eg "task", "world", ...).</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.KnownType">
+            <summary>The type of the container, if its real type is known.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.DefNames">
+            <summary>Any/all definitions established within command sections of this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.SaveEntryNames">
+            <summary>Any/all "save:" arg names established within command sections of this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.InjectedPaths">
+            <summary>Any/all sub-scripts injected within command sections of this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.RealInjects">
+            <summary>The list of all script names that are known to actually be injected by this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.ServerFlags">
+            <summary>Any/all server flags set by command sections of this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.ObjectFlags">
+            <summary>Any/all object flags set by command sections of this script.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptContainerData.Keys">
+            <summary>Data keys on the script.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher">
+            <summary>Helper to generate automatic logic for ScriptEvent#couldMatch.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.Format">
+            <summary>The raw format string used to construct this couldMatcher.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.Parts">
+            <summary>The raw parts list used to construct this couldMatcher.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.Validators">
+            <summary>The array of validator objects for this couldMatcher. The path length should equal the array length, and each argument match the validator.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.ArgOrder">
+            <summary>Special optimization trick: an array of argument indices to control testing order. The simplest tests are run first.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.Error">
+            <summary>Properly log an error message.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.KnownValidatorTypes">
+            <summary>Registry of validators, as a map from name to instance object.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.#ctor(System.String,System.Action{System.String},System.Collections.Generic.Dictionary{System.String,System.Func{System.String,System.Boolean,System.Int32}})">
+            <summary>Construct the could matcher from the given reference format and switch set.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.TryMatch(System.String[],System.Boolean,System.Boolean)">
+            <summary>Returns 0 for no match, 1 for bare minimum match, up to 10 for best match.</summary>
+            <param name="pathBaseParts">The array of words to match events against.</param>
+            <param name="allowPartial">If false: full event must match. If true: can just be first few words.</param>
+            <param name="precise">If true: object matchers must be valid. If false: object matchers must look vaguely close to correct.</param>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher.IsBetterMatchThan(System.String[],System.Boolean,SharpDenizenTools.ScriptAnalysis.ScriptEventCouldMatcher)">
+            <summary>Returns true if this matcher matches better than the second matcher.</summary>
+        </member>
+        <member name="T:SharpDenizenTools.ScriptAnalysis.ScriptingWorkspaceData">
+            <summary>Represents a full workspace of scripts.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptingWorkspaceData.AllKnownServerFlagNames">
+            <summary>All server flag names set within the workspace.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptingWorkspaceData.AllKnownObjectFlagNames">
+            <summary>All object flag names set within the workspace.</summary>
+        </member>
+        <member name="F:SharpDenizenTools.ScriptAnalysis.ScriptingWorkspaceData.Scripts">
+            <summary>All containers within the workspace.</summary>
+        </member>
+        <member name="M:SharpDenizenTools.ScriptAnalysis.ScriptingWorkspaceData.MergeIn(SharpDenizenTools.ScriptAnalysis.ScriptingWorkspaceData)">
+            <summary>AllMerges another workspace data into this one.</summary>
+        </member>
+    </members>
+</doc>

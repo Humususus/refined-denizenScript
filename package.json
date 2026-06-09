@@ -1,0 +1,307 @@
+{
+    "name": "refined-denizenscript",
+    "displayName": "refined DenizenScript",
+    "description": "Refined The Denizen scripting language.",
+    "author": "Humusus_ and DenizenTeam",
+    "version": "1.4.10",
+    "publisher": "Humusus_",
+    "license": "MIT",
+    "repository": "https://github.com/Humususus/refined-denizenScript",
+    "icon": "logo.png",
+    "engines": {
+        "vscode": "^1.34.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onLanguage:denizenscript",
+        "onCommand:refinedDenizenscript.createCategory",
+        "onCommand:refinedDenizenscript.createScriptFile",
+        "onCommand:refinedDenizenscript.checkForUpdates",
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "refinedDenizenscript.createCategory",
+                "title": "Refined DenizenScript: Create Category"
+            },
+            {
+                "command": "refinedDenizenscript.createScriptFile",
+                "title": "Refined DenizenScript: Create Script File"
+            },
+            {
+                "command": "refinedDenizenscript.checkForUpdates",
+                "title": "Refined DenizenScript: Check for Updates"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "refinedDenizenscript.createCategory",
+                "key": "ctrl+alt+d c",
+                "mac": "cmd+alt+d c"
+            },
+            {
+                "command": "refinedDenizenscript.createScriptFile",
+                "key": "ctrl+alt+d f",
+                "mac": "cmd+alt+d f"
+            }
+        ],
+        "menus": {
+            "explorer/context": [
+                {
+                    "command": "refinedDenizenscript.createCategory",
+                    "group": "navigation@50"
+                },
+                {
+                    "command": "refinedDenizenscript.createScriptFile",
+                    "group": "navigation@51"
+                }
+            ]
+        },
+        "languages": [
+            {
+                "id": "denizenscript",
+                "aliases": [
+                    "Denizen Script",
+                    "denizenscript"
+                ],
+                "extensions": [
+                    ".dsc"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "denizenscript",
+                "scopeName": "source.denizenscript",
+                "path": "./syntaxes/denizenscript.tmLanguage.json"
+            }
+        ],
+        "iconThemes": [
+            {
+                "id": "denizen-icons",
+                "label": "DenizenScript Icons",
+                "path": "./themes/denizen-icon-theme.json"
+            }
+        ],
+        "configurationDefaults": {
+            "[denizenscript]": {
+                "editor.insertSpaces": true,
+                "editor.wordBasedSuggestions": "off",
+                "editor.autoIndent": "keep"
+            }
+        },
+        "configuration": {
+            "title": "DenizenScript",
+            "properties": {
+                "denizenscript.header_symbols": {
+                    "type": "string",
+                    "default": "|+=#_@/",
+                    "description": "Header comment symbols."
+                },
+                "denizenscript.theme_colors.comment_todo": {
+                    "type": "string",
+                    "default": "#FFFF00|weight=bold",
+                    "description": "Color of TODO comments."
+                },
+                "denizenscript.theme_colors.comment_header": {
+                    "type": "string",
+                    "default": "#FF0000",
+                    "description": "Color of header comments."
+                },
+                "denizenscript.theme_colors.comment_normal": {
+                    "type": "string",
+                    "default": "#007700",
+                    "description": "Color of normal comments."
+                },
+                "denizenscript.theme_colors.comment_code": {
+                    "type": "string",
+                    "default": "#DD5500",
+                    "description": "Color of code comments."
+                },
+                "denizenscript.theme_colors.key": {
+                    "type": "string",
+                    "default": "#1155FF",
+                    "description": "Color of basic keys (lines that end with a colon)."
+                },
+                "denizenscript.theme_colors.event_line": {
+                    "type": "string",
+                    "default": "#1155FF",
+                    "description": "Color of basic event line after the 'on' / 'after' prefix."
+                },
+                "denizenscript.theme_colors.event_switch": {
+                    "type": "string",
+                    "default": "#1155FF|style=italic",
+                    "description": "Color of an event switch label."
+                },
+                "denizenscript.theme_colors.event_switch_value": {
+                    "type": "string",
+                    "default": "#1155FF",
+                    "description": "Color of an event switch value."
+                },
+                "denizenscript.theme_colors.key_inline": {
+                    "type": "string",
+                    "default": "#1155FF",
+                    "description": "Color of inline keys (lines that contain a colon, and don't start with a dash)."
+                },
+                "denizenscript.theme_colors.command": {
+                    "type": "string",
+                    "default": "#DD99FF|style=italic",
+                    "description": "Color of command names."
+                },
+                "denizenscript.theme_colors.quote_double": {
+                    "type": "string",
+                    "default": "#77BBF5",
+                    "description": "Color of double-quoted sections."
+                },
+                "denizenscript.theme_colors.quote_single": {
+                    "type": "string",
+                    "default": "#88DDFF",
+                    "description": "Color of single-quoted sections."
+                },
+                "denizenscript.theme_colors.def_name": {
+                    "type": "string",
+                    "default": "#33CCFF|style=italic",
+                    "description": "Color of definition names."
+                },
+                "denizenscript.theme_colors.tag": {
+                    "type": "string",
+                    "default": "#AAAAAA",
+                    "description": "Color of <tags>."
+                },
+                "denizenscript.theme_colors.tag_dot": {
+                    "type": "string",
+                    "default": "#EEEEFF",
+                    "description": "Color of the dot symbol within tags."
+                },
+                "denizenscript.theme_colors.tag_param": {
+                    "type": "string",
+                    "default": "#7777FF",
+                    "description": "Color of [parameters] within tags, inside the brackets."
+                },
+                "denizenscript.theme_colors.tag_param_bracket": {
+                    "type": "string",
+                    "default": "#7777FF",
+                    "description": "Color of the brackets for [parameters] within tags."
+                },
+                "denizenscript.theme_colors.colons": {
+                    "type": "string",
+                    "default": "#66CCFF|weight=bold",
+                    "description": "Colons, on a key, the end of a command, or inside events (and also some other operators)."
+                },
+                "denizenscript.theme_colors.if_operators": {
+                    "type": "string",
+                    "default": "#7777FF|weight=bold",
+                    "description": "If command operator symbols."
+                },
+                "denizenscript.theme_colors.data_actions": {
+                    "type": "string",
+                    "default": "#7777FF|weight=bold",
+                    "description": "Data action symbols."
+                },
+                "denizenscript.theme_colors.bad_space": {
+                    "type": "string",
+                    "default": "#FFFFFF|background=#440000",
+                    "description": "Highlighting for bad spaces (eg past end of line)."
+                },
+                "denizenscript.theme_colors.space": {
+                    "type": "string",
+                    "default": "#444444",
+                    "description": "Highlighting for a normal space (incase spaces are rendered)."
+                },
+                "denizenscript.theme_colors.normal": {
+                    "type": "string",
+                    "default": "#FFFFFF",
+                    "description": "Highlighting for anything not otherwise specified."
+                },
+                "denizenscript.theme_colors.text_color_map": {
+                    "type": "string",
+                    "default": "base=#00AA00,emphasis=#55FFFF,error=#FF5555,warning=#FFFF55,item=#FFAA00,lore=#AAAAAA,npc=#55FF55,default=#FFFFFF",
+                    "description": "Custom color preferences to match your Denizen/config.yml, but RGB Hex format only."
+                },
+                "denizenscript.behaviors.do_inline_colors": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to generate the correct local colors for color tags."
+                },
+                "denizenscript.behaviors.display_dark_colors": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to generate inline colors that are extremely dark (ie hard to see)."
+                },
+                "denizenscript.behaviors.use_custom_syntax_colors": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use the legacy DenizenScript decoration colors instead of the active VS Code theme's TextMate colors."
+                },
+                "denizenscript.behaviors.do_hover_docs": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to show meta documentation for tags/commands/etc."
+                },
+                "denizenscript.behaviors.do_tab_completes": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to suggest tab completions."
+                },
+                "denizenscript.behaviors.track_full_workspace": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to track the content of the full workspace (if false, will only scan the currently open file)."
+                },
+                "denizenscript.extra_sources": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Optional list of extra meta sources (direct zip links), separated by | pipes."
+                },
+                "refinedDenizenscript.update.githubRepo": {
+                    "type": "string",
+                    "default": "Humususus/refined-denizenScript",
+                    "description": "GitHub repository used for Refined DenizenScript update checks, in owner/repo format."
+                },
+                "refinedDenizenscript.update.autoCheck": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to automatically check GitHub Releases for Refined DenizenScript updates."
+                },
+                "refinedDenizenscript.update.checkIntervalHours": {
+                    "type": "number",
+                    "default": 12,
+                    "minimum": 1,
+                    "description": "Minimum number of hours between automatic Refined DenizenScript update checks."
+                },
+                "denizenscript.debug.highlighting": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to output debug logs for syntax highlighting."
+                },
+                "denizenscript.debug.folding": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to output debug logs for syntax folding."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./ --skipLibCheck",
+        "package": "vsce package"
+    },
+    "devDependencies": {
+        "@vscode/vsce": "^2.15.0",
+        "@types/node": "^16.7.7",
+        "@types/vscode": "^1.34.0",
+        "typescript": "^4.9.5"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^7.0.0"
+    },
+    "extensionDependencies": [
+        "ms-dotnettools.vscode-dotnet-runtime"
+    ]
+}
