@@ -555,26 +555,33 @@ function getSelectedFolder(uri?: vscode.Uri) : string | undefined {
     return undefined;
 }
 
-async function getScriptTargetFolder(uri?: vscode.Uri) : Promise<string | undefined> {
+function getActiveEditorFolder() : string | undefined {
+    const activeUri = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri;
+    if (!activeUri || activeUri.scheme != "file") {
+        return undefined;
+    }
+    return path.dirname(activeUri.fsPath);
+}
+
+function getScriptTargetFolder(uri?: vscode.Uri) : string | undefined {
     const selectedFolder = getSelectedFolder(uri);
-    if (selectedFolder && isInsideDenizenScriptPath(selectedFolder + path.sep)) {
+    if (selectedFolder) {
         return selectedFolder;
     }
+    const activeFolder = getActiveEditorFolder();
+    if (activeFolder) {
+        return activeFolder;
+    }
     const scriptRoot = getDenizenScriptRoot();
-    if (!scriptRoot) {
-        return undefined;
+    if (scriptRoot) {
+        return scriptRoot.fsPath;
     }
-    const category = await pickDenizenCategory();
-    if (!category) {
-        return undefined;
-    }
-    const categoryPath = path.join(scriptRoot.fsPath, category);
-    ensureDirectory(categoryPath);
-    return categoryPath;
+    const root = getWorkspaceRoot();
+    return root ? root.fsPath : undefined;
 }
 
 async function createDenizenScriptFile(uri?: vscode.Uri) {
-    const targetFolder = await getScriptTargetFolder(uri);
+    const targetFolder = getScriptTargetFolder(uri);
     if (!targetFolder) {
         return;
     }

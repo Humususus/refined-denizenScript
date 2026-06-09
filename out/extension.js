@@ -520,28 +520,32 @@ function getSelectedFolder(uri) {
     }
     return undefined;
 }
+function getActiveEditorFolder() {
+    const activeUri = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri;
+    if (!activeUri || activeUri.scheme != "file") {
+        return undefined;
+    }
+    return path.dirname(activeUri.fsPath);
+}
 function getScriptTargetFolder(uri) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const selectedFolder = getSelectedFolder(uri);
-        if (selectedFolder && isInsideDenizenScriptPath(selectedFolder + path.sep)) {
-            return selectedFolder;
-        }
-        const scriptRoot = getDenizenScriptRoot();
-        if (!scriptRoot) {
-            return undefined;
-        }
-        const category = yield pickDenizenCategory();
-        if (!category) {
-            return undefined;
-        }
-        const categoryPath = path.join(scriptRoot.fsPath, category);
-        ensureDirectory(categoryPath);
-        return categoryPath;
-    });
+    const selectedFolder = getSelectedFolder(uri);
+    if (selectedFolder) {
+        return selectedFolder;
+    }
+    const activeFolder = getActiveEditorFolder();
+    if (activeFolder) {
+        return activeFolder;
+    }
+    const scriptRoot = getDenizenScriptRoot();
+    if (scriptRoot) {
+        return scriptRoot.fsPath;
+    }
+    const root = getWorkspaceRoot();
+    return root ? root.fsPath : undefined;
 }
 function createDenizenScriptFile(uri) {
     return __awaiter(this, void 0, void 0, function* () {
-        const targetFolder = yield getScriptTargetFolder(uri);
+        const targetFolder = getScriptTargetFolder(uri);
         if (!targetFolder) {
             return;
         }
