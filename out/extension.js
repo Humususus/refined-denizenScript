@@ -9,8 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.activate = activate;
-exports.deactivate = deactivate;
+exports.deactivate = exports.activate = void 0;
 const vscode = require("vscode");
 const languageClientNode = require("vscode-languageclient/node");
 const path = require("path");
@@ -131,22 +130,12 @@ const colorTypes = [
 function loadAllColors() {
     configuration = vscode.workspace.getConfiguration();
     useCustomSyntaxColors = configuration.get("denizenscript.behaviors.use_custom_syntax_colors") === true;
-    if (!useCustomSyntaxColors) {
-        return;
-    }
-    for (const i in colorTypes) {
-        let str = configuration.get("denizenscript.theme_colors." + colorTypes[i]);
-        if (str === undefined) {
-            outputChannel.appendLine("Missing color config for " + colorTypes[i]);
-            continue;
-        }
-        colorSet(colorTypes[i], str);
-    }
     headerSymbols = configuration.get("denizenscript.header_symbols");
     debugHighlighting = configuration.get("denizenscript.debug.highlighting");
     debugFolding = configuration.get("denizenscript.debug.folding");
     doInlineColors = configuration.get("denizenscript.behaviors.do_inline_colors");
     displayDarkColors = configuration.get("denizenscript.behaviors.display_dark_colors");
+    tagSpecialColors = Object.assign({}, baseTagSpecialColors);
     const customColors = configuration.get("denizenscript.theme_colors.text_color_map");
     const colorsSplit = customColors.split(',');
     for (const i in colorsSplit) {
@@ -158,6 +147,18 @@ function loadAllColors() {
         else {
             outputChannel.appendLine("Cannot interpret color " + color);
         }
+    }
+    applyConfigColors();
+    if (!useCustomSyntaxColors) {
+        return;
+    }
+    for (const i in colorTypes) {
+        let str = configuration.get("denizenscript.theme_colors." + colorTypes[i]);
+        if (str === undefined) {
+            outputChannel.appendLine("Missing color config for " + colorTypes[i]);
+            continue;
+        }
+        colorSet(colorTypes[i], str);
     }
 }
 function activateHighlighter(context) {
@@ -874,9 +875,6 @@ function isDialogScriptDiagnostic(uri, diagnostic) {
 let refreshTimer = undefined;
 function refreshDecor() {
     refreshTimer = undefined;
-    if (!useCustomSyntaxColors) {
-        return;
-    }
     for (const editor of vscode.window.visibleTextEditors) {
         const uri = editor.document.uri.toString();
         if (!uri.endsWith(".dsc")) {
@@ -887,8 +885,13 @@ function refreshDecor() {
 }
 let decorFixes = [];
 function addDecor(decorations, type, lineNumber, startChar, endChar) {
-    if (!(type in highlightDecors) && type.startsWith("auto:")) {
+    if (!(type in highlightDecors)) {
+        if (!type.startsWith("auto:")) {
+            return;
+        }
         highlightDecors[type] = vscode.window.createTextEditorDecorationType(parseColor(type.substring("auto:".length)));
+    }
+    if (!(type in decorations)) {
         decorations[type] = [];
     }
     const originalStartChar = startChar;
@@ -1039,7 +1042,7 @@ function checkIfHasTagEnd(arg, quoted, quoteMode, canQuote) {
     }
     return false;
 }
-const tagSpecialColors = {
+const baseTagSpecialColors = {
     "&0": "#000000", "black": "#000000",
     "&1": "#0000AA", "dark_blue": "#0000AA",
     "&2": "#00AA00", "dark_green": "#00AA00",
@@ -1057,6 +1060,7 @@ const tagSpecialColors = {
     "&e": "#FFFF55", "yellow": "#FFFF55",
     "&f": "#FFFFFF", "white": "#FFFFFF", "&r": "#FFFFFF", "reset": "#FFFFFF"
 };
+let tagSpecialColors = Object.assign({}, baseTagSpecialColors);
 const formatCodes = {
     "&l": "bold", "bold": "bold",
     "&o": "italic", "italic": "italic",
@@ -1115,6 +1119,9 @@ function getTagColor(tagText, preColor) {
         return null;
     }
     tagText = tagText.toLowerCase();
+    if (tagText.startsWith("#") && tagText.length == 7 && isHex(tagText.substring(1))) {
+        return fixDark(tagText);
+    }
     if (tagText in tagSpecialColors) {
         return fixDark(tagSpecialColors[tagText]);
     }
@@ -1144,7 +1151,7 @@ function getTagColor(tagText, preColor) {
     }
     return null;
 }
-const TAG_ALLOWED = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&_[";
+const TAG_ALLOWED = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&_#[";
 const dataActions = [":->:", ":<-:", ":|:", ":!", ":++", ":--", ":<-", ":+:", ":-:", ":*:", ":/:", ":"];
 function decorateArg(arg, start, lineNumber, decorations, canQuote, contextualLabel) {
     const len = arg.length;
@@ -1685,12 +1692,20 @@ function applyConfigColors() {
     for (const name in configColors) {
         const val = configColors[name];
         let color = "";
-        if (val.startsWith("<") && val.endsWith(">")) {
-            for (const tag of val.slice(1, -1).split("><")) {
+        const tagMatches = val.match(/<([^<>]+)>/g);
+        if (tagMatches && tagMatches.length > 0) {
+            for (const rawTag of tagMatches) {
+                const tag = rawTag.substring(1, rawTag.length - 1);
                 const newColor = getTagColor(tag, color);
                 if (newColor) {
                     color = newColor;
                 }
+            }
+        }
+        else {
+            const directColor = getTagColor(val, "");
+            if (directColor) {
+                color = directColor;
             }
         }
         if (color != "") {
@@ -1815,6 +1830,7 @@ function activate(context) {
         outputChannel.appendLine('Denizen extension has been activated');
     });
 }
+exports.activate = activate;
 class InProcFold {
     constructor(start, spacing, isCommand) {
         this.start = start;
@@ -1824,4 +1840,5 @@ class InProcFold {
 }
 function deactivate() {
 }
+exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map

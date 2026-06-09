@@ -131,22 +131,12 @@ const colorTypes : string[] = [
 function loadAllColors() {
     configuration = vscode.workspace.getConfiguration();
     useCustomSyntaxColors = configuration.get("denizenscript.behaviors.use_custom_syntax_colors") === true;
-    if (!useCustomSyntaxColors) {
-        return;
-    }
-    for (const i in colorTypes) {
-        let str : string = configuration.get("denizenscript.theme_colors." + colorTypes[i]);
-        if (str === undefined) {
-            outputChannel.appendLine("Missing color config for " + colorTypes[i]);
-            continue;
-        }
-        colorSet(colorTypes[i], str);
-    }
     headerSymbols = configuration.get("denizenscript.header_symbols");
     debugHighlighting = configuration.get("denizenscript.debug.highlighting");
     debugFolding = configuration.get("denizenscript.debug.folding");
     doInlineColors = configuration.get("denizenscript.behaviors.do_inline_colors");
     displayDarkColors = configuration.get("denizenscript.behaviors.display_dark_colors");
+    tagSpecialColors = Object.assign({}, baseTagSpecialColors);
     const customColors : string = configuration.get("denizenscript.theme_colors.text_color_map");
     const colorsSplit : string[] = customColors.split(',');
     for (const i in colorsSplit) {
@@ -158,6 +148,18 @@ function loadAllColors() {
         else {
             outputChannel.appendLine("Cannot interpret color " + color);
         }
+    }
+    applyConfigColors();
+    if (!useCustomSyntaxColors) {
+        return;
+    }
+    for (const i in colorTypes) {
+        let str : string = configuration.get("denizenscript.theme_colors." + colorTypes[i]);
+        if (str === undefined) {
+            outputChannel.appendLine("Missing color config for " + colorTypes[i]);
+            continue;
+        }
+        colorSet(colorTypes[i], str);
     }
 }
 
@@ -933,9 +935,6 @@ let refreshTimer: NodeJS.Timer | undefined = undefined;
 
 function refreshDecor() {
     refreshTimer = undefined;
-    if (!useCustomSyntaxColors) {
-        return;
-    }
     for (const editor of vscode.window.visibleTextEditors) {
         const uri = editor.document.uri.toString();
         if (!uri.endsWith(".dsc")) {
@@ -948,8 +947,13 @@ function refreshDecor() {
 let decorFixes: number[] = [];
 
 function addDecor(decorations: { [color: string]: vscode.Range[] }, type: string, lineNumber: number, startChar: number, endChar: number) {
-    if (!(type in highlightDecors) && type.startsWith("auto:")) {
+    if (!(type in highlightDecors)) {
+        if (!type.startsWith("auto:")) {
+            return;
+        }
         highlightDecors[type] = vscode.window.createTextEditorDecorationType(parseColor(type.substring("auto:".length)));
+    }
+    if (!(type in decorations)) {
         decorations[type] = [];
     }
     const originalStartChar = startChar;
@@ -1107,7 +1111,7 @@ function checkIfHasTagEnd(arg : string, quoted: boolean, quoteMode: string, canQ
 }
 
 
-const tagSpecialColors: { [color: string]: string } = {
+const baseTagSpecialColors: { [color: string]: string } = {
     "&0": "#000000", "black": "#000000",
     "&1": "#0000AA", "dark_blue": "#0000AA",
     "&2": "#00AA00", "dark_green": "#00AA00",
@@ -1125,6 +1129,7 @@ const tagSpecialColors: { [color: string]: string } = {
     "&e": "#FFFF55", "yellow": "#FFFF55",
     "&f": "#FFFFFF", "white": "#FFFFFF", "&r": "#FFFFFF", "reset": "#FFFFFF"
 };
+let tagSpecialColors: { [color: string]: string } = Object.assign({}, baseTagSpecialColors);
 const formatCodes: { [code: string]: string } = {
     "&l": "bold", "bold": "bold",
     "&o": "italic", "italic": "italic",
@@ -1188,6 +1193,9 @@ function getTagColor(tagText : string, preColor : string) : string {
         return null;
     }
     tagText = tagText.toLowerCase();
+    if (tagText.startsWith("#") && tagText.length == 7 && isHex(tagText.substring(1))) {
+        return fixDark(tagText);
+    }
     if (tagText in tagSpecialColors) {
         return fixDark(tagSpecialColors[tagText]);
     }
@@ -1218,7 +1226,7 @@ function getTagColor(tagText : string, preColor : string) : string {
     return null;
 }
 
-const TAG_ALLOWED : string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&_[";
+const TAG_ALLOWED : string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&_#[";
 const dataActions : string[] = [ ":->:", ":<-:", ":|:", ":!", ":++", ":--", ":<-", ":+:", ":-:", ":*:", ":/:", ":" ];
 
 function decorateArg(arg : string, start: number, lineNumber: number, decorations: { [color: string]: vscode.Range[] }, canQuote : boolean, contextualLabel : string) {
@@ -1774,12 +1782,20 @@ function applyConfigColors() {
     for (const name in configColors) {
         const val : string = configColors[name];
         let color = "";
-        if (val.startsWith("<") && val.endsWith(">")) {
-            for (const tag of val.slice(1, -1).split("><")) {
+        const tagMatches = val.match(/<([^<>]+)>/g);
+        if (tagMatches && tagMatches.length > 0) {
+            for (const rawTag of tagMatches) {
+                const tag = rawTag.substring(1, rawTag.length - 1);
                 const newColor : string = getTagColor(tag, color);
                 if (newColor) {
                     color = newColor;
                 }
+            }
+        }
+        else {
+            const directColor : string = getTagColor(val, "");
+            if (directColor) {
+                color = directColor;
             }
         }
         if (color != "") {

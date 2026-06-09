@@ -146,7 +146,7 @@
                 },
                 {
                     "name": "meta.mapping.value.denizenscript",
-                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^#\\s]+)",
+                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^#\\r\\n]*)",
                     "captures": {
                         "2": {
                             "name": "entity.name.section.denizenscript"
