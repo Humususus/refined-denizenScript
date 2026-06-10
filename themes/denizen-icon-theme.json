@@ -47,6 +47,30 @@
         },
         "_denizen_animation_light": {
             "iconPath": "../icons/animation_d_icon_light.svg"
+        },
+        "_denizen_command": {
+            "iconPath": "../icons/command_d_icon.svg"
+        },
+        "_denizen_command_light": {
+            "iconPath": "../icons/command_d_icon_light.svg"
+        },
+        "_denizen_entity": {
+            "iconPath": "../icons/entity_d_icon.svg"
+        },
+        "_denizen_entity_light": {
+            "iconPath": "../icons/entity_d_icon_light.svg"
+        },
+        "_denizen_task": {
+            "iconPath": "../icons/task_d_icon.svg"
+        },
+        "_denizen_task_light": {
+            "iconPath": "../icons/task_d_icon_light.svg"
+        },
+        "_denizen_docs": {
+            "iconPath": "../icons/docs_d_icon.svg"
+        },
+        "_denizen_docs_light": {
+            "iconPath": "../icons/docs_d_icon_light.svg"
         }
     },
     "fileExtensions": {
@@ -74,7 +98,16 @@
         "mains": "_denizen_main",
         "animation": "_denizen_animation",
         "animations": "_denizen_animation",
-        "anim": "_denizen_animation"
+        "anim": "_denizen_animation",
+        "command": "_denizen_command",
+        "commands": "_denizen_command",
+        "cmd": "_denizen_command",
+        "entity": "_denizen_entity",
+        "entities": "_denizen_entity",
+        "task": "_denizen_task",
+        "tasks": "_denizen_task",
+        "doc": "_denizen_docs",
+        "docs": "_denizen_docs"
     },
     "folderNamesExpanded": {
         "handle": "_denizen_handle",
@@ -95,7 +128,16 @@
         "mains": "_denizen_main",
         "animation": "_denizen_animation",
         "animations": "_denizen_animation",
-        "anim": "_denizen_animation"
+        "anim": "_denizen_animation",
+        "command": "_denizen_command",
+        "commands": "_denizen_command",
+        "cmd": "_denizen_command",
+        "entity": "_denizen_entity",
+        "entities": "_denizen_entity",
+        "task": "_denizen_task",
+        "tasks": "_denizen_task",
+        "doc": "_denizen_docs",
+        "docs": "_denizen_docs"
     },
     "light": {
         "fileExtensions": {
@@ -123,7 +165,16 @@
             "mains": "_denizen_main_light",
             "animation": "_denizen_animation_light",
             "animations": "_denizen_animation_light",
-            "anim": "_denizen_animation_light"
+            "anim": "_denizen_animation_light",
+            "command": "_denizen_command_light",
+            "commands": "_denizen_command_light",
+            "cmd": "_denizen_command_light",
+            "entity": "_denizen_entity_light",
+            "entities": "_denizen_entity_light",
+            "task": "_denizen_task_light",
+            "tasks": "_denizen_task_light",
+            "doc": "_denizen_docs_light",
+            "docs": "_denizen_docs_light"
         },
         "folderNamesExpanded": {
             "handle": "_denizen_handle_light",
@@ -144,7 +195,16 @@
             "mains": "_denizen_main_light",
             "animation": "_denizen_animation_light",
             "animations": "_denizen_animation_light",
-            "anim": "_denizen_animation_light"
+            "anim": "_denizen_animation_light",
+            "command": "_denizen_command_light",
+            "commands": "_denizen_command_light",
+            "cmd": "_denizen_command_light",
+            "entity": "_denizen_entity_light",
+            "entities": "_denizen_entity_light",
+            "task": "_denizen_task_light",
+            "tasks": "_denizen_task_light",
+            "doc": "_denizen_docs_light",
+            "docs": "_denizen_docs_light"
         }
     }
 }

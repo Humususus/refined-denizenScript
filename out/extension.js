@@ -446,9 +446,13 @@ const denizenCategories = [
     { label: "dialog", folder: "dialog", description: "Dialog scripts" },
     { label: "handle", folder: "handle", description: "Handler scripts" },
     { label: "data", folder: "data", description: "Data scripts" },
+    { label: "entity", folder: "entity", description: "Entity scripts" },
+    { label: "task", folder: "task", description: "Task scripts" },
+    { label: "doc", folder: "doc", description: "Documentation scripts" },
     { label: "util", folder: "util", description: "Utility scripts" },
     { label: "world", folder: "world", description: "World scripts" },
-    { label: "animation", folder: "animation", description: "Animation scripts" }
+    { label: "animation", folder: "animation", description: "Animation scripts" },
+    { label: "command", folder: "command", description: "Command scripts" }
 ];
 function getWorkspaceRoot() {
     const folders = vscode.workspace.workspaceFolders;
@@ -943,8 +947,14 @@ function getDenizenFileKind(name) {
     if (lower.indexOf("dialog") != -1) {
         return "dialog";
     }
+    if (lower.indexOf("entity") != -1 || lower.indexOf("entities") != -1) {
+        return "entity";
+    }
     if (lower.indexOf("task") != -1) {
         return "task";
+    }
+    if (lower.indexOf("doc") != -1) {
+        return "doc";
     }
     if (lower.indexOf("command") != -1 || lower.indexOf("cmd") != -1) {
         return "command";
@@ -967,8 +977,14 @@ function getKindLabel(kind) {
     if (kind == "dialog") {
         return "Dialog";
     }
+    if (kind == "entity") {
+        return "Entity";
+    }
     if (kind == "task") {
         return "Task";
+    }
+    if (kind == "doc") {
+        return "Docs";
     }
     if (kind == "command") {
         return "Command";
@@ -995,6 +1011,22 @@ function getIconPath(context, kind) {
     else if (kind == "dialog") {
         icon = "dialog_d_icon.svg";
         lightIcon = "dialog_d_icon_light.svg";
+    }
+    else if (kind == "entity") {
+        icon = "entity_d_icon.svg";
+        lightIcon = "entity_d_icon_light.svg";
+    }
+    else if (kind == "task") {
+        icon = "task_d_icon.svg";
+        lightIcon = "task_d_icon_light.svg";
+    }
+    else if (kind == "doc") {
+        icon = "docs_d_icon.svg";
+        lightIcon = "docs_d_icon_light.svg";
+    }
+    else if (kind == "command") {
+        icon = "command_d_icon.svg";
+        lightIcon = "command_d_icon_light.svg";
     }
     return {
         light: context.asAbsolutePath(path.join("icons", lightIcon)),
