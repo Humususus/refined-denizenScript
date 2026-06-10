@@ -20,6 +20,41 @@ This fork aims to improve usability and maintain compatibility while keeping the
 
 ---
 
+## Features
+
+This fork includes the original DenizenVSCode behavior plus additional usability features.
+
+### DenizenM support
+
+- Autocomplete and hover documentation for DenizenM text formatting tags and events:
+- [To DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1)
+
+### Denizen-Utilities support
+
+- `dialog` snippet for quickly creating a dialog container fron Denizen-Utilities.
+- Autocomplete for `<context.KEY>` values from `inputs.*.key` inside the current dialog container.
+- [To Denizen-Utilities](https://modrinth.com/project/denizen-utilities)
+
+### Syntax highlighting improvements
+
+- Inline Denizen color tags are rendered in-editor, including examples like `<gold>`, `<&6>`, and `<#RRGGBB>`.
+- Custom color containers from Denizen `config.yml` are parsed and applied when possible.
+
+### Escaped symbol helper
+
+- Select text and press `/` to convert Denizen special characters into escaped symbols.
+- Type a delimited value like `/[]/` to convert it into `<&lb><&rb>`.
+- Press Backspace immediately after an escape conversion to restore the original `/.../` text.
+
+### Workflow tools
+
+- Explorer commands for creating Denizen script categories and script files.
+- Automatic `.dsc` extension handling for files created under `denizen/script`.
+- Workspace completions for local defines and tracked player/server flags.
+- Optional GitHub release update checks for this fork.
+
+---
+
 ## 📥 Installation Guide
 
 ### Method 1: Install from `.vsix` file (Recommended)
