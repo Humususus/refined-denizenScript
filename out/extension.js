@@ -1959,6 +1959,131 @@ function applyConfigColors() {
         }
     }
 }
+const denizenEscapeCodes = {
+    "|": "<&pipe>",
+    "<": "<&lt>",
+    ">": "<&gt>",
+    "\n": "<&nl>",
+    "&": "<&amp>",
+    ";": "<&sc>",
+    "[": "<&lb>",
+    "]": "<&rb>",
+    ":": "<&co>",
+    "@": "<&at>",
+    ".": "<&dot>",
+    "\\": "<&bs>",
+    "'": "<&sq>",
+    "\"": "<&quo>",
+    "!": "<&exc>",
+    "/": "<&fs>",
+    "§": "<&ss>",
+    "#": "<&ns>",
+    "=": "<&eq>",
+    "{": "<&lc>",
+    "}": "<&rc>"
+};
+let lastDenizenEscapedEdit = undefined;
+function escapeDenizenText(text) {
+    let result = "";
+    for (const char of text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")) {
+        result += denizenEscapeCodes[char] || char;
+    }
+    return result;
+}
+function isDenizenEditor(editor) {
+    return !!editor && editor.document.languageId == "denizenscript";
+}
+function typeDefaultText(text) {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield vscode.commands.executeCommand("default:type", { text });
+    });
+}
+function escapeSelectionOrDelimitedText() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const editor = vscode.window.activeTextEditor;
+        if (!isDenizenEditor(editor)) {
+            yield typeDefaultText("/");
+            return;
+        }
+        const document = editor.document;
+        const nonEmptySelections = editor.selections.filter(selection => !selection.isEmpty);
+        if (nonEmptySelections.length > 0) {
+            const first = nonEmptySelections[0];
+            const original = document.getText(first);
+            const escaped = escapeDenizenText(original);
+            yield editor.edit(editBuilder => {
+                for (const selection of nonEmptySelections) {
+                    editBuilder.replace(selection, escapeDenizenText(document.getText(selection)));
+                }
+            });
+            const end = first.start.translate(0, escaped.length);
+            lastDenizenEscapedEdit = {
+                uri: document.uri.toString(),
+                range: new vscode.Range(first.start, end),
+                originalText: "/" + original + "/"
+            };
+            editor.selection = new vscode.Selection(end, end);
+            return;
+        }
+        if (editor.selections.length != 1) {
+            yield typeDefaultText("/");
+            return;
+        }
+        const position = editor.selection.active;
+        const linePrefix = document.lineAt(position.line).text.substring(0, position.character);
+        const slashIndex = linePrefix.lastIndexOf("/");
+        if (slashIndex == -1 || slashIndex == position.character - 1) {
+            yield typeDefaultText("/");
+            return;
+        }
+        const rawText = linePrefix.substring(slashIndex + 1);
+        if (rawText.trim().length == 0) {
+            yield typeDefaultText("/");
+            return;
+        }
+        const escaped = escapeDenizenText(rawText);
+        const replaceRange = new vscode.Range(new vscode.Position(position.line, slashIndex), position);
+        yield editor.edit(editBuilder => {
+            editBuilder.replace(replaceRange, escaped);
+        });
+        const start = new vscode.Position(position.line, slashIndex);
+        const end = start.translate(0, escaped.length);
+        lastDenizenEscapedEdit = {
+            uri: document.uri.toString(),
+            range: new vscode.Range(start, end),
+            originalText: "/" + rawText + "/"
+        };
+        editor.selection = new vscode.Selection(end, end);
+    });
+}
+function undoLastDenizenEscapeOrBackspace() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const editor = vscode.window.activeTextEditor;
+        if (!isDenizenEditor(editor) || !lastDenizenEscapedEdit || editor.document.uri.toString() != lastDenizenEscapedEdit.uri || editor.selections.length != 1 || !editor.selection.isEmpty) {
+            yield vscode.commands.executeCommand("deleteLeft");
+            return;
+        }
+        const position = editor.selection.active;
+        const range = lastDenizenEscapedEdit.range;
+        const isAtEscapedEnd = position.isEqual(range.end);
+        const isInsideEscapedRange = position.isAfter(range.start) && position.isBeforeOrEqual(range.end);
+        if (!isAtEscapedEnd && !isInsideEscapedRange) {
+            yield vscode.commands.executeCommand("deleteLeft");
+            return;
+        }
+        const originalText = lastDenizenEscapedEdit.originalText;
+        yield editor.edit(editBuilder => {
+            editBuilder.replace(range, originalText);
+        });
+        const end = range.start.translate(0, originalText.length);
+        editor.selection = new vscode.Selection(end, end);
+        lastDenizenEscapedEdit = undefined;
+    });
+}
+function activateDenizenEscaping(context) {
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.escapeSelectionOrDelimitedText", escapeSelectionOrDelimitedText));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.undoEscapeOrBackspace", undoLastDenizenEscapeOrBackspace));
+}
 function tryLoadConfigYaml(relativeTo) {
     if (hasLoadedConfig) {
         return;
@@ -2018,6 +2143,7 @@ function activate(context) {
         activateUpdateChecks(context);
         activateDenizenFileCommands(context);
         activateWorkspaceCompletions(context);
+        activateDenizenEscaping(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.uri.toString().endsWith(".dsc")) {
                 tryLoadConfigYaml(doc);

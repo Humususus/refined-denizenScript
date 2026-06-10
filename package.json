@@ -35,6 +35,14 @@
             {
                 "command": "refinedDenizenscript.checkForUpdates",
                 "title": "Refined DenizenScript: Check for Updates"
+            },
+            {
+                "command": "refinedDenizenscript.escapeSelectionOrDelimitedText",
+                "title": "Refined DenizenScript: Escape Selection or Delimited Text"
+            },
+            {
+                "command": "refinedDenizenscript.undoEscapeOrBackspace",
+                "title": "Refined DenizenScript: Undo Escape or Backspace"
             }
         ],
         "keybindings": [
@@ -47,6 +55,16 @@
                 "command": "refinedDenizenscript.createScriptFile",
                 "key": "ctrl+alt+d f",
                 "mac": "cmd+alt+d f"
+            },
+            {
+                "command": "refinedDenizenscript.escapeSelectionOrDelimitedText",
+                "key": "/",
+                "when": "editorTextFocus && editorLangId == denizenscript"
+            },
+            {
+                "command": "refinedDenizenscript.undoEscapeOrBackspace",
+                "key": "backspace",
+                "when": "editorTextFocus && editorLangId == denizenscript"
             }
         ],
         "menus": {
