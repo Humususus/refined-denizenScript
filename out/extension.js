@@ -62,6 +62,9 @@ function activateLanguageServer(context, dotnetPath) {
         },
         middleware: {
             provideCompletionItem: (document, position, context, token, next) => {
+                if (isWorkspaceFlagCompletionContext(document, position)) {
+                    return [];
+                }
                 return next(document, position, context, token);
             },
             handleDiagnostics: (uri, diagnostics, next) => {
@@ -609,6 +612,23 @@ function makeSnippetCompletion(label, detail, snippet, range) {
     item.range = range;
     return item;
 }
+function isWorkspaceFlagCompletionContext(document, position) {
+    return getFlagCompletionKind(document, position) !== undefined;
+}
+function getFlagCompletionKind(document, position) {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    if (/<player\.flag\[[A-Za-z0-9_\-.]*$/i.test(linePrefix)) {
+        return "player";
+    }
+    if (/<server\.flag\[[A-Za-z0-9_\-.]*$/i.test(linePrefix)) {
+        return "server";
+    }
+    const defineFlagMatch = /<\[([A-Za-z_][A-Za-z0-9_]*)\]\.flag\[[A-Za-z0-9_\-.]*$/i.exec(linePrefix);
+    if (!defineFlagMatch) {
+        return undefined;
+    }
+    return getContainerDefineTypes(document, position).get(defineFlagMatch[1].toLowerCase());
+}
 const denizenMEscapeTags = [
     {
         label: "&sprite",
@@ -641,6 +661,14 @@ const denizenMEscapeTags = [
         markdown: "`<&player_head[Tjtoxshpilivili1]>` or `<&player_head[!Tjtoxshpilivili1]>`\n\nRenders a player head texture. Prefix the name with `!` for face-only texture."
     }
 ];
+const denizenMBaseTags = [
+    {
+        label: "model",
+        insertText: "model[$1]",
+        detail: "BetterModel base tag",
+        markdown: "`<model[dragon]>`\n\nReturns a BMModelTag blueprint by template name."
+    }
+];
 const denizenMDotTags = [
     {
         label: "shadow_color",
@@ -671,6 +699,158 @@ const denizenMDotTags = [
         insertText: "unsorted",
         detail: "DenizenM entity search tag",
         markdown: "`<location.find_entities[...].within[...].unsorted>`\n\nBypasses distance-based sorting for better performance when order is not needed."
+    },
+    {
+        label: "limb",
+        insertText: "limb",
+        detail: "BetterModel PlayerTag tag",
+        markdown: "`<player.limb>`\n\nReturns the player's active BetterModel player-renderer limb tracker as a BMActiveModelTag."
+    },
+    {
+        label: "model",
+        insertText: "model[$1]",
+        detail: "BetterModel EntityTag tag",
+        markdown: "`<entity.model[dragon]>`\n\nReturns the BetterModel active tracker model with the specified name from the entity. If no name is provided, returns the first active model."
+    },
+    {
+        label: "models",
+        insertText: "models",
+        detail: "BetterModel EntityTag tag",
+        markdown: "`<entity.models>`\n\nReturns a list of all active BetterModel model names currently operating on the entity."
+    },
+    {
+        label: "entity",
+        insertText: "entity",
+        detail: "BetterModel BMActiveModelTag tag",
+        markdown: "`<[active_model].entity>`\n\nReturns the Bukkit entity that this active BetterModel tracker is attached to."
+    },
+    {
+        label: "name",
+        insertText: "name",
+        detail: "BetterModel model tag",
+        markdown: "`<[active_model].name>` or `<[bone].name>`\n\nReturns the model tracker, blueprint, or bone name."
+    },
+    {
+        label: "type",
+        insertText: "type",
+        detail: "BetterModel model tag",
+        markdown: "`<[active_model].type>`\n\nReturns the model template type, such as PLAYER or GENERAL."
+    },
+    {
+        label: "bone",
+        insertText: "bone[$1]",
+        detail: "BetterModel BMActiveModelTag tag",
+        markdown: "`<[active_model].bone[head]>`\n\nReturns a BMBoneTag for the named bone."
+    },
+    {
+        label: "bones",
+        insertText: "bones",
+        detail: "BetterModel BMActiveModelTag tag",
+        markdown: "`<[active_model].bones>`\n\nReturns a map of all structural bones, keyed by bone name."
+    },
+    {
+        label: "running_animation",
+        insertText: "running_animation",
+        detail: "BetterModel BMActiveModelTag tag",
+        markdown: "`<[active_model].running_animation>`\n\nReturns the animation name currently running. Append `.type` for the loop playback mode."
+    },
+    {
+        label: "animations",
+        insertText: "animations",
+        detail: "BetterModel model tag",
+        markdown: "`<[active_model].animations>` or `<model[dragon].animations>`\n\nReturns a list of configured animation names."
+    },
+    {
+        label: "animation_duration",
+        insertText: "animation_duration[$1]",
+        detail: "BetterModel model tag",
+        markdown: "`<[active_model].animation_duration[walk]>`\n\nReturns the total duration of the named animation."
+    },
+    {
+        label: "viewers",
+        insertText: "viewers",
+        detail: "BetterModel BMActiveModelTag tag",
+        markdown: "`<[active_model].viewers>`\n\nReturns online players currently viewing the model tracker."
+    },
+    {
+        label: "location",
+        insertText: "location",
+        detail: "BetterModel BMBoneTag tag",
+        markdown: "`<[bone].location>`\n\nReturns the current world location of the bone."
+    },
+    {
+        label: "euler",
+        insertText: "euler",
+        detail: "BetterModel BMBoneTag tag",
+        markdown: "`<[bone].euler>`\n\nReturns the bone rotation as Euler angles."
+    },
+    {
+        label: "passengers",
+        insertText: "passengers",
+        detail: "BetterModel BMBoneTag tag",
+        markdown: "`<[bone].passengers>`\n\nReturns entities mounted on this bone's seat."
+    },
+    {
+        label: "item",
+        insertText: "item",
+        detail: "BetterModel BMBoneTag tag",
+        markdown: "`<[bone].item>`\n\nReturns the ItemTag currently displayed on this bone."
+    },
+    {
+        label: "skin",
+        insertText: "skin",
+        detail: "BetterModel BMActiveModelTag mechanism",
+        markdown: "`adjust <[active_model]> skin:<uuid/player>`\n\nChanges the skin of the active model to the player skin associated with the specified UUID or PlayerTag. Only works for limb models."
+    },
+    {
+        label: "skin_url",
+        insertText: "skin_url",
+        detail: "SkinsRestorer PlayerTag tag",
+        markdown: "`<player.skin_url>`\n\nReturns the URL of the player's current skin texture."
+    },
+    {
+        label: "skin_type",
+        insertText: "skin_type",
+        detail: "SkinsRestorer PlayerTag tag",
+        markdown: "`<player.skin_type>`\n\nReturns the skin type: CUSTOM, LEGACY, PLAYER, or URL."
+    },
+    {
+        label: "discord_id",
+        insertText: "discord_id",
+        detail: "DiscordSRV PlayerTag tag",
+        markdown: "`<player.discord_id>`\n\nReturns the Discord snowflake ID linked to the Minecraft player's account, or null if none is linked."
+    }
+];
+const denizenMCommands = [
+    {
+        label: "bmmodel",
+        insertText: "bmmodel entity:$1 model:$2",
+        detail: "BetterModel command",
+        markdown: "`bmmodel entity:<entity> model:<model> (remove)`\n\nAttaches a specific BetterModel to an entity or removes an existing one. An entity can have multiple models at once."
+    },
+    {
+        label: "bmlimb",
+        insertText: "bmlimb target:$1 model:$2 animation:$3",
+        detail: "BetterModel command",
+        markdown: "`bmlimb target:<entity> model:<limb_model> animation:<animation> (loop:<mode>) (override)`\n\nPlays a specific limb animation for a player or NPC. Target must be a player-type entity."
+    },
+    {
+        label: "bmstate",
+        insertText: "bmstate model:$1 state:$2",
+        detail: "BetterModel command",
+        markdown: "`bmstate model:<BMActiveModelTag> (state:<animation>) (bones:<list>) (loop:<mode>) (speed:<#.#>) (override) (remove)`\n\nStarts, stops, or modifies animations on a model. Optionally targets specific bones."
+    },
+    {
+        label: "bmpart",
+        insertText: "bmpart entity:$1 model:$2 bone:$3 part:$4 from:$5",
+        detail: "BetterModel command",
+        markdown: "`bmpart entity:<entity> model:<model_name> bone:<bone> part:<limb_name> from:<player>`\n\nApplies a limb texture from an online player's skin to a specific bone."
+    },
+    {
+        label: "skin",
+        insertText: "skin $1",
+        detail: "SkinsRestorer command",
+        markdown: "`skin [<name>/<url>/<texture>] (<player>|...)`\n\nChanges the skin of the specified player(s). If no targets are specified, the queue player is used."
     }
 ];
 const denizenMCommandArgs = [
@@ -691,6 +871,84 @@ const denizenMCommandArgs = [
         insertText: "add",
         detail: "DenizenM resourcepack argument",
         markdown: "`resourcepack add ...`\n\nAdds an additional resource pack instead of replacing the existing stack."
+    },
+    {
+        label: "entity:",
+        insertText: "entity:$1",
+        detail: "BetterModel bmmodel/bmpart argument",
+        markdown: "`entity:<entity>`\n\nThe target entity holding or receiving a BetterModel model."
+    },
+    {
+        label: "target:",
+        insertText: "target:$1",
+        detail: "BetterModel bmlimb argument",
+        markdown: "`target:<entity>`\n\nThe player or NPC target for the limb animation."
+    },
+    {
+        label: "model:",
+        insertText: "model:$1",
+        detail: "BetterModel command argument",
+        markdown: "`model:<model>`\n\nThe model name, active tracker name, limb model name, or BMActiveModelTag depending on the command."
+    },
+    {
+        label: "animation:",
+        insertText: "animation:$1",
+        detail: "BetterModel bmlimb argument",
+        markdown: "`animation:<animation>`\n\nThe animation name to play on the limb."
+    },
+    {
+        label: "state:",
+        insertText: "state:$1",
+        detail: "BetterModel bmstate argument",
+        markdown: "`state:<animation>`\n\nThe animation name to start. Optional when stopping all animations via `remove`."
+    },
+    {
+        label: "bones:",
+        insertText: "bones:$1",
+        detail: "BetterModel bmstate argument",
+        markdown: "`bones:<list>`\n\nA list of bone names to target. Omit to affect all bones."
+    },
+    {
+        label: "loop:",
+        insertText: "loop:${1|PLAY_ONCE,LOOP,HOLD_ON_LAST|}",
+        detail: "BetterModel animation argument",
+        markdown: "`loop:PLAY_ONCE`, `loop:LOOP`, or `loop:HOLD_ON_LAST`\n\nControls animation playback mode."
+    },
+    {
+        label: "speed:",
+        insertText: "speed:$1",
+        detail: "BetterModel bmstate argument",
+        markdown: "`speed:<#.#>`\n\nPlayback speed multiplier. Defaults to 1.0."
+    },
+    {
+        label: "override",
+        insertText: "override",
+        detail: "BetterModel animation switch",
+        markdown: "`override`\n\nOverrides currently playing animations."
+    },
+    {
+        label: "remove",
+        insertText: "remove",
+        detail: "BetterModel command switch",
+        markdown: "`remove`\n\nRemoves a model or stops an animation, depending on the command."
+    },
+    {
+        label: "bone:",
+        insertText: "bone:$1",
+        detail: "BetterModel bmpart argument",
+        markdown: "`bone:<bone>`\n\nThe destination bone name in the model."
+    },
+    {
+        label: "part:",
+        insertText: "part:${1|HEAD,TORSO,LEFT_ARM,RIGHT_ARM,LEFT_LEG,RIGHT_LEG|}",
+        detail: "BetterModel bmpart argument",
+        markdown: "`part:<limb_name>`\n\nSource limb name from the player skin, such as HEAD or TORSO."
+    },
+    {
+        label: "from:",
+        insertText: "from:$1",
+        detail: "BetterModel bmpart argument",
+        markdown: "`from:<player>`\n\nAn online PlayerTag whose skin provides the texture source."
     }
 ];
 const denizenMEvents = [
@@ -699,14 +957,67 @@ const denizenMEvents = [
         insertText: "player unchecked sign edits:",
         detail: "DenizenM Paper event",
         markdown: "`on player unchecked sign edits:` or `after player unchecked sign edits:`\n\nPaper-specific event for unchecked sign edit handling."
+    },
+    {
+        label: "bm start reload",
+        insertText: "bm start reload:",
+        detail: "BetterModel event",
+        markdown: "`on bm start reload:`\n\nTriggers when BetterModel begins the reload process, before models and resource packs are regenerated."
+    },
+    {
+        label: "bm end reload",
+        insertText: "bm end reload:",
+        detail: "BetterModel event",
+        markdown: "`on bm end reload:`\n\nTriggers when BetterModel finishes reloading models and generating the resource pack.\n\nContext: `<context.result>` returns SUCCESS, FAILURE, or RELOAD."
+    },
+    {
+        label: "bm animation signal",
+        insertText: "bm animation signal:",
+        detail: "BetterModel event",
+        markdown: "`on bm animation signal name:<name>:`\n\nTriggers globally when a BetterModel Blockbench animation keyframe reaches a `denizen:` script signal.\n\nContexts include `<context.name>`, `<context.model>`, and custom `<context.[key]>` values."
+    },
+    {
+        label: "bm player animation signal",
+        insertText: "bm player animation signal:",
+        detail: "BetterModel event",
+        markdown: "`on bm player animation signal name:<name>:`\n\nTriggers per viewing player when an animation keyframe issues a personal visual `signal:` trigger."
+    },
+    {
+        label: "bm player model interact",
+        insertText: "bm player model interact:",
+        detail: "BetterModel event",
+        markdown: "`on bm player model interact name:<name>:`\n\nTriggers when a player left- or right-clicks any hitbox belonging to an active BetterModel model.\n\nContexts: `<context.model>`, `<context.hand>`."
+    },
+    {
+        label: "player skin apply",
+        insertText: "player skin apply:",
+        detail: "SkinsRestorer event",
+        markdown: "`on player skin apply:`\n\nTriggers when a player's skin is being applied via SkinsRestorer.\n\nContext: `<context.value>`. Determinations: `TEXTURE:<val>;<sig>`, `NAME:<name>`, `URL:<url>`."
+    },
+    {
+        label: "player links discord account",
+        insertText: "player links discord account:",
+        detail: "DiscordSRV event",
+        markdown: "`on player links discord account:`\n\nTriggers when a Minecraft player successfully links their Discord account.\n\nContext: `<context.discord_id>`."
+    },
+    {
+        label: "player unlinks discord account",
+        insertText: "player unlinks discord account:",
+        detail: "DiscordSRV event",
+        markdown: "`on player unlinks discord account:`\n\nTriggers when a Minecraft player unlinks their Discord account.\n\nContext: `<context.discord_id>`."
     }
 ];
 const denizenMKnownTerms = [
     "&sprite", "&shadow_color", "&shadow_gradient", "&dual_gradient", "&player_head",
     ".shadow_color", ".shadow_gradient", ".dual_gradient", ".rarity_color", ".unsorted",
+    ".limb", ".model", ".models", ".bone", ".bones", ".running_animation", ".animation_duration", ".viewers",
+    ".skin", ".skin_url", ".skin_type", ".discord_id", ".euler", ".passengers",
     " custom_model_data", "remove_resource_pack", "remove_resource_packs",
     " resourcepack ", " teleport ", " playeffect ", " async", " forced",
-    "player unchecked sign edits"
+    " bmmodel ", " bmlimb ", " bmstate ", " bmpart ", " skin ",
+    "bm start reload", "bm end reload", "bm animation signal", "bm player animation signal", "bm player model interact",
+    "player skin apply", "player links discord account", "player unlinks discord account",
+    "player unchecked sign edits", "bmactivemodeltag", "bmmodeltag", "bmbonetag"
 ];
 function makeDenizenMCompletion(doc, range) {
     const item = new vscode.CompletionItem(doc.label, vscode.CompletionItemKind.Function);
@@ -717,11 +1028,40 @@ function makeDenizenMCompletion(doc, range) {
     item.range = range;
     return item;
 }
+function labelMatchesInput(label, input) {
+    const cleanLabel = label.toLowerCase();
+    const cleanInput = input.toLowerCase();
+    if (cleanLabel.startsWith(cleanInput)) {
+        return true;
+    }
+    if (cleanLabel.startsWith("player ") && cleanLabel.substring("player ".length).startsWith(cleanInput)) {
+        return true;
+    }
+    if (cleanLabel.startsWith("bm ") && cleanLabel.substring("bm ".length).startsWith(cleanInput)) {
+        return true;
+    }
+    return false;
+}
 function makeDenizenMEscapeCompletion(doc, range) {
     const item = makeDenizenMCompletion(doc, range);
     item.insertText = new vscode.SnippetString(doc.label + doc.insertText.substring(doc.label.substring(1).length));
     item.filterText = doc.label;
     return item;
+}
+function getDenizenMBaseTagCompletions(document, position) {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const baseTagMatch = /<([A-Za-z0-9_]*)$/i.exec(linePrefix);
+    if (!baseTagMatch) {
+        return [];
+    }
+    const typed = baseTagMatch[1].toLowerCase();
+    if (typed.length == 0) {
+        return [];
+    }
+    const range = getCompletionRange(document, position, baseTagMatch[1].length);
+    return denizenMBaseTags
+        .filter(doc => doc.label.toLowerCase().startsWith(typed))
+        .map(doc => makeDenizenMCompletion(doc, range));
 }
 function isTopLevelContainerLine(line) {
     return /^[A-Za-z_][A-Za-z0-9_\-]*\s*:\s*(#.*)?$/.test(line);
@@ -747,6 +1087,21 @@ function getContainerText(document, position) {
     }
     return lines.join("\n");
 }
+function getContainerTextUntilPosition(document, position) {
+    let startLine = 0;
+    for (let line = position.line; line >= 0; line--) {
+        if (isTopLevelContainerLine(document.lineAt(line).text)) {
+            startLine = line;
+            break;
+        }
+    }
+    const lines = [];
+    for (let line = startLine; line <= position.line; line++) {
+        const text = document.lineAt(line).text;
+        lines.push(line == position.line ? text.substring(0, position.character) : text);
+    }
+    return lines.join("\n");
+}
 function getContainerDefines(document, position) {
     const defines = new Set();
     const defineMatcher = /^\s*-\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\b/i;
@@ -757,6 +1112,31 @@ function getContainerDefines(document, position) {
         }
     }
     return defines;
+}
+function inferDefineValueFlagKind(value) {
+    const clean = value.trim().toLowerCase();
+    if (/^<player(?:[.\[\]>]|$)/.test(clean) || /^player@/.test(clean)) {
+        return "player";
+    }
+    if (/^<server(?:[.\[\]>]|$)/.test(clean) || /^server@/.test(clean)) {
+        return "server";
+    }
+    return undefined;
+}
+function getContainerDefineTypes(document, position) {
+    const defineTypes = new Map();
+    const defineMatcher = /^\s*-\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/i;
+    for (const rawLine of getContainerTextUntilPosition(document, position).replace(/\r/g, "").split("\n")) {
+        const defineMatch = defineMatcher.exec(rawLine);
+        if (!defineMatch) {
+            continue;
+        }
+        const kind = inferDefineValueFlagKind(defineMatch[2]);
+        if (kind) {
+            defineTypes.set(defineMatch[1].toLowerCase(), kind);
+        }
+    }
+    return defineTypes;
 }
 function getDialogInputKeys(document, position) {
     const keys = new Set();
@@ -803,14 +1183,65 @@ function getDenizenMEventCompletions(document, position) {
         return [];
     }
     const typed = eventMatch[2].trimStart().toLowerCase();
-    if (typed.length == 0 || "player".startsWith(typed)) {
-        return [];
-    }
-    if (!"player unchecked sign edits".startsWith(typed) && !"unchecked sign edits".startsWith(typed)) {
+    if (typed.length == 0) {
         return [];
     }
     const range = getCompletionRange(document, position, eventMatch[2].length);
-    return denizenMEvents.map(doc => makeDenizenMCompletion(doc, range));
+    return denizenMEvents
+        .filter(doc => labelMatchesInput(doc.label, typed))
+        .map(doc => makeDenizenMCompletion(doc, range));
+}
+function getDenizenMCommandCompletions(document, position) {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const commandMatch = /^(\s*-\s*(?:~)?)([A-Za-z]*)$/i.exec(linePrefix);
+    if (!commandMatch) {
+        return [];
+    }
+    const typed = commandMatch[2].toLowerCase();
+    const range = getCompletionRange(document, position, commandMatch[2].length);
+    return denizenMCommands
+        .filter(doc => doc.label.toLowerCase().startsWith(typed))
+        .map(doc => makeDenizenMCompletion(doc, range));
+}
+function getDenizenMCommandArgCompletions(document, position) {
+    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const commandArgMatch = /^\s*-\s*(?:~)?([A-Za-z]+)\b.*(?:^|\s)([A-Za-z_:]*)$/i.exec(linePrefix);
+    if (!commandArgMatch) {
+        return [];
+    }
+    const command = commandArgMatch[1].toLowerCase();
+    const typed = commandArgMatch[2].toLowerCase();
+    const range = getCompletionRange(document, position, commandArgMatch[2].length);
+    return denizenMCommandArgs
+        .filter(doc => {
+        const label = doc.label.toLowerCase();
+        if (!label.startsWith(typed)) {
+            return false;
+        }
+        if (command == "teleport") {
+            return label == "async";
+        }
+        if (command == "playeffect") {
+            return label == "forced";
+        }
+        if (command == "resourcepack") {
+            return label == "add";
+        }
+        if (command == "bmmodel") {
+            return ["entity:", "model:", "remove"].indexOf(label) != -1;
+        }
+        if (command == "bmlimb") {
+            return ["target:", "model:", "animation:", "loop:", "override"].indexOf(label) != -1;
+        }
+        if (command == "bmstate") {
+            return ["model:", "state:", "bones:", "loop:", "speed:", "override", "remove"].indexOf(label) != -1;
+        }
+        if (command == "bmpart") {
+            return ["entity:", "model:", "bone:", "part:", "from:"].indexOf(label) != -1;
+        }
+        return false;
+    })
+        .map(doc => makeDenizenMCompletion(doc, range));
 }
 function getDenizenCompletions(document, position) {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
@@ -822,8 +1253,16 @@ function getDenizenCompletions(document, position) {
     if (containerSnippets.length > 0) {
         return containerSnippets;
     }
+    const commandCompletions = getDenizenMCommandCompletions(document, position);
+    if (commandCompletions.length > 0) {
+        return commandCompletions;
+    }
     const escapeTagMatch = /<(&?[A-Za-z0-9_]*)$/i.exec(linePrefix);
     if (escapeTagMatch) {
+        const baseTagCompletions = getDenizenMBaseTagCompletions(document, position);
+        if (baseTagCompletions.length > 0) {
+            return baseTagCompletions;
+        }
         const range = getCompletionRange(document, position, escapeTagMatch[1].length);
         return denizenMEscapeTags.map(doc => makeDenizenMEscapeCompletion(doc, range));
     }
@@ -837,34 +1276,31 @@ function getDenizenCompletions(document, position) {
         const range = getCompletionRange(document, position, dotTagMatch[1].length);
         return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
     }
-    const commandArgMatch = /^\s*-\s*(?:~)?(teleport|playeffect|resourcepack)\b.*\s([A-Za-z_]*)$/i.exec(linePrefix);
-    if (commandArgMatch) {
-        const range = getCompletionRange(document, position, commandArgMatch[2].length);
-        const command = commandArgMatch[1].toLowerCase();
-        return denizenMCommandArgs
-            .filter(doc => (command == "teleport" && doc.label == "async") || (command == "playeffect" && doc.label == "forced") || (command == "resourcepack" && doc.label == "add"))
-            .map(doc => makeDenizenMCompletion(doc, range));
+    const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
+    if (commandArgCompletions.length > 0) {
+        return commandArgCompletions;
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
         const range = getCompletionRange(document, position, defineMatch[1].length);
         return sortedSetValues(getContainerDefines(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range));
     }
-    const playerFlagMatch = /<player\.flag\[([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
-    if (playerFlagMatch) {
-        const range = getCompletionRange(document, position, playerFlagMatch[1].length);
-        return sortedSetValues(workspaceIndex.playerFlags).map(value => makeCompletion(value, vscode.CompletionItemKind.Field, "Denizen player flag", range));
-    }
-    const serverFlagMatch = /<server\.flag\[([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
-    if (serverFlagMatch) {
-        const range = getCompletionRange(document, position, serverFlagMatch[1].length);
-        return sortedSetValues(workspaceIndex.serverFlags).map(value => makeCompletion(value, vscode.CompletionItemKind.Field, "Denizen server flag", range));
+    const flagMatch = /(?:<player\.flag\[|<server\.flag\[|<\[[A-Za-z_][A-Za-z0-9_]*\]\.flag\[)([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
+    if (flagMatch) {
+        const kind = getFlagCompletionKind(document, position);
+        const range = getCompletionRange(document, position, flagMatch[1].length);
+        if (kind == "player") {
+            return sortedSetValues(workspaceIndex.playerFlags).map(value => makeCompletion(value, vscode.CompletionItemKind.Field, "Denizen player flag", range));
+        }
+        if (kind == "server") {
+            return sortedSetValues(workspaceIndex.serverFlags).map(value => makeCompletion(value, vscode.CompletionItemKind.Field, "Denizen server flag", range));
+        }
     }
     return [];
 }
 function getDenizenMDocByLabel(label) {
     const cleanLabel = label.toLowerCase();
-    return denizenMEscapeTags.concat(denizenMDotTags).concat(denizenMCommandArgs).concat(denizenMEvents)
+    return denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags).concat(denizenMCommands).concat(denizenMCommandArgs).concat(denizenMEvents)
         .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 function getDenizenMHover(document, position) {
