@@ -37,7 +37,6 @@ This fork includes the original DenizenVSCode behavior plus additional usability
 
 ### Syntax highlighting improvements
 
-- Inline Denizen color tags are rendered in-editor, including examples like `<gold>`, `<&6>`, and `<#RRGGBB>`.
 - Custom color containers from Denizen `config.yml` are parsed and applied when possible.
 
 ### Escaped symbol helper
