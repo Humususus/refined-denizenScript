@@ -20,6 +20,14 @@ function getMetaCacheFile(): string {
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
 }
 
+/** Merges the default meta sources with any user-configured extra sources, filtering out blank entries. Extracted as its own function so it's independently unit-testable without a live LSP connection. */
+export function combineSources(defaults: string[], extra: string[] | undefined | null): string[] {
+    if (!extra || extra.length === 0) {
+        return defaults;
+    }
+    return [...defaults, ...extra.map(s => s.trim()).filter(s => s.length > 0)];
+}
+
 export function createServer(): Connection {
     const connection = createConnection(ProposedFeatures.all);
     const documents = new TextDocuments(TextDocument);
@@ -33,7 +41,11 @@ export function createServer(): Connection {
     });
 
     connection.onInitialized(() => {
-        loadMetaDocs({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources: DEFAULT_META_SOURCES })
+        connection.workspace.getConfiguration('denizenscript.server.extra_sources')
+            .then((extraSources: string[] | undefined) => {
+                const sources = combineSources(DEFAULT_META_SOURCES, extraSources);
+                return loadMetaDocs({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources });
+            })
             .then(docs => {
                 connection.console.log(
                     `Denizen meta loaded: ${docs.commands.size} commands, ${docs.tags.size} tags, ` +

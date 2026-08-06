@@ -28,7 +28,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = void 0;
+exports.createServer = exports.combineSources = void 0;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const node_1 = require("vscode-languageserver/node");
@@ -40,6 +40,14 @@ function getMetaCacheFile() {
     const base = (_a = process.env.LOCALAPPDATA) !== null && _a !== void 0 ? _a : path.join(os.homedir(), 'AppData', 'Local');
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
 }
+/** Merges the default meta sources with any user-configured extra sources, filtering out blank entries. Extracted as its own function so it's independently unit-testable without a live LSP connection. */
+function combineSources(defaults, extra) {
+    if (!extra || extra.length === 0) {
+        return defaults;
+    }
+    return [...defaults, ...extra.map(s => s.trim()).filter(s => s.length > 0)];
+}
+exports.combineSources = combineSources;
 function createServer() {
     const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
     const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
@@ -51,7 +59,11 @@ function createServer() {
         };
     });
     connection.onInitialized(() => {
-        (0, metaDocsManager_1.loadMetaDocs)({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources: metaDocsManager_1.DEFAULT_META_SOURCES })
+        connection.workspace.getConfiguration('denizenscript.server.extra_sources')
+            .then((extraSources) => {
+            const sources = combineSources(metaDocsManager_1.DEFAULT_META_SOURCES, extraSources);
+            return (0, metaDocsManager_1.loadMetaDocs)({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources });
+        })
             .then(docs => {
             connection.console.log(`Denizen meta loaded: ${docs.commands.size} commands, ${docs.tags.size} tags, ` +
                 `${docs.events.size} events, ${docs.mechanisms.size} mechanisms, ${docs.properties.size} properties, ` +

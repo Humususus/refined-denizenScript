@@ -286,6 +286,14 @@
                     "default": "",
                     "description": "Optional list of extra meta sources (direct zip links), separated by | pipes."
                 },
+                "denizenscript.server.extra_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Extra meta documentation sources (direct .zip archive URLs) to load alongside the official Denizen sources. Only used by the TypeScript language server engine (denizenscript.server.engine: \"typescript\"); has no effect on the C# engine, which uses denizenscript.extra_sources instead."
+                },
                 "refinedDenizenscript.update.githubRepo": {
                     "type": "string",
                     "default": "Humususus/refined-denizenScript",
