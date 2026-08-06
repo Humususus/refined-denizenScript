@@ -17,7 +17,7 @@ describe('buildMetaDocs', () => {
     it('constructs a populated MetaDocs from parsed blocks', () => {
         const blocks: MetaBlock[] = [
             { objectType: 'command', url: 'src#L1', data: ['@Name narrate', '@Short x', '@end_meta'] },
-            { objectType: 'tag', url: 'src#L2', data: ['@attribute <player.name>', '@returns ElementTag', '@end_meta'] }
+            { objectType: 'tag', url: 'src#L2', data: ['@attribute <PlayerTag.name>', '@returns ElementTag', '@end_meta'] }
         ];
         const docs = buildMetaDocs(blocks);
         expect(docs.commands.get('narrate')).toBeDefined();
@@ -42,7 +42,7 @@ describe('applyExtensions', () => {
         ];
         const docs = buildMetaDocs(blocks);
         applyExtensions(docs);
-        expect(docs.commands.get('narrate')!.short).toBe('extended');
+        expect(docs.commands.get('narrate')!.short).toBe('original\n\nextended');
     });
 
     it('records an error when the extension target type is unknown', () => {
