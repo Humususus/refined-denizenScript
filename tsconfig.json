@@ -5,7 +5,8 @@
 		"outDir": "out",
 		"lib": ["es2021"],
 		"sourceMap": true,
-		"rootDir": "src"
+		"rootDir": "src",
+		"esModuleInterop": true
 	},
 	"exclude": ["node_modules", ".vscode-test"]
 }
