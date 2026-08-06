@@ -96,6 +96,8 @@ If you make improvements that could benefit the community, please consider contr
 
 MIT License
 
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the license of ported third-party code (the TypeScript language server).
+
 Licensing pre-note:
 
 This is an open source project, provided entirely freely, for everyone to use and contribute to.
