@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Meta documentation object model.
  * Ported from SharpDenizenTools/MetaObjects/*.cs and MetaHandlers/MetaDocs.cs.
@@ -5,25 +6,20 @@
  * indexing (see Global Constraints in the Phase 1 plan) — those belong to
  * later phases that actually consume them.
  */
-
-export interface MetaType {
-    name: string;
-    webPath: string | null;
-}
-
-export const META_TYPE_COMMAND: MetaType = { name: 'Command', webPath: 'Commands' };
-export const META_TYPE_MECHANISM: MetaType = { name: 'Mechanism', webPath: 'Mechanisms' };
-export const META_TYPE_EVENT: MetaType = { name: 'Event', webPath: 'Events' };
-export const META_TYPE_ACTION: MetaType = { name: 'Action', webPath: 'Actions' };
-export const META_TYPE_LANGUAGE: MetaType = { name: 'Language', webPath: 'Languages' };
-export const META_TYPE_TAG: MetaType = { name: 'Tag', webPath: 'Tags' };
-export const META_TYPE_OBJECT: MetaType = { name: 'ObjectType', webPath: 'ObjectTypes' };
-export const META_TYPE_PROPERTY: MetaType = { name: 'Property', webPath: 'Properties' };
-export const META_TYPE_GUIDEPAGE: MetaType = { name: 'GuidePage', webPath: null };
-export const META_TYPE_EXTENSION: MetaType = { name: 'Extension', webPath: null };
-
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createEmptyMetaDocs = exports.MetaDataValue = exports.MetaExtension = exports.MetaGuidePage = exports.MetaObjectType = exports.MetaLanguage = exports.MetaAction = exports.MetaProperty = exports.MetaMechanism = exports.MetaEvent = exports.MetaTag = exports.MetaCommand = exports.MetaObject = exports.cleanTag = exports.META_TYPE_EXTENSION = exports.META_TYPE_GUIDEPAGE = exports.META_TYPE_PROPERTY = exports.META_TYPE_OBJECT = exports.META_TYPE_TAG = exports.META_TYPE_LANGUAGE = exports.META_TYPE_ACTION = exports.META_TYPE_EVENT = exports.META_TYPE_MECHANISM = exports.META_TYPE_COMMAND = void 0;
+exports.META_TYPE_COMMAND = { name: 'Command', webPath: 'Commands' };
+exports.META_TYPE_MECHANISM = { name: 'Mechanism', webPath: 'Mechanisms' };
+exports.META_TYPE_EVENT = { name: 'Event', webPath: 'Events' };
+exports.META_TYPE_ACTION = { name: 'Action', webPath: 'Actions' };
+exports.META_TYPE_LANGUAGE = { name: 'Language', webPath: 'Languages' };
+exports.META_TYPE_TAG = { name: 'Tag', webPath: 'Tags' };
+exports.META_TYPE_OBJECT = { name: 'ObjectType', webPath: 'ObjectTypes' };
+exports.META_TYPE_PROPERTY = { name: 'Property', webPath: 'Properties' };
+exports.META_TYPE_GUIDEPAGE = { name: 'GuidePage', webPath: null };
+exports.META_TYPE_EXTENSION = { name: 'Extension', webPath: null };
 /** Strips tag structural symbols (`<`, `>`, and bracketed parameters) for searchable/clean comparison. */
-export function cleanTag(text: string): string {
+function cleanTag(text) {
     let cleaned = '';
     let skipping = false;
     for (const c of text) {
@@ -45,11 +41,11 @@ export function cleanTag(text: string): string {
     }
     return cleaned;
 }
-
+exports.cleanTag = cleanTag;
 /** Strips structural symbols from an event name for a searchable "overly cleaned" form. Skips `(optional)` words entirely. */
-function overCleanEvent(evt: string): string {
+function overCleanEvent(evt) {
     const parts = evt.toLowerCase().split(' ');
-    const kept: string[] = [];
+    const kept = [];
     for (const part of parts) {
         if (part.startsWith('(') && part.endsWith(')')) {
             continue;
@@ -58,24 +54,21 @@ function overCleanEvent(evt: string): string {
     }
     return kept.join(' ').trim();
 }
-
-export abstract class MetaObject {
-    type: MetaType | null = null;
-    group: string | null = null;
-    warnings: string[] = [];
-    plugin: string | null = null;
-    sourceFile: string = '';
-    deprecated: string | null = null;
-    synonyms: string[] = [];
-    rawValues: Map<string, string[]> = new Map();
-
-    abstract get name(): string;
-
-    get cleanName(): string {
+class MetaObject {
+    constructor() {
+        this.type = null;
+        this.group = null;
+        this.warnings = [];
+        this.plugin = null;
+        this.sourceFile = '';
+        this.deprecated = null;
+        this.synonyms = [];
+        this.rawValues = new Map();
+    }
+    get cleanName() {
         return this.name.toLowerCase();
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'group':
                 this.group = value;
@@ -96,26 +89,25 @@ export abstract class MetaObject {
                 return false;
         }
     }
-
-    abstract addTo(docs: MetaDocs): void;
 }
-
-export class MetaCommand extends MetaObject {
-    commandName: string = '';
-    required: number = 0;
-    maximum: number = Number.MAX_SAFE_INTEGER;
-    syntax: string = '';
-    short: string = '';
-    description: string = '';
-    tags: string[] = [];
-    usages: string[] = [];
-    guide: string = '';
-
-    get name(): string {
+exports.MetaObject = MetaObject;
+class MetaCommand extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.commandName = '';
+        this.required = 0;
+        this.maximum = Number.MAX_SAFE_INTEGER;
+        this.syntax = '';
+        this.short = '';
+        this.description = '';
+        this.tags = [];
+        this.usages = [];
+        this.guide = '';
+    }
+    get name() {
         return this.commandName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'name':
                 this.commandName = value;
@@ -158,31 +150,30 @@ export class MetaCommand extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.commands.set(this.cleanName, this);
     }
 }
-
-export class MetaTag extends MetaObject {
-    tagFull: string = '';
-    cleanedName: string = '';
-    beforeDot: string = '';
-    afterDotCleaned: string = '';
-    returns: string = '';
-    description: string = '';
-    mechanism: string = '';
-    examples: string[] = [];
-
-    get name(): string {
+exports.MetaCommand = MetaCommand;
+class MetaTag extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.tagFull = '';
+        this.cleanedName = '';
+        this.beforeDot = '';
+        this.afterDotCleaned = '';
+        this.returns = '';
+        this.description = '';
+        this.mechanism = '';
+        this.examples = [];
+    }
+    get name() {
         return this.tagFull;
     }
-
-    get cleanName(): string {
+    get cleanName() {
         return this.cleanedName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'attribute': {
                 this.tagFull = value;
@@ -217,36 +208,37 @@ export class MetaTag extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.tags.set(this.cleanName, this);
     }
 }
-
-export class MetaEvent extends MetaObject {
-    events: string[] = [];
-    cleanEvents: string[] = [];
-    overlyCleanedEvents: string[] = [];
-    switches: string[] = [];
-    switchNames: Set<string> = new Set();
-    triggers: string = '';
-    context: string[] = [];
-    determinations: string[] = [];
-    player: string = '';
-    npc: string = '';
-    cancellable: boolean = false;
-    hasLocation: boolean = false;
-    examples: string[] = [];
-
-    get name(): string {
-        return this.events[0] ?? '';
+exports.MetaTag = MetaTag;
+class MetaEvent extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.events = [];
+        this.cleanEvents = [];
+        this.overlyCleanedEvents = [];
+        this.switches = [];
+        this.switchNames = new Set();
+        this.triggers = '';
+        this.context = [];
+        this.determinations = [];
+        this.player = '';
+        this.npc = '';
+        this.cancellable = false;
+        this.hasLocation = false;
+        this.examples = [];
     }
-
-    get cleanName(): string {
-        return this.cleanEvents[0] ?? '';
+    get name() {
+        var _a;
+        return (_a = this.events[0]) !== null && _a !== void 0 ? _a : '';
     }
-
-    applyValue(key: string, value: string): boolean {
+    get cleanName() {
+        var _a;
+        return (_a = this.cleanEvents[0]) !== null && _a !== void 0 ? _a : '';
+    }
+    applyValue(key, value) {
         switch (key) {
             case 'events':
                 this.events = value.split('\n').filter(s => s.length > 0);
@@ -291,26 +283,26 @@ export class MetaEvent extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.events.set(this.cleanName, this);
     }
 }
-
-export class MetaMechanism extends MetaObject {
-    fullName: string = '';
-    mechObject: string = '';
-    mechName: string = '';
-    input: string = '';
-    description: string = '';
-    tags: string[] = [];
-    examples: string[] = [];
-
-    get name(): string {
+exports.MetaEvent = MetaEvent;
+class MetaMechanism extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.fullName = '';
+        this.mechObject = '';
+        this.mechName = '';
+        this.input = '';
+        this.description = '';
+        this.tags = [];
+        this.examples = [];
+    }
+    get name() {
         return this.fullName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'object':
                 this.mechObject = value;
@@ -334,29 +326,29 @@ export class MetaMechanism extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         this.fullName = `${this.mechObject}.${this.mechName}`;
         docs.mechanisms.set(this.cleanName, this);
     }
 }
-
-export class MetaProperty extends MetaObject {
-    fullName: string = '';
-    propObject: string = '';
-    propName: string = '';
-    input: string = '';
-    description: string = '';
-    mechanismDescription: string = '';
-    tagDescription: string = '';
-    tagExamples: string[] = [];
-    mechanismExamples: string[] = [];
-
-    get name(): string {
+exports.MetaMechanism = MetaMechanism;
+class MetaProperty extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.fullName = '';
+        this.propObject = '';
+        this.propName = '';
+        this.input = '';
+        this.description = '';
+        this.mechanismDescription = '';
+        this.tagDescription = '';
+        this.tagExamples = [];
+        this.mechanismExamples = [];
+    }
+    get name() {
         return this.fullName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'object':
                 this.propObject = value;
@@ -390,22 +382,21 @@ export class MetaProperty extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
+        var _a, _b;
         this.fullName = `${this.propObject}.${this.propName}`;
         docs.properties.set(this.cleanName, this);
         const asTag = `<${this.fullName}>`;
         const cleanedTag = cleanTag(asTag);
         const hasControls = this.description.startsWith('Controls');
         const cleanedDescription = hasControls ? this.description.substring('Controls'.length) : this.description;
-
         const mech = new MetaMechanism();
-        mech.type = META_TYPE_MECHANISM;
+        mech.type = exports.META_TYPE_MECHANISM;
         mech.mechName = this.propName;
         mech.mechObject = this.propObject;
         mech.input = this.input;
         mech.description = '(Property) ' + (hasControls ? 'Sets' : '') + cleanedDescription + this.mechanismDescription;
-        mech.group = this.group ?? 'Properties';
+        mech.group = (_a = this.group) !== null && _a !== void 0 ? _a : 'Properties';
         mech.warnings = this.warnings;
         mech.examples = this.mechanismExamples;
         mech.plugin = this.plugin;
@@ -414,9 +405,8 @@ export class MetaProperty extends MetaObject {
         mech.synonyms = this.synonyms;
         mech.tags = [asTag];
         mech.addTo(docs);
-
         const tag = new MetaTag();
-        tag.type = META_TYPE_TAG;
+        tag.type = exports.META_TYPE_TAG;
         tag.tagFull = asTag;
         tag.cleanedName = cleanedTag.toLowerCase();
         tag.beforeDot = cleanedTag.includes('.') ? cleanedTag.substring(0, cleanedTag.indexOf('.')) : 'Base';
@@ -427,7 +417,7 @@ export class MetaProperty extends MetaObject {
         tag.description = '(Property) ' + (hasControls ? 'Returns' : '') + cleanedDescription + this.tagDescription;
         tag.mechanism = this.fullName;
         tag.examples = this.tagExamples;
-        tag.group = this.group ?? 'Properties';
+        tag.group = (_b = this.group) !== null && _b !== void 0 ? _b : 'Properties';
         tag.warnings = this.warnings;
         tag.plugin = this.plugin;
         tag.sourceFile = this.sourceFile;
@@ -436,23 +426,25 @@ export class MetaProperty extends MetaObject {
         tag.addTo(docs);
     }
 }
-
-export class MetaAction extends MetaObject {
-    actions: string[] = [];
-    cleanActions: string[] = [];
-    triggers: string = '';
-    context: string[] = [];
-    determinations: string[] = [];
-
-    get name(): string {
-        return this.actions[0] ?? '';
+exports.MetaProperty = MetaProperty;
+class MetaAction extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.actions = [];
+        this.cleanActions = [];
+        this.triggers = '';
+        this.context = [];
+        this.determinations = [];
     }
-
-    get cleanName(): string {
-        return this.cleanActions[0] ?? '';
+    get name() {
+        var _a;
+        return (_a = this.actions[0]) !== null && _a !== void 0 ? _a : '';
     }
-
-    applyValue(key: string, value: string): boolean {
+    get cleanName() {
+        var _a;
+        return (_a = this.cleanActions[0]) !== null && _a !== void 0 ? _a : '';
+    }
+    applyValue(key, value) {
         switch (key) {
             case 'actions':
                 this.actions = value.split('\n').filter(s => s.length > 0);
@@ -471,21 +463,21 @@ export class MetaAction extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.actions.set(this.cleanName, this);
     }
 }
-
-export class MetaLanguage extends MetaObject {
-    langName: string = '';
-    description: string = '';
-
-    get name(): string {
+exports.MetaAction = MetaAction;
+class MetaLanguage extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.langName = '';
+        this.description = '';
+    }
+    get name() {
         return this.langName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'name':
                 this.langName = value;
@@ -497,33 +489,32 @@ export class MetaLanguage extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.languages.set(this.cleanName, this);
     }
 }
-
-export class MetaObjectType extends MetaObject {
-    typeName: string = '';
-    prefix: string = '';
-    baseTypeName: string = '';
-    format: string = '';
-    description: string = '';
-    implementsNames: string[] = [];
-    generatedExampleTagBase: string | null = null;
-    generatedExampleAdjust: string | null = null;
-    exampleValues: string[] = [];
-    matchable: string | null = null;
-
-    get name(): string {
+exports.MetaLanguage = MetaLanguage;
+class MetaObjectType extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.typeName = '';
+        this.prefix = '';
+        this.baseTypeName = '';
+        this.format = '';
+        this.description = '';
+        this.implementsNames = [];
+        this.generatedExampleTagBase = null;
+        this.generatedExampleAdjust = null;
+        this.exampleValues = [];
+        this.matchable = null;
+    }
+    get name() {
         return this.typeName;
     }
-
-    get cleanName(): string {
+    get cleanName() {
         return this.typeName.toLowerCase();
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'name':
                 this.typeName = value;
@@ -564,37 +555,38 @@ export class MetaObjectType extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.objectTypes.set(this.cleanName, this);
     }
 }
-
-export class MetaGuidePage extends MetaObject {
-    pageName: string = '';
-    url: string = '';
-    isSubPage: boolean = false;
-
-    get name(): string {
+exports.MetaObjectType = MetaObjectType;
+class MetaGuidePage extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.pageName = '';
+        this.url = '';
+        this.isSubPage = false;
+    }
+    get name() {
         return this.pageName;
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.guidePages.set(this.cleanName, this);
     }
 }
-
-export class MetaExtension extends MetaObject {
-    extensionName: string = '';
-    extendType: string = '';
-    extendName: string = '';
-    includeExisting: boolean = true;
-
-    get name(): string {
+exports.MetaGuidePage = MetaGuidePage;
+class MetaExtension extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.extensionName = '';
+        this.extendType = '';
+        this.extendName = '';
+        this.includeExisting = true;
+    }
+    get name() {
         return this.extensionName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'target_type':
                 this.extendType = value;
@@ -612,21 +604,21 @@ export class MetaExtension extends MetaObject {
                 return true;
         }
     }
-
-    addTo(docs: MetaDocs): void {
+    addTo(docs) {
         docs.extensions.set(this.cleanName, this);
     }
 }
-
-export class MetaDataValue extends MetaObject {
-    dataKeyName: string = '';
-    values: string[] = [];
-
-    get name(): string {
+exports.MetaExtension = MetaExtension;
+class MetaDataValue extends MetaObject {
+    constructor() {
+        super(...arguments);
+        this.dataKeyName = '';
+        this.values = [];
+    }
+    get name() {
         return this.dataKeyName;
     }
-
-    applyValue(key: string, value: string): boolean {
+    applyValue(key, value) {
         switch (key) {
             case 'name':
                 this.dataKeyName = value.toLowerCase();
@@ -638,29 +630,14 @@ export class MetaDataValue extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
-
-    addTo(_docs: MetaDocs): void {
+    addTo(_docs) {
         // Phase 1 does not implement ExtraData/DataValueSets consumption
         // (event-argument matching against Minecraft blocks/items/entities) —
         // this class exists only so '<--[data]' blocks parse without error.
     }
 }
-
-export interface MetaDocs {
-    commands: Map<string, MetaCommand>;
-    mechanisms: Map<string, MetaMechanism>;
-    tags: Map<string, MetaTag>;
-    objectTypes: Map<string, MetaObjectType>;
-    properties: Map<string, MetaProperty>;
-    events: Map<string, MetaEvent>;
-    actions: Map<string, MetaAction>;
-    languages: Map<string, MetaLanguage>;
-    guidePages: Map<string, MetaGuidePage>;
-    extensions: Map<string, MetaExtension>;
-    loadErrors: string[];
-}
-
-export function createEmptyMetaDocs(): MetaDocs {
+exports.MetaDataValue = MetaDataValue;
+function createEmptyMetaDocs() {
     return {
         commands: new Map(),
         mechanisms: new Map(),
@@ -675,3 +652,5 @@ export function createEmptyMetaDocs(): MetaDocs {
         loadErrors: []
     };
 }
+exports.createEmptyMetaDocs = createEmptyMetaDocs;
+//# sourceMappingURL=metaTypes.js.map

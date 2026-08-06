@@ -115,4 +115,12 @@ describe('loadMetaDocs caching', () => {
         expect(downloadSpy).toHaveBeenCalledTimes(1);
         expect(docs.commands.get('forced')).toBeDefined();
     });
+
+    it('does not write a cache file when every download source fails (empty blocks)', async () => {
+        const downloadSpy = vi.fn(async () => ({ blocks: [] as MetaBlock[], loadErrors: ['Source download error for https://example.com/x.zip: network down'] }));
+        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
+        expect(downloadSpy).toHaveBeenCalledTimes(1);
+        expect(fs.existsSync(cacheFile)).toBe(false);
+        expect(docs.loadErrors.some(e => e.includes('network down'))).toBe(true);
+    });
 });

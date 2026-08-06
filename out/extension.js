@@ -1,4 +1,27 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -10,11 +33,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = void 0;
-const vscode = require("vscode");
-const languageClientNode = require("vscode-languageclient/node");
-const path = require("path");
-const fs = require("fs");
-const https = require("https");
+const vscode = __importStar(require("vscode"));
+const languageClientNode = __importStar(require("vscode-languageclient/node"));
+const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+const https = __importStar(require("https"));
+const serverEngineSelector_1 = require("./serverEngineSelector");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
 let headerSymbols = "|+=#_@/";
@@ -73,6 +97,26 @@ function activateLanguageServer(context, dotnetPath) {
         }
     };
     let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
+    let disposable = client.start();
+    context.subscriptions.push(disposable);
+}
+function activateTsLanguageServer(context) {
+    let serverModule = context.asAbsolutePath(path.join("out", "server", "server.js"));
+    if (!fs.existsSync(serverModule)) {
+        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
+        return;
+    }
+    let serverOptions = {
+        run: { module: serverModule, transport: languageClientNode.TransportKind.ipc },
+        debug: { module: serverModule, transport: languageClientNode.TransportKind.ipc, options: { execArgv: ["--nolazy", "--inspect=6019"] } }
+    };
+    let clientOptions = {
+        documentSelector: ["denizenscript"],
+        synchronize: {
+            configurationSection: "denizenscript",
+        }
+    };
+    let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
     let disposable = client.start();
     context.subscriptions.push(disposable);
 }
@@ -2605,8 +2649,13 @@ function tryLoadConfigYaml(relativeTo) {
 }
 function activate(context) {
     return __awaiter(this, void 0, void 0, function* () {
-        let path = yield activateDotNet();
-        activateLanguageServer(context, path);
+        if ((0, serverEngineSelector_1.shouldUseTypeScriptServer)(configuration.get("denizenscript.server.engine"))) {
+            activateTsLanguageServer(context);
+        }
+        else {
+            let path = yield activateDotNet();
+            activateLanguageServer(context, path);
+        }
         activateHighlighter(context);
         activateUpdateChecks(context);
         activateDenizenFileCommands(context);

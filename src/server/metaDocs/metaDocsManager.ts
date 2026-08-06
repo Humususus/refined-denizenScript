@@ -138,8 +138,10 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
         const result = await download(sources);
         blocks = result.blocks;
         loadErrors = result.loadErrors;
-        fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
-        fs.writeFileSync(options.cacheFile, JSON.stringify(blocks));
+        if (blocks.length > 0) {
+            fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
+            fs.writeFileSync(options.cacheFile, JSON.stringify(blocks));
+        }
     }
     const docs = buildMetaDocs(blocks);
     docs.loadErrors.push(...loadErrors);
