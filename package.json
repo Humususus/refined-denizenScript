@@ -121,6 +121,16 @@
                     "default": "|+=#_@/",
                     "description": "Header comment symbols."
                 },
+                "denizenscript.server.engine": {
+                    "type": "string",
+                    "enum": ["csharp", "typescript"],
+                    "enumDescriptions": [
+                        "The existing stable .NET language server.",
+                        "Experimental TypeScript rewrite. Phase 1: loads meta documentation only — no completions, hover, or diagnostics yet."
+                    ],
+                    "default": "csharp",
+                    "description": "Which Denizen language server engine to use."
+                },
                 "denizenscript.theme_colors.comment_todo": {
                     "type": "string",
                     "default": "#FFFF00|weight=bold",

@@ -4,6 +4,7 @@ import * as languageClientNode from "vscode-languageclient/node";
 import * as path from "path";
 import * as fs from "fs";
 import * as https from "https";
+import { shouldUseTypeScriptServer } from './serverEngineSelector';
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
@@ -69,6 +70,27 @@ function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : s
         }
     }
     let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
+    let disposable = client.start();
+    context.subscriptions.push(disposable);
+}
+
+function activateTsLanguageServer(context: vscode.ExtensionContext) {
+    let serverModule : string = context.asAbsolutePath(path.join("out", "server", "server.js"));
+    if (!fs.existsSync(serverModule)) {
+        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
+        return;
+    }
+    let serverOptions: languageClientNode.ServerOptions = {
+        run: { module: serverModule, transport: languageClientNode.TransportKind.ipc },
+        debug: { module: serverModule, transport: languageClientNode.TransportKind.ipc, options: { execArgv: ["--nolazy", "--inspect=6019"] } }
+    }
+    let clientOptions: languageClient.LanguageClientOptions = {
+        documentSelector: ["denizenscript"],
+        synchronize: {
+            configurationSection: "denizenscript",
+        }
+    }
+    let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
     let disposable = client.start();
     context.subscriptions.push(disposable);
 }
@@ -2737,8 +2759,13 @@ function tryLoadConfigYaml(relativeTo : vscode.TextDocument) {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-    let path : string = await activateDotNet();
-    activateLanguageServer(context, path);
+    if (shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
+        activateTsLanguageServer(context);
+    }
+    else {
+        let path : string = await activateDotNet();
+        activateLanguageServer(context, path);
+    }
     activateHighlighter(context);
     activateUpdateChecks(context);
     activateDenizenFileCommands(context);
