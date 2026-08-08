@@ -41,6 +41,26 @@ describe('getLineContext', () => {
         expect(getLineContext('abc', -1)).toBeNull();
         expect(getLineContext('abc', 4)).toBeNull();
     });
+
+    it('handles offset 0 on a document whose first character is a newline', () => {
+        const ctx = getLineContext('\nabc', 0)!;
+        expect(ctx.linePrefix).toBe('');
+        expect(ctx.trimmed).toBe('');
+        expect(ctx.indent).toBe(0);
+    });
+
+    it('handles offset 0 on a document with no leading newline', () => {
+        const ctx = getLineContext('abc', 0)!;
+        expect(ctx.linePrefix).toBe('');
+        expect(ctx.indent).toBe(0);
+    });
+
+    it('counts each tab as one character of indent', () => {
+        const ctx = getLineContext('\t\t- narrate', 10)!;
+        expect(ctx.linePrefix).toBe('\t\t- narrat');
+        expect(ctx.trimmed).toBe('- narrat');
+        expect(ctx.indent).toBe(2);
+    });
 });
 
 describe('getFullLine', () => {
@@ -65,5 +85,17 @@ describe('getFullLine', () => {
 
     it('returns null for an out-of-range offset', () => {
         expect(getFullLine('abc', 99)).toBeNull();
+    });
+
+    it('handles offset 0 on a document whose first character is a newline', () => {
+        const found = getFullLine('\nabc', 0)!;
+        expect(found.line).toBe('');
+        expect(found.startOfLine).toBe(0);
+    });
+
+    it('excludes the carriage return when the cursor sits immediately before it', () => {
+        const text = '  - stop\r\nnext:';
+        const found = getFullLine(text, text.indexOf('\r'))!;
+        expect(found.line).toBe('  - stop');
     });
 });

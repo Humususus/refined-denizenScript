@@ -26,12 +26,25 @@ function isInRange(text: string, offset: number): boolean {
     return offset >= 0 && offset <= text.length;
 }
 
+/**
+ * Offset of the first character of the line containing `offset`.
+ * `offset === 0` is special-cased: `lastIndexOf` clamps a negative `fromIndex`
+ * to 0 rather than treating it as "no match", so `lastIndexOf('\n', -1)` would
+ * wrongly report a hit on a document whose very first character is a newline.
+ */
+function findStartOfLine(text: string, offset: number): number {
+    if (offset === 0) {
+        return 0;
+    }
+    return text.lastIndexOf('\n', offset - 1) + 1;
+}
+
 /** Extracts the text preceding the cursor on its own line. Returns null if the offset is out of range. */
 export function getLineContext(text: string, offset: number): LineContext | null {
     if (!isInRange(text, offset)) {
         return null;
     }
-    const startOfLine = text.lastIndexOf('\n', offset - 1) + 1;
+    const startOfLine = findStartOfLine(text, offset);
     let linePrefix = text.substring(startOfLine, offset);
     if (linePrefix.endsWith('\r')) {
         linePrefix = linePrefix.substring(0, linePrefix.length - 1);
@@ -49,7 +62,7 @@ export function getFullLine(text: string, offset: number): FullLine | null {
     if (!isInRange(text, offset)) {
         return null;
     }
-    const startOfLine = text.lastIndexOf('\n', offset - 1) + 1;
+    const startOfLine = findStartOfLine(text, offset);
     let endOfLine = text.indexOf('\n', startOfLine);
     if (endOfLine === -1) {
         endOfLine = text.length;
