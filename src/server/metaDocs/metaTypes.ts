@@ -100,6 +100,14 @@ export abstract class MetaObject {
     abstract addTo(docs: MetaDocs): void;
 }
 
+/** One argument as it appears in a command's `@Syntax` line, in both bare and original form. */
+export interface CommandArgumentForm {
+    /** The argument name stripped of `[]`, `()`, and `{}` — e.g. `format` for `(format:<name>)`. */
+    clean: string;
+    /** The original syntax text, e.g. `(format:<name>)`. Used as completion detail text. */
+    raw: string;
+}
+
 export class MetaCommand extends MetaObject {
     commandName: string = '';
     required: number = 0;
@@ -110,6 +118,12 @@ export class MetaCommand extends MetaObject {
     tags: string[] = [];
     usages: string[] = [];
     guide: string = '';
+    /** Arguments written as `prefix:<value>`. Populated by `parseSyntax`. */
+    argPrefixes: CommandArgumentForm[] = [];
+    /** Literal keyword arguments with no tag input. Populated by `parseSyntax`. */
+    flatArguments: CommandArgumentForm[] = [];
+    /** Positional arguments that take dynamic input. Populated by `parseSyntax`. */
+    linearArguments: string[] = [];
 
     get name(): string {
         return this.commandName;
@@ -159,7 +173,49 @@ export class MetaCommand extends MetaObject {
         }
     }
 
+    /**
+     * Parses `syntax` into the three argument buckets used for completion.
+     * Ported from SharpDenizenTools MetaCommand.ParseSyntax, with two deliberate
+     * deviations: the C# original has a self-assignment bug on its LinearArguments
+     * line (`LinearArguments = [.. LinearArguments]`), which this port fixes by
+     * assigning the collected list; and a tag-valued prefix such as `[<a>:<b>]` is
+     * recorded as a linear argument here rather than being dropped entirely.
+     */
+    parseSyntax(): void {
+        this.argPrefixes = [];
+        this.flatArguments = [];
+        this.linearArguments = [];
+        const firstSpace = this.syntax.indexOf(' ');
+        if (firstSpace < 0) {
+            return;
+        }
+        const cleaned = this.syntax.substring(firstSpace).replace(/\//g, ' ');
+        for (const arg of cleaned.split(' ')) {
+            const cleanedArg = arg.replace(/[[\](){}]/g, '');
+            if (cleanedArg.trim().length === 0) {
+                continue;
+            }
+            const colonIndex = cleanedArg.indexOf(':');
+            if (colonIndex > 0) {
+                const prefix = cleanedArg.substring(0, colonIndex);
+                if (!prefix.includes('<')) {
+                    this.argPrefixes.push({ clean: prefix, raw: arg });
+                }
+                else {
+                    this.linearArguments.push(arg);
+                }
+            }
+            else if (!cleanedArg.includes('<') && !cleanedArg.includes('|')) {
+                this.flatArguments.push({ clean: cleanedArg, raw: arg });
+            }
+            else {
+                this.linearArguments.push(arg);
+            }
+        }
+    }
+
     addTo(docs: MetaDocs): void {
+        this.parseSyntax();
         docs.commands.set(this.cleanName, this);
     }
 }

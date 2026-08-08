@@ -199,3 +199,54 @@ describe('MetaObjectType', () => {
         expect(type.implementsNames).toEqual(['FlaggableObject', 'Adjustable']);
     });
 });
+
+describe('MetaCommand.parseSyntax', () => {
+    it('splits a realistic syntax line into prefixed, flat, and linear arguments', () => {
+        const cmd = new MetaCommand();
+        cmd.syntax = 'narrate [<text>] (targets:<player>|...) (format:<name>) (per_player)';
+        cmd.parseSyntax();
+        expect(cmd.argPrefixes.map(a => a.clean)).toEqual(['targets', 'format']);
+        expect(cmd.flatArguments.map(a => a.clean)).toEqual(['per_player']);
+        expect(cmd.linearArguments).toEqual(['[<text>]']);
+    });
+
+    it('keeps the original bracketed text as the raw form', () => {
+        const cmd = new MetaCommand();
+        cmd.syntax = 'narrate [<text>] (format:<name>)';
+        cmd.parseSyntax();
+        expect(cmd.argPrefixes[0].raw).toBe('(format:<name>)');
+    });
+
+    it('treats a slash as an argument separator', () => {
+        const cmd = new MetaCommand();
+        cmd.syntax = 'inject [<script>] (path:<name>) (instantly/local)';
+        cmd.parseSyntax();
+        expect(cmd.flatArguments.map(a => a.clean)).toEqual(['instantly', 'local']);
+    });
+
+    it('does not treat a tag-valued prefix as a prefix', () => {
+        const cmd = new MetaCommand();
+        cmd.syntax = 'test [<a>:<b>]';
+        cmd.parseSyntax();
+        expect(cmd.argPrefixes).toEqual([]);
+        expect(cmd.linearArguments).toEqual(['[<a>:<b>]']);
+    });
+
+    it('produces empty results for a syntax line with no arguments', () => {
+        const cmd = new MetaCommand();
+        cmd.syntax = 'stop';
+        cmd.parseSyntax();
+        expect(cmd.argPrefixes).toEqual([]);
+        expect(cmd.flatArguments).toEqual([]);
+        expect(cmd.linearArguments).toEqual([]);
+    });
+
+    it('is invoked automatically by addTo', () => {
+        const docs = createEmptyMetaDocs();
+        const cmd = new MetaCommand();
+        cmd.commandName = 'narrate';
+        cmd.syntax = 'narrate [<text>] (format:<name>)';
+        cmd.addTo(docs);
+        expect(docs.commands.get('narrate')!.argPrefixes.map(a => a.clean)).toEqual(['format']);
+    });
+});
