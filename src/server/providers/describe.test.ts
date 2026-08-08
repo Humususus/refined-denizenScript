@@ -16,6 +16,11 @@ describe('descriptionClean', () => {
         expect(descriptionClean('oops <code> unterminated')).toBe('oops &lt;code&gt; unterminated');
     });
 
+    it('converts multiple code blocks into fenced yml blocks while still escaping surrounding prose', () => {
+        const result = descriptionClean('a & b <code>first</code> c & d <code>second</code> e & f');
+        expect(result).toBe('a &amp; b \n```yml\nfirst\n```\n c &amp; d \n```yml\nsecond\n```\n e &amp; f');
+    });
+
     it('returns an empty string unchanged', () => {
         expect(descriptionClean('')).toBe('');
     });

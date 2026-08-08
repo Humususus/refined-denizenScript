@@ -36,8 +36,20 @@ export function descriptionClean(input: string): string {
 
 /**
  * Builds a markdown link to the object's page on meta.denizenscript.com.
- * Returns an empty string for object types with no web presence (guide pages,
- * extensions) — the C# original would throw a null reference there instead.
+ *
+ * Two deliberate deviations from the C# original (CommandTabCompletions.cs:357):
+ * 1. Returns an empty string for object types with no web presence (guide pages,
+ *    extensions) — the C# original would throw a null reference there instead.
+ * 2. Uses JS `encodeURIComponent` instead of `HttpUtility.UrlEncode`. These are
+ *    NOT equivalent in general (`UrlEncode` encodes a space as `+` and also
+ *    escapes `'`, whereas `encodeURIComponent` encodes a space as `%20` and
+ *    leaves `'`, `(`, `)`, `!`, `*` unescaped). This is intentional, not an
+ *    oversight: the encoded name here is a URL *path* segment, not a query
+ *    string or form field, and `+` only means "space" in the latter two
+ *    contexts — for a path segment, `%20` is the correct percent-encoding.
+ *    Verified against the live site: e.g. multi-word event/action names like
+ *    `player clicks button` resolve correctly as
+ *    `https://meta.denizenscript.com/Docs/Events/player%20clicks%20button`.
  */
 export function linkMeta(obj: MetaObject): string {
     const webPath = obj.type?.webPath;
