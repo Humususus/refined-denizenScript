@@ -1344,26 +1344,28 @@ function getDenizenMCommandArgCompletions(document: vscode.TextDocument, positio
 
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const suppressHardcodedCommands = usingTypeScriptServer;
-    const eventCompletions = getDenizenMEventCompletions(document, position);
-    if (eventCompletions.length > 0) {
-        return eventCompletions;
+    // The TypeScript server supplies real meta-driven completion for commands, command
+    // arguments, tags and events, so the hardcoded lists that back those stand down there.
+    // Container snippets, dialog context keys, defines and flags read live workspace state
+    // and have no TypeScript-server equivalent yet, so they keep working either way.
+    if (!usingTypeScriptServer) {
+        const eventCompletions = getDenizenMEventCompletions(document, position);
+        if (eventCompletions.length > 0) {
+            return eventCompletions;
+        }
     }
     const containerSnippets = getContainerSnippetCompletions(document, position);
     if (containerSnippets.length > 0) {
         return containerSnippets;
     }
-    // The TypeScript server supplies real meta-driven command completion, so the
-    // hardcoded command list stands down there. Tags, events, defines and flags
-    // below have no TypeScript-server equivalent yet and keep working either way.
-    if (!suppressHardcodedCommands) {
+    if (!usingTypeScriptServer) {
         const commandCompletions = getDenizenMCommandCompletions(document, position);
         if (commandCompletions.length > 0) {
             return commandCompletions;
         }
     }
     const escapeTagMatch = /<(&?[A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (escapeTagMatch) {
+    if (escapeTagMatch && !usingTypeScriptServer) {
         const baseTagCompletions = getDenizenMBaseTagCompletions(document, position);
         if (baseTagCompletions.length > 0) {
             return baseTagCompletions;
@@ -1377,13 +1379,15 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
         return sortedSetValues(getDialogInputKeys(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Property, "Dialog input context", range));
     }
     const dotTagMatch = /<[^\s<>]*\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (dotTagMatch) {
+    if (dotTagMatch && !usingTypeScriptServer) {
         const range = getCompletionRange(document, position, dotTagMatch[1].length);
         return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
     }
-    const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
-    if (commandArgCompletions.length > 0) {
-        return commandArgCompletions;
+    if (!usingTypeScriptServer) {
+        const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
+        if (commandArgCompletions.length > 0) {
+            return commandArgCompletions;
+        }
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
@@ -1405,16 +1409,14 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
 }
 
 function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
-    const cleanLabel = label.toLowerCase();
-    // The TypeScript server's hover covers command NAMES only — it never evaluates
-    // argument positions — so only the hardcoded command list stands down here.
-    // Command argument docs, tags and events have no equivalent there and stay.
-    let sources = denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags);
-    if (!usingTypeScriptServer) {
-        sources = sources.concat(denizenMCommands);
+    // All six hardcoded doc arrays stand down on the TypeScript server: it has no
+    // legitimate data left to serve here (its own hover covers commands and container
+    // types directly, without going through this hardcoded lookup).
+    if (usingTypeScriptServer) {
+        return undefined;
     }
-    sources = sources.concat(denizenMCommandArgs).concat(denizenMEvents);
-    return sources.filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
+    const cleanLabel = label.toLowerCase();
+    return denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags).concat(denizenMCommands).concat(denizenMCommandArgs).concat(denizenMEvents).filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 
 function getDenizenMHover(document: vscode.TextDocument, position: vscode.Position) : vscode.Hover | undefined {

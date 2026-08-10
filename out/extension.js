@@ -41,6 +41,8 @@ const https = __importStar(require("https"));
 const serverEngineSelector_1 = require("./serverEngineSelector");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
+/** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
+let usingTypeScriptServer = false;
 let headerSymbols = "|+=#_@/";
 let outputChannel = vscode.window.createOutputChannel("Denizen");
 let debugHighlighting = false;
@@ -1289,20 +1291,28 @@ function getDenizenMCommandArgCompletions(document, position) {
 }
 function getDenizenCompletions(document, position) {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const eventCompletions = getDenizenMEventCompletions(document, position);
-    if (eventCompletions.length > 0) {
-        return eventCompletions;
+    // The TypeScript server supplies real meta-driven completion for commands, command
+    // arguments, tags and events, so the hardcoded lists that back those stand down there.
+    // Container snippets, dialog context keys, defines and flags read live workspace state
+    // and have no TypeScript-server equivalent yet, so they keep working either way.
+    if (!usingTypeScriptServer) {
+        const eventCompletions = getDenizenMEventCompletions(document, position);
+        if (eventCompletions.length > 0) {
+            return eventCompletions;
+        }
     }
     const containerSnippets = getContainerSnippetCompletions(document, position);
     if (containerSnippets.length > 0) {
         return containerSnippets;
     }
-    const commandCompletions = getDenizenMCommandCompletions(document, position);
-    if (commandCompletions.length > 0) {
-        return commandCompletions;
+    if (!usingTypeScriptServer) {
+        const commandCompletions = getDenizenMCommandCompletions(document, position);
+        if (commandCompletions.length > 0) {
+            return commandCompletions;
+        }
     }
     const escapeTagMatch = /<(&?[A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (escapeTagMatch) {
+    if (escapeTagMatch && !usingTypeScriptServer) {
         const baseTagCompletions = getDenizenMBaseTagCompletions(document, position);
         if (baseTagCompletions.length > 0) {
             return baseTagCompletions;
@@ -1316,13 +1326,15 @@ function getDenizenCompletions(document, position) {
         return sortedSetValues(getDialogInputKeys(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Property, "Dialog input context", range));
     }
     const dotTagMatch = /<[^\s<>]*\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (dotTagMatch) {
+    if (dotTagMatch && !usingTypeScriptServer) {
         const range = getCompletionRange(document, position, dotTagMatch[1].length);
         return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
     }
-    const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
-    if (commandArgCompletions.length > 0) {
-        return commandArgCompletions;
+    if (!usingTypeScriptServer) {
+        const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
+        if (commandArgCompletions.length > 0) {
+            return commandArgCompletions;
+        }
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
@@ -1343,9 +1355,14 @@ function getDenizenCompletions(document, position) {
     return [];
 }
 function getDenizenMDocByLabel(label) {
+    // All six hardcoded doc arrays stand down on the TypeScript server: it has no
+    // legitimate data left to serve here (its own hover covers commands and container
+    // types directly, without going through this hardcoded lookup).
+    if (usingTypeScriptServer) {
+        return undefined;
+    }
     const cleanLabel = label.toLowerCase();
-    return denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags).concat(denizenMCommands).concat(denizenMCommandArgs).concat(denizenMEvents)
-        .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
+    return denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags).concat(denizenMCommands).concat(denizenMCommandArgs).concat(denizenMEvents).filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 function getDenizenMHover(document, position) {
     const line = document.lineAt(position).text;
@@ -2649,7 +2666,8 @@ function tryLoadConfigYaml(relativeTo) {
 }
 function activate(context) {
     return __awaiter(this, void 0, void 0, function* () {
-        if ((0, serverEngineSelector_1.shouldUseTypeScriptServer)(configuration.get("denizenscript.server.engine"))) {
+        usingTypeScriptServer = (0, serverEngineSelector_1.shouldUseTypeScriptServer)(configuration.get("denizenscript.server.engine"));
+        if (usingTypeScriptServer) {
             activateTsLanguageServer(context);
         }
         else {
