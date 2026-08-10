@@ -45,6 +45,11 @@ describe('findEnumCompleter', () => {
     it('is keyed by lowercase command name', () => {
         expect(findEnumCompleter('PLAYSOUND', 'sound')).not.toBeNull();
     });
+
+    it('keeps block materials for modifyblock even though C# loses them to a registration collision', () => {
+        const completer = findEnumCompleter('modifyblock', '')!;
+        expect(completer.values(DATA).has('stone')).toBe(true);
+    });
 });
 
 describe('COMMAND_VALUE_COMPLETERS', () => {

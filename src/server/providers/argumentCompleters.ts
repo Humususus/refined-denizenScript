@@ -34,6 +34,17 @@ function register(map: Map<string, EnumCompleter[]>, commands: string[], complet
 
 function build(): Map<string, EnumCompleter[]> {
     const map = new Map<string, EnumCompleter[]>();
+    // C# registers 'modifyblock' twice under the empty prefix: Data.Blocks at
+    // CommandTabCompletions.cs:48, then SuggestScriptByType("task", ...) at :68 (as part of the
+    // run/runlater/clickable/inject/modifyblock loop). Because Register() assigns into a plain
+    // dictionary, the later registration silently overwrites the earlier one, so the live C#
+    // server never suggests block materials for modifyblock's bare argument — only task scripts.
+    // modifyblock's real syntax is `[<location>...] [<material>|...] ... (<script>) ...`: a
+    // required material argument and an optional script argument. Losing the required one to
+    // registration order is a C# bug, not intent, so this port keeps the Blocks registration
+    // deliberately rather than reproducing the loss. When the workspace-script completer
+    // (SuggestScriptByType-equivalent) is ported in a later phase, modifyblock's two sources
+    // should be merged into the same '' prefix entry, not have one replace the other.
     register(map, ['modifyblock', 'showfake'], { prefix: '', label: 'Block Material', values: d => d.blocks });
     register(map, ['create', 'spawn', 'fakespawn'], { prefix: '', label: 'Entity Type', values: d => d.entities });
     register(map, ['disguise'], { prefix: 'as', label: 'Entity Type', values: d => d.entities });
