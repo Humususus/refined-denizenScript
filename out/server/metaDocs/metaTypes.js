@@ -103,6 +103,12 @@ class MetaCommand extends MetaObject {
         this.tags = [];
         this.usages = [];
         this.guide = '';
+        /** Arguments written as `prefix:<value>`. Populated by `parseSyntax`. */
+        this.argPrefixes = [];
+        /** Literal keyword arguments with no tag input. Populated by `parseSyntax`. */
+        this.flatArguments = [];
+        /** Positional arguments that take dynamic input. Populated by `parseSyntax`. */
+        this.linearArguments = [];
     }
     get name() {
         return this.commandName;
@@ -150,7 +156,48 @@ class MetaCommand extends MetaObject {
                 return super.applyValue(key, value);
         }
     }
+    /**
+     * Parses `syntax` into the three argument buckets used for completion.
+     * Ported from SharpDenizenTools MetaCommand.ParseSyntax, with two deliberate
+     * deviations: the C# original has a self-assignment bug on its LinearArguments
+     * line (`LinearArguments = [.. LinearArguments]`), which this port fixes by
+     * assigning the collected list; and a tag-valued prefix such as `[<a>:<b>]` is
+     * recorded as a linear argument here rather than being dropped entirely.
+     */
+    parseSyntax() {
+        this.argPrefixes = [];
+        this.flatArguments = [];
+        this.linearArguments = [];
+        const firstSpace = this.syntax.indexOf(' ');
+        if (firstSpace < 0) {
+            return;
+        }
+        const cleaned = this.syntax.substring(firstSpace).replace(/\//g, ' ');
+        for (const arg of cleaned.split(' ')) {
+            const cleanedArg = arg.replace(/[[\](){}]/g, '');
+            if (cleanedArg.trim().length === 0) {
+                continue;
+            }
+            const colonIndex = cleanedArg.indexOf(':');
+            if (colonIndex > 0) {
+                const prefix = cleanedArg.substring(0, colonIndex);
+                if (!prefix.includes('<')) {
+                    this.argPrefixes.push({ clean: prefix, raw: arg });
+                }
+                else {
+                    this.linearArguments.push(arg);
+                }
+            }
+            else if (!cleanedArg.includes('<') && !cleanedArg.includes('|')) {
+                this.flatArguments.push({ clean: cleanedArg, raw: arg });
+            }
+            else {
+                this.linearArguments.push(arg);
+            }
+        }
+    }
     addTo(docs) {
+        this.parseSyntax();
         docs.commands.set(this.cleanName, this);
     }
 }
