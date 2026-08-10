@@ -1341,6 +1341,7 @@ function getDenizenMCommandArgCompletions(document: vscode.TextDocument, positio
 
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
+    const suppressHardcodedCommands = shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"));
     const eventCompletions = getDenizenMEventCompletions(document, position);
     if (eventCompletions.length > 0) {
         return eventCompletions;
@@ -1349,9 +1350,14 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
     if (containerSnippets.length > 0) {
         return containerSnippets;
     }
-    const commandCompletions = getDenizenMCommandCompletions(document, position);
-    if (commandCompletions.length > 0) {
-        return commandCompletions;
+    // The TypeScript server supplies real meta-driven command completion, so the
+    // hardcoded command list stands down there. Tags, events, defines and flags
+    // below have no TypeScript-server equivalent yet and keep working either way.
+    if (!suppressHardcodedCommands) {
+        const commandCompletions = getDenizenMCommandCompletions(document, position);
+        if (commandCompletions.length > 0) {
+            return commandCompletions;
+        }
     }
     const escapeTagMatch = /<(&?[A-Za-z0-9_]*)$/i.exec(linePrefix);
     if (escapeTagMatch) {
@@ -1372,9 +1378,11 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
         const range = getCompletionRange(document, position, dotTagMatch[1].length);
         return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
     }
-    const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
-    if (commandArgCompletions.length > 0) {
-        return commandArgCompletions;
+    if (!suppressHardcodedCommands) {
+        const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
+        if (commandArgCompletions.length > 0) {
+            return commandArgCompletions;
+        }
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
@@ -1397,8 +1405,14 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
 
 function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
     const cleanLabel = label.toLowerCase();
-    return denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags).concat(denizenMCommands).concat(denizenMCommandArgs).concat(denizenMEvents)
-        .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
+    // Commands and their arguments are documented by the TypeScript server's own
+    // hover when that engine is active; the remaining sources have no equivalent yet.
+    let sources = denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags);
+    if (!shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
+        sources = sources.concat(denizenMCommands).concat(denizenMCommandArgs);
+    }
+    sources = sources.concat(denizenMEvents);
+    return sources.filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 
 function getDenizenMHover(document: vscode.TextDocument, position: vscode.Position) : vscode.Hover | undefined {
@@ -1436,24 +1450,17 @@ function getDenizenMHover(document: vscode.TextDocument, position: vscode.Positi
 
 function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
     workspaceIndex.refreshWorkspace();
-    // The TypeScript language server supplies meta-driven completion and hover.
-    // The hardcoded snippet list below is the C#-path fallback only, so it stands
-    // down when the TypeScript engine is active to avoid competing suggestions.
-    // The workspace index and file watcher below run either way — the Denizen
-    // tree view depends on them.
-    if (!shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
-        context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
-            provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.CompletionItem[]> {
-                workspaceIndex.updateDocument(document);
-                return getDenizenCompletions(document, position);
-            }
-        }, "<", "[", ".", "&", " "));
-        context.subscriptions.push(vscode.languages.registerHoverProvider("denizenscript", {
-            provideHover(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.Hover> {
-                return getDenizenMHover(document, position);
-            }
-        }));
-    }
+    context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
+        provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.CompletionItem[]> {
+            workspaceIndex.updateDocument(document);
+            return getDenizenCompletions(document, position);
+        }
+    }, "<", "[", ".", "&", " "));
+    context.subscriptions.push(vscode.languages.registerHoverProvider("denizenscript", {
+        provideHover(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.Hover> {
+            return getDenizenMHover(document, position);
+        }
+    }));
     const watcher = vscode.workspace.createFileSystemWatcher("**/*.dsc");
     watcher.onDidCreate(uri => {
         workspaceIndex.updateUri(uri);
