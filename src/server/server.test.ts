@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { combineSources } from './server';
+import { combineSources, buildCapabilities } from './server';
 
 describe('combineSources', () => {
     it('returns just the defaults when extra is undefined, null, or empty', () => {
@@ -26,5 +26,22 @@ describe('combineSources', () => {
             'https://example.com/a.zip',
             'https://example.com/custom.zip'
         ]);
+    });
+});
+
+describe('buildCapabilities', () => {
+    it('advertises completion and hover support', () => {
+        const caps = buildCapabilities();
+        expect(caps.completionProvider).toBeDefined();
+        expect(caps.completionProvider!.resolveProvider).toBe(false);
+        expect(caps.hoverProvider).toBe(true);
+    });
+
+    it('offers a dash as a completion trigger character', () => {
+        expect(buildCapabilities().completionProvider!.triggerCharacters).toContain('-');
+    });
+
+    it('keeps incremental document sync', () => {
+        expect(buildCapabilities().textDocumentSync).toBe(2);
     });
 });

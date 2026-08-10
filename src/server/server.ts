@@ -8,12 +8,24 @@ import * as os from 'os';
 import * as path from 'path';
 import {
     createConnection, ProposedFeatures, TextDocuments, TextDocumentSyncKind,
-    InitializeParams, InitializeResult, Connection
+    InitializeParams, InitializeResult, Connection, ServerCapabilities,
+    CompletionItem, Hover, TextDocumentPositionParams
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { loadMetaDocs, DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
+import { MetaDocs } from './metaDocs/metaTypes';
+import { provideCompletions } from './providers/completionProvider';
+import { provideHover } from './providers/hoverProvider';
 
 const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** The loaded meta documentation, or null until the initial load resolves. */
+let loadedDocs: MetaDocs | null = null;
+
+/** Test accessor for the loaded documentation. */
+export function getLoadedDocs(): MetaDocs | null {
+    return loadedDocs;
+}
 
 function getMetaCacheFile(): string {
     const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
@@ -28,16 +40,24 @@ export function combineSources(defaults: string[], extra: string[] | undefined |
     return [...defaults, ...extra.map(s => s.trim()).filter(s => s.length > 0)];
 }
 
+/** The capabilities this server advertises. Extracted so it is testable without a live connection. */
+export function buildCapabilities(): ServerCapabilities {
+    return {
+        textDocumentSync: TextDocumentSyncKind.Incremental,
+        completionProvider: {
+            resolveProvider: false,
+            triggerCharacters: ['-', ' ', ':']
+        },
+        hoverProvider: true
+    };
+}
+
 export function createServer(): Connection {
     const connection = createConnection(ProposedFeatures.all);
     const documents = new TextDocuments(TextDocument);
 
     connection.onInitialize((_params: InitializeParams): InitializeResult => {
-        return {
-            capabilities: {
-                textDocumentSync: TextDocumentSyncKind.Incremental
-            }
-        };
+        return { capabilities: buildCapabilities() };
     });
 
     connection.onInitialized(() => {
@@ -47,6 +67,7 @@ export function createServer(): Connection {
                 return loadMetaDocs({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources });
             })
             .then(docs => {
+                loadedDocs = docs;
                 connection.console.log(
                     `Denizen meta loaded: ${docs.commands.size} commands, ${docs.tags.size} tags, ` +
                     `${docs.events.size} events, ${docs.mechanisms.size} mechanisms, ${docs.properties.size} properties, ` +
@@ -60,6 +81,35 @@ export function createServer(): Connection {
             .catch(err => {
                 connection.console.error(`Denizen meta load failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
             });
+    });
+
+    connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] => {
+        const doc = documents.get(params.textDocument.uri);
+        if (doc === undefined || loadedDocs === null || !params.textDocument.uri.endsWith('.dsc')) {
+            return [];
+        }
+        try {
+            return provideCompletions(loadedDocs, doc.getText(), doc.offsetAt(params.position));
+        }
+        catch (err) {
+            connection.console.error(`Completion failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            return [];
+        }
+    });
+
+    connection.onHover((params: TextDocumentPositionParams): Hover | null => {
+        const doc = documents.get(params.textDocument.uri);
+        if (doc === undefined || loadedDocs === null || !params.textDocument.uri.endsWith('.dsc')) {
+            return null;
+        }
+        try {
+            return provideHover(loadedDocs, doc.getText(), doc.offsetAt(params.position),
+                params.position.line);
+        }
+        catch (err) {
+            connection.console.error(`Hover failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            return null;
+        }
     });
 
     documents.listen(connection);
