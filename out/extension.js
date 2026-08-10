@@ -1156,7 +1156,12 @@ function getContainerDefines(document, position) {
     // the name must not be required to start with a letter. `definemap` names a map the
     // same way. A name containing a tag is skipped: it is not knowable statically.
     const defineMatcher = /^\s*-\s*define(?:map)?\s+(\S+)/i;
-    for (const rawLine of getContainerText(document, position).replace(/\r/g, "").split("\n")) {
+    // Only defines established ABOVE the cursor are usable at it: `- define` runs in
+    // order, so a name set further down the script does not exist yet here. The last
+    // element is the cursor's own (partial) line, dropped because a define is not
+    // usable on the very line that sets it.
+    const linesAbove = getContainerTextUntilPosition(document, position).replace(/\r/g, "").split("\n").slice(0, -1);
+    for (const rawLine of linesAbove) {
         const defineMatch = defineMatcher.exec(rawLine);
         if (defineMatch) {
             const name = defineMatch[1].split(":")[0].split(".")[0];
