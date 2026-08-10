@@ -10,6 +10,7 @@ import { Hover } from 'vscode-languageserver';
 import { MetaDocs } from '../metaDocs/metaTypes';
 import { describeCommand, describeLang } from './describe';
 import { getFullLine } from './lineContext';
+import { parseCommandLine } from './cursorContext';
 
 const TYPE_PREFIX = 'type: ';
 
@@ -34,29 +35,21 @@ export function provideHover(docs: MetaDocs, text: string, offset: number, line:
     const trimmedRaw = raw.trimStart();
     const indent = raw.length - trimmedRaw.length;
     const trimmed = trimmedRaw.toLowerCase();
-    if (trimmed.startsWith('- ')) {
-        let nameStart = indent + 2;
-        let rest = trimmed.substring(2);
-        if (rest.startsWith('~')) {
-            rest = rest.substring(1);
-            nameStart++;
-        }
-        const spaceIndex = rest.indexOf(' ');
-        const commandName = spaceIndex === -1 ? rest : rest.substring(0, spaceIndex);
-        if (!COMMAND_NAME_PATTERN.test(commandName)) {
+    const cmdCtx = parseCommandLine(trimmed, indent);
+    if (cmdCtx !== null) {
+        if (!COMMAND_NAME_PATTERN.test(cmdCtx.name)) {
             return null;
         }
-        const nameEnd = nameStart + commandName.length;
-        if (character < nameStart || character > nameEnd) {
+        if (character < cmdCtx.nameStart || character > cmdCtx.nameEnd) {
             return null;
         }
-        const command = docs.commands.get(commandName);
+        const command = docs.commands.get(cmdCtx.name);
         if (command === undefined) {
             return null;
         }
         return {
             contents: describeCommand(command),
-            range: { start: { line, character: nameStart }, end: { line, character: nameEnd } }
+            range: { start: { line, character: cmdCtx.nameStart }, end: { line, character: cmdCtx.nameEnd } }
         };
     }
     if (trimmed.startsWith(TYPE_PREFIX)) {

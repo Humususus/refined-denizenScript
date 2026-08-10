@@ -9,7 +9,7 @@
 import { CompletionItem, CompletionItemKind } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand } from '../metaDocs/metaTypes';
 import { describeCommand } from './describe';
-import { getLineContext } from './lineContext';
+import { parseCursorContext } from './cursorContext';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -45,21 +45,16 @@ export function completeCommandArguments(command: MetaCommand, argSoFar: string)
 
 /** Entry point: what should be offered at `offset` within `text`. */
 export function provideCompletions(docs: MetaDocs, text: string, offset: number): CompletionItem[] {
-    const ctx = getLineContext(text, offset);
-    if (ctx === null || !ctx.trimmed.startsWith('- ')) {
+    const ctx = parseCursorContext(text, offset);
+    if (ctx === null) {
         return [];
     }
-    let afterDash = ctx.trimmed.substring(2);
-    if (afterDash.startsWith('~')) {
-        afterDash = afterDash.substring(1);
+    if (ctx.typingName) {
+        return completeCommandNames(docs, ctx.name);
     }
-    const firstSpace = afterDash.indexOf(' ');
-    if (firstSpace === -1) {
-        return completeCommandNames(docs, afterDash);
-    }
-    const command = docs.commands.get(afterDash.substring(0, firstSpace));
+    const command = docs.commands.get(ctx.name);
     if (command === undefined) {
         return [];
     }
-    return completeCommandArguments(command, afterDash.substring(afterDash.lastIndexOf(' ') + 1));
+    return completeCommandArguments(command, ctx.argThusFar);
 }
