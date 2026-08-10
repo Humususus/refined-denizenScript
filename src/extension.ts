@@ -1436,17 +1436,24 @@ function getDenizenMHover(document: vscode.TextDocument, position: vscode.Positi
 
 function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
     workspaceIndex.refreshWorkspace();
-    context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
-        provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.CompletionItem[]> {
-            workspaceIndex.updateDocument(document);
-            return getDenizenCompletions(document, position);
-        }
-    }, "<", "[", ".", "&", " "));
-    context.subscriptions.push(vscode.languages.registerHoverProvider("denizenscript", {
-        provideHover(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.Hover> {
-            return getDenizenMHover(document, position);
-        }
-    }));
+    // The TypeScript language server supplies meta-driven completion and hover.
+    // The hardcoded snippet list below is the C#-path fallback only, so it stands
+    // down when the TypeScript engine is active to avoid competing suggestions.
+    // The workspace index and file watcher below run either way — the Denizen
+    // tree view depends on them.
+    if (!shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
+        context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
+            provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.CompletionItem[]> {
+                workspaceIndex.updateDocument(document);
+                return getDenizenCompletions(document, position);
+            }
+        }, "<", "[", ".", "&", " "));
+        context.subscriptions.push(vscode.languages.registerHoverProvider("denizenscript", {
+            provideHover(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.Hover> {
+                return getDenizenMHover(document, position);
+            }
+        }));
+    }
     const watcher = vscode.workspace.createFileSystemWatcher("**/*.dsc");
     watcher.onDidCreate(uri => {
         workspaceIndex.updateUri(uri);
