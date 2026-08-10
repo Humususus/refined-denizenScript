@@ -157,3 +157,44 @@ describe('enum-backed argument value completion', () => {
         expect(provideCompletions(playsoundDocs(), EXTRA, text, text.length)).toEqual([]);
     });
 });
+
+// Regression coverage for a bug caught in review: `give` (and every other command
+// registered under the bare '' prefix in argumentCompleters.ts) has its enum values
+// and its own argument names compete for the same unprefixed typed text. The fix
+// merges both sources instead of the enum short-circuiting the argument names away.
+describe('enum results merge with the command\'s own argument names (bare-prefix regression)', () => {
+    const GIVE_EXTRA = buildExtraData(parseFlatFds([
+        'items:', '- QUARTZ', '- QUARTZ_BLOCK',
+        'potion_effects:', '- SPEED', '- SLOWNESS',
+        ''
+    ].join('\n')));
+
+    function giveDocs(): MetaDocs {
+        return docsWith(makeCommand('give', 'give [<item>|...] (quantity:<#>) (slot:<slot>)', 'Gives an item.'));
+    }
+
+    it('lists the argument name before the enum values when a typed prefix matches both', () => {
+        const text = '  - give q';
+        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length).map(i => i.label);
+        expect(labels).toEqual(['quantity:', 'quartz', 'quartz_block']);
+    });
+
+    it('still yields enum values when the typed prefix matches only the enum', () => {
+        const text = '  - give quar';
+        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length).map(i => i.label);
+        expect(labels).toEqual(['quartz', 'quartz_block']);
+    });
+
+    it('still yields the argument name when the typed prefix matches only an argument', () => {
+        const text = '  - give sl';
+        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length).map(i => i.label);
+        expect(labels).toEqual(['slot:']);
+    });
+
+    it('yields enum values for a command unknown to the meta docs but registered in the enum table', () => {
+        const docs = docsWith();
+        const text = '  - cast sp';
+        const labels = provideCompletions(docs, GIVE_EXTRA, text, text.length).map(i => i.label);
+        expect(labels).toEqual(['speed']);
+    });
+});

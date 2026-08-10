@@ -73,13 +73,12 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);
     }
-    const enumResults = completeEnumValues(extra, ctx.name, ctx.argPrefix, ctx.argValue);
-    if (enumResults.length > 0) {
-        return enumResults;
-    }
+    // C# merges both sources rather than choosing one (TextDocumentService.cs:362-367
+    // appends the ByCommand completer's output onto the argument-name results), and the
+    // order matters: argument names first, enum values after. Returning only the enum
+    // results would hide a command's own arguments behind any bare-prefix enum — e.g.
+    // `- give q` would list quartz items but swallow `quantity:`.
     const command = docs.commands.get(ctx.name);
-    if (command === undefined) {
-        return [];
-    }
-    return completeCommandArguments(command, ctx.argThusFar);
+    const argResults = command === undefined ? [] : completeCommandArguments(command, ctx.argThusFar);
+    return [...argResults, ...completeEnumValues(extra, ctx.name, ctx.argPrefix, ctx.argValue)];
 }
