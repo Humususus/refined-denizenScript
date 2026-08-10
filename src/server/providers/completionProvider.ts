@@ -6,10 +6,12 @@
  * mechanism, event, and workspace-driven completions arrive in later phases.
  */
 
-import { CompletionItem, CompletionItemKind } from 'vscode-languageserver';
+import { CompletionItem, CompletionItemKind, MarkupKind } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand } from '../metaDocs/metaTypes';
 import { describeCommand } from './describe';
 import { parseCursorContext } from './cursorContext';
+import { ExtraData } from '../metaDocs/extraData';
+import { findEnumCompleter } from './argumentCompleters';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -43,14 +45,37 @@ export function completeCommandArguments(command: MetaCommand, argSoFar: string)
     return results;
 }
 
+/** Values of the enum backing this command argument, filtered by what has been typed. */
+export function completeEnumValues(extra: ExtraData, commandName: string, argPrefix: string, argValue: string): CompletionItem[] {
+    const completer = findEnumCompleter(commandName, argPrefix);
+    if (completer === null) {
+        return [];
+    }
+    const results: CompletionItem[] = [];
+    for (const value of completer.values(extra)) {
+        if (value.startsWith(argValue)) {
+            results.push({
+                label: value,
+                kind: CompletionItemKind.Enum,
+                documentation: { kind: MarkupKind.Markdown, value: `**${completer.label}**: ${value}` }
+            });
+        }
+    }
+    return results;
+}
+
 /** Entry point: what should be offered at `offset` within `text`. */
-export function provideCompletions(docs: MetaDocs, text: string, offset: number): CompletionItem[] {
+export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number): CompletionItem[] {
     const ctx = parseCursorContext(text, offset);
     if (ctx === null) {
         return [];
     }
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);
+    }
+    const enumResults = completeEnumValues(extra, ctx.name, ctx.argPrefix, ctx.argValue);
+    if (enumResults.length > 0) {
+        return enumResults;
     }
     const command = docs.commands.get(ctx.name);
     if (command === undefined) {
