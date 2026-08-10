@@ -1195,11 +1195,19 @@ function getContainerTextUntilPosition(document: vscode.TextDocument, position: 
 
 function getContainerDefines(document: vscode.TextDocument, position: vscode.Position) : Set<string> {
     const defines = new Set<string>();
-    const defineMatcher = /^\s*-\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\b/i;
+    // Denizen puts no character restriction on a define name — DenizenCore takes the
+    // command's first argument and cuts it at ':' and '.' (see SharpDenizenTools
+    // ScriptCheckerCommandSpecifics.cs:229). Notably `- define 123 value` is legal, so
+    // the name must not be required to start with a letter. `definemap` names a map the
+    // same way. A name containing a tag is skipped: it is not knowable statically.
+    const defineMatcher = /^\s*-\s*define(?:map)?\s+(\S+)/i;
     for (const rawLine of getContainerText(document, position).replace(/\r/g, "").split("\n")) {
         const defineMatch = defineMatcher.exec(rawLine);
         if (defineMatch) {
-            defines.add(defineMatch[1]);
+            const name = defineMatch[1].split(":")[0].split(".")[0];
+            if (name.length > 0 && !name.includes("<")) {
+                defines.add(name);
+            }
         }
     }
     return defines;
