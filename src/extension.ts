@@ -1405,13 +1405,14 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
 
 function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
     const cleanLabel = label.toLowerCase();
-    // Commands and their arguments are documented by the TypeScript server's own
-    // hover when that engine is active; the remaining sources have no equivalent yet.
+    // The TypeScript server's hover covers command NAMES only — it never evaluates
+    // argument positions — so only the hardcoded command list stands down here.
+    // Command argument docs, tags and events have no equivalent there and stay.
     let sources = denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags);
     if (!shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
-        sources = sources.concat(denizenMCommands).concat(denizenMCommandArgs);
+        sources = sources.concat(denizenMCommands);
     }
-    sources = sources.concat(denizenMEvents);
+    sources = sources.concat(denizenMCommandArgs).concat(denizenMEvents);
     return sources.filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
 }
 
