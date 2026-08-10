@@ -1,7 +1,6 @@
 /**
- * TypeScript LSP server entry point. Phase 1 scope: connect, load meta
- * documentation, and log a summary — no completion/hover/diagnostics yet
- * (those are later phases per LSP_REWRITE_PLAN.md).
+ * TypeScript LSP server entry point. Connects, loads meta documentation, and
+ * serves command completion and hover. Diagnostics remain future work.
  */
 
 import * as os from 'os';
@@ -21,11 +20,6 @@ const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 /** The loaded meta documentation, or null until the initial load resolves. */
 let loadedDocs: MetaDocs | null = null;
-
-/** Test accessor for the loaded documentation. */
-export function getLoadedDocs(): MetaDocs | null {
-    return loadedDocs;
-}
 
 function getMetaCacheFile(): string {
     const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');

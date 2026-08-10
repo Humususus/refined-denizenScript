@@ -126,7 +126,7 @@
                     "enum": ["csharp", "typescript"],
                     "enumDescriptions": [
                         "The existing stable .NET language server.",
-                        "Experimental TypeScript rewrite. Phase 1: loads meta documentation only — no completions, hover, or diagnostics yet."
+                        "Experimental TypeScript rewrite. Provides command and command-argument completion plus hover documentation for commands and container types; tag, event, and flag completion and diagnostics are not yet implemented."
                     ],
                     "default": "csharp",
                     "description": "Which Denizen language server engine to use."

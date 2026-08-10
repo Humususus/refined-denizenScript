@@ -10,6 +10,9 @@ const languageServerPath : string = "server/DenizenLangServer.dll";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
+/** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
+let usingTypeScriptServer : boolean = false;
+
 let headerSymbols : string = "|+=#_@/";
 
 let outputChannel = vscode.window.createOutputChannel("Denizen");
@@ -1341,7 +1344,7 @@ function getDenizenMCommandArgCompletions(document: vscode.TextDocument, positio
 
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const suppressHardcodedCommands = shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"));
+    const suppressHardcodedCommands = usingTypeScriptServer;
     const eventCompletions = getDenizenMEventCompletions(document, position);
     if (eventCompletions.length > 0) {
         return eventCompletions;
@@ -1378,11 +1381,9 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
         const range = getCompletionRange(document, position, dotTagMatch[1].length);
         return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
     }
-    if (!suppressHardcodedCommands) {
-        const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
-        if (commandArgCompletions.length > 0) {
-            return commandArgCompletions;
-        }
+    const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
+    if (commandArgCompletions.length > 0) {
+        return commandArgCompletions;
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
@@ -1409,7 +1410,7 @@ function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
     // argument positions — so only the hardcoded command list stands down here.
     // Command argument docs, tags and events have no equivalent there and stay.
     let sources = denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags);
-    if (!shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
+    if (!usingTypeScriptServer) {
         sources = sources.concat(denizenMCommands);
     }
     sources = sources.concat(denizenMCommandArgs).concat(denizenMEvents);
@@ -2774,7 +2775,8 @@ function tryLoadConfigYaml(relativeTo : vscode.TextDocument) {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-    if (shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"))) {
+    usingTypeScriptServer = shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"));
+    if (usingTypeScriptServer) {
         activateTsLanguageServer(context);
     }
     else {
