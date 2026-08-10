@@ -43,12 +43,16 @@ loadMetaDocs({ cacheFile, ttlMs: 12 * 60 * 60 * 1000, sources: DEFAULT_META_SOUR
         `got ${argResults.map(i => i.label).join(', ')}`);
 
     const hoverText = '  - narrate hello';
-    const hover = provideHover(docs, hoverText, 6, 0, 6);
+    const hover = provideHover(docs, hoverText, 6, 0);
+    // Real meta carries `@Name Narrate`, and both this port and the C# original
+    // render the raw case-preserved name in the header (C# uses `command.Name`,
+    // not `CleanName`) — so match case-insensitively rather than assuming lowercase.
     failures += check('hover on narrate returns documentation',
-        hover !== null && hover.contents.value.includes('### Command narrate'));
+        hover !== null && hover.contents.value.toLowerCase().includes('### command narrate'),
+        hover === null ? 'null' : hover.contents.value.split('\n')[0]);
 
     const typeText = 'my_task:\n  type: task';
-    const typeHover = provideHover(docs, typeText, typeText.length, 1, 12);
+    const typeHover = provideHover(docs, typeText, typeText.length, 1);
     failures += check('hover on a type line returns container docs',
         typeHover !== null,
         typeHover === null ? 'null' : typeHover.contents.value.split('\n')[0]);
