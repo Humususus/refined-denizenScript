@@ -31,6 +31,8 @@ export interface ExtraData {
     materials: Set<string>;
     /** Every value from every section, for the script checker's keyword collision test. */
     all: Set<string>;
+    /** Human-readable reasons the enum data failed to load; empty on success. */
+    loadErrors: string[];
 }
 
 export function createEmptyExtraData(): ExtraData {
@@ -38,7 +40,7 @@ export function createEmptyExtraData(): ExtraData {
         blocks: new Set(), items: new Set(), particles: new Set(), effects: new Set(),
         sounds: new Set(), entities: new Set(), enchantments: new Set(), biomes: new Set(),
         attributes: new Set(), gamerules: new Set(), potionEffects: new Set(), potions: new Set(),
-        statistics: new Set(), materials: new Set(), all: new Set()
+        statistics: new Set(), materials: new Set(), all: new Set(), loadErrors: []
     };
 }
 
@@ -93,18 +95,35 @@ export function buildExtraData(sections: Map<string, string[]>): ExtraData {
         potions: setOf(sections, 'potions', all),
         statistics: setOf(sections, 'statistics', all),
         materials: new Set([...blocks, ...items]),
-        all
+        all,
+        loadErrors: []
     };
+}
+
+function describeError(err: unknown): string {
+    return err instanceof Error ? err.stack ?? err.message : String(err);
+}
+
+export interface LoadExtraDataOptions {
+    cacheFile: string;
+    ttlMs: number;
+    source?: string;
+    /** Injectable for testing; defaults to the real network downloadBinary(). */
+    downloadFn?: (url: string) => Promise<Buffer>;
 }
 
 /**
  * Loads the enum data, preferring a cache file younger than `ttlMs`.
  * Never throws: on any failure it returns whatever it has, falling back to empty
  * sets, because argument-value completion degrading to nothing is far better
- * than the whole language server failing to start.
+ * than the whole language server failing to start. The reason for any failure
+ * is recorded on the returned ExtraData's `loadErrors` rather than being
+ * silently swallowed.
  */
-export async function loadExtraData(options: { cacheFile: string; ttlMs: number; source?: string }): Promise<ExtraData> {
+export async function loadExtraData(options: LoadExtraDataOptions): Promise<ExtraData> {
     const source = options.source ?? EXTRA_DATA_SOURCE;
+    const download = options.downloadFn ?? downloadBinary;
+    const loadErrors: string[] = [];
     try {
         if (fs.existsSync(options.cacheFile)) {
             const age = Date.now() - fs.statSync(options.cacheFile).mtimeMs;
@@ -113,19 +132,24 @@ export async function loadExtraData(options: { cacheFile: string; ttlMs: number;
             }
         }
     }
-    catch {
+    catch (err) {
+        loadErrors.push(`Extra data cache read failed: ${describeError(err)}`);
         // fall through to a fresh download
     }
     try {
-        const content = (await downloadBinary(source)).toString('utf8');
+        const content = (await download(source)).toString('utf8');
         const data = buildExtraData(parseFlatFds(content));
+        data.loadErrors.push(...loadErrors);
         if (data.all.size > 0) {
             fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
             fs.writeFileSync(options.cacheFile, content);
         }
         return data;
     }
-    catch {
-        return createEmptyExtraData();
+    catch (err) {
+        loadErrors.push(`Extra data loading failed: ${describeError(err)}`);
+        const data = createEmptyExtraData();
+        data.loadErrors.push(...loadErrors);
+        return data;
     }
 }

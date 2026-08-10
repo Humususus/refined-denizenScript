@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { parseFlatFds, buildExtraData, createEmptyExtraData } from './extraData';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { parseFlatFds, buildExtraData, createEmptyExtraData, loadExtraData } from './extraData';
 
 const SAMPLE = [
     'biomes:',
@@ -69,5 +72,65 @@ describe('createEmptyExtraData', () => {
         expect(data.sounds.size).toBe(0);
         expect(data.materials.size).toBe(0);
         expect(data.all.size).toBe(0);
+        expect(data.loadErrors).toEqual([]);
+    });
+});
+
+describe('loadExtraData caching', () => {
+    let tmpDir: string;
+    let cacheFile: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'denizen-extradata-cache-'));
+        cacheFile = path.join(tmpDir, 'minecraft-cache.fds');
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        vi.restoreAllMocks();
+    });
+
+    it('downloads and writes the cache file when none exists', async () => {
+        const downloadSpy = vi.fn(async () => Buffer.from(SAMPLE, 'utf8'));
+        const data = await loadExtraData({ cacheFile, ttlMs: 1000 * 60, downloadFn: downloadSpy });
+        expect(downloadSpy).toHaveBeenCalledTimes(1);
+        expect(data.sounds.has('block.stone.step')).toBe(true);
+        expect(fs.existsSync(cacheFile)).toBe(true);
+    });
+
+    it('reuses the cache file within the TTL window instead of downloading again', async () => {
+        fs.writeFileSync(cacheFile, SAMPLE);
+        const downloadSpy = vi.fn(async () => Buffer.from(SAMPLE, 'utf8'));
+        const data = await loadExtraData({ cacheFile, ttlMs: 1000 * 60 * 60, downloadFn: downloadSpy });
+        expect(downloadSpy).not.toHaveBeenCalled();
+        expect(data.sounds.has('block.stone.step')).toBe(true);
+    });
+
+    it('re-downloads when the cache file is older than the TTL', async () => {
+        fs.writeFileSync(cacheFile, 'biomes:\n- STALE\n');
+        const oldTime = new Date(Date.now() - 1000 * 60 * 60 * 24);
+        fs.utimesSync(cacheFile, oldTime, oldTime);
+        const downloadSpy = vi.fn(async () => Buffer.from('biomes:\n- FRESH\n', 'utf8'));
+        const data = await loadExtraData({ cacheFile, ttlMs: 1000 * 60, downloadFn: downloadSpy });
+        expect(downloadSpy).toHaveBeenCalledTimes(1);
+        expect(data.biomes.has('fresh')).toBe(true);
+        expect(data.biomes.has('stale')).toBe(false);
+    });
+
+    it('yields empty sets and a recorded load error when the download rejects', async () => {
+        const downloadSpy = vi.fn(async () => { throw new Error('network down'); });
+        const data = await loadExtraData({ cacheFile, ttlMs: 1000 * 60, downloadFn: downloadSpy });
+        expect(data.sounds.size).toBe(0);
+        expect(data.all.size).toBe(0);
+        expect(data.loadErrors.length).toBeGreaterThan(0);
+        expect(data.loadErrors.some(e => e.includes('network down'))).toBe(true);
+    });
+
+    it('does not write a cache file when the downloaded document parses to nothing', async () => {
+        const downloadSpy = vi.fn(async () => Buffer.from('garbage without a colon or dash\n', 'utf8'));
+        const data = await loadExtraData({ cacheFile, ttlMs: 1000 * 60, downloadFn: downloadSpy });
+        expect(downloadSpy).toHaveBeenCalledTimes(1);
+        expect(data.all.size).toBe(0);
+        expect(fs.existsSync(cacheFile)).toBe(false);
     });
 });
