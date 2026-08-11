@@ -26,30 +26,38 @@ Promise.all([
     failures += check('block.stone.step present', extra.sounds.has('block.stone.step'));
 
     const soundText = '  - playsound <player.location> sound:block.stone.';
-    const sounds = provideCompletions(docs, extra, soundText, soundText.length);
+    const sounds = provideCompletions(docs, extra, soundText, soundText.length, 0);
     failures += check('playsound sound: completes real sounds',
         sounds.length > 0 && sounds.every(i => i.label.startsWith('block.stone.')),
         `${sounds.length} item(s), e.g. ${sounds.slice(0, 3).map(i => i.label).join(', ')}`);
 
+    const soundItem = sounds[0];
+    const soundReplaced = soundItem && soundItem.textEdit
+        ? soundText.slice(0, soundItem.textEdit.range.start.character) + soundItem.textEdit.newText + soundText.slice(soundItem.textEdit.range.end.character)
+        : undefined;
+    failures += check('playsound completion replaces the whole value (no block.block duplication)',
+        !!soundItem && !!soundItem.textEdit && !soundReplaced.includes('block.block') && soundReplaced.endsWith(soundItem.textEdit.newText),
+        soundItem ? `newText=${soundItem.textEdit ? soundItem.textEdit.newText : '(none)'} -> ${soundReplaced}` : 'no completion items');
+
     const castText = '  - cast spe';
-    const cast = provideCompletions(docs, extra, castText, castText.length);
+    const cast = provideCompletions(docs, extra, castText, castText.length, 0);
     failures += check('cast completes potion effects',
         cast.some(i => i.label === 'speed'),
         `${cast.length} item(s): ${cast.slice(0, 5).map(i => i.label).join(', ')}`);
 
     const blockText = '  - modifyblock <player.location> stone_b';
-    const blocks = provideCompletions(docs, extra, blockText, blockText.length);
+    const blocks = provideCompletions(docs, extra, blockText, blockText.length, 0);
     failures += check('modifyblock completes block materials',
         blocks.length > 0,
         `${blocks.length} item(s): ${blocks.slice(0, 3).map(i => i.label).join(', ')}`);
 
     const nameText = 'my_task:\n  type: task\n  script:\n  - narr';
     failures += check('command name completion still works',
-        provideCompletions(docs, extra, nameText, nameText.length).some(i => i.label === 'narrate'));
+        provideCompletions(docs, extra, nameText, nameText.length, 0).some(i => i.label === 'narrate'));
 
     const argText = '  - narrate hello for';
     failures += check('command argument completion still works',
-        provideCompletions(docs, extra, argText, argText.length).some(i => i.label === 'format:'));
+        provideCompletions(docs, extra, argText, argText.length, 0).some(i => i.label === 'format:'));
 
     console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
     process.exit(failures === 0 ? 0 : 1);

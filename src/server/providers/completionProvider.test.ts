@@ -80,36 +80,36 @@ describe('provideCompletions', () => {
     it('completes a command name after a dash', () => {
         const docs = docsWith(NARRATE(), NOTE());
         const text = 'my_task:\n  type: task\n  script:\n  - na';
-        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length).map(i => i.label)).toEqual(['narrate']);
+        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 3).map(i => i.label)).toEqual(['narrate']);
     });
 
     it('completes arguments once a command name and a space are present', () => {
         const docs = docsWith(NARRATE());
         const text = '  - narrate hello for';
-        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length).map(i => i.label)).toEqual(['format:']);
+        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 0).map(i => i.label)).toEqual(['format:']);
     });
 
     it('tolerates the wait-for tilde prefix', () => {
         const docs = docsWith(NARRATE());
         const text = '  - ~nar';
-        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length).map(i => i.label)).toEqual(['narrate']);
+        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 0).map(i => i.label)).toEqual(['narrate']);
     });
 
     it('returns nothing on a line that is not a command line', () => {
         const docs = docsWith(NARRATE());
         const text = 'my_task:\n  type: ta';
-        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length)).toEqual([]);
+        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 1)).toEqual([]);
     });
 
     it('returns nothing for an unrecognised command name', () => {
         const docs = docsWith(NARRATE());
         const text = '  - notacommand arg';
-        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length)).toEqual([]);
+        expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 0)).toEqual([]);
     });
 
     it('returns nothing for an out-of-range offset', () => {
         const docs = docsWith(NARRATE());
-        expect(provideCompletions(docs, createEmptyExtraData(), '  - nar', 999)).toEqual([]);
+        expect(provideCompletions(docs, createEmptyExtraData(), '  - nar', 999, 0)).toEqual([]);
     });
 });
 
@@ -127,7 +127,7 @@ describe('enum-backed argument value completion', () => {
 
     it('offers sound names after the sound: prefix', () => {
         const text = '  - playsound <player.location> sound:block.stone.';
-        const labels = provideCompletions(playsoundDocs(), EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels).toContain('block.stone.step');
         expect(labels).toContain('block.stone.break');
         expect(labels).not.toContain('ambient.cave');
@@ -135,26 +135,92 @@ describe('enum-backed argument value completion', () => {
 
     it('offers every sound when nothing follows the prefix yet', () => {
         const text = '  - playsound sound:';
-        const labels = provideCompletions(playsoundDocs(), EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels.sort()).toEqual(['ambient.cave', 'block.stone.break', 'block.stone.step']);
     });
 
     it('labels enum results with the enum name', () => {
         const text = '  - playsound sound:ambient';
-        const item = provideCompletions(playsoundDocs(), EXTRA, text, text.length)[0];
+        const item = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0)[0];
         expect(item.kind).toBe(CompletionItemKind.Enum);
         expect(String((item.documentation as { value: string }).value)).toContain('Sound Enum');
     });
 
     it('still offers the command\'s own argument names when no colon is typed', () => {
         const text = '  - playsound vol';
-        const labels = provideCompletions(playsoundDocs(), EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels).toContain('volume:');
     });
 
     it('offers nothing extra for a prefix with no registered enum', () => {
         const text = '  - playsound volume:0.';
-        expect(provideCompletions(playsoundDocs(), EXTRA, text, text.length)).toEqual([]);
+        expect(provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0)).toEqual([]);
+    });
+
+    // Regression coverage for the reported bug: with no wordPattern in
+    // language-configuration.json, VS Code's default word definition treats '.' and ':'
+    // as word breaks. Without an explicit textEdit, accepting a completion for
+    // 'sound:block.a' replaces only the trailing 'a' (the "current word"), leaving
+    // 'block.' in place and producing 'sound:block.block.amethyst_block.break'. The
+    // textEdit's range must span the entire typed value so acceptance replaces
+    // 'block.a' as a whole with the full dotted value.
+    describe('textEdit range pins the whole typed value, not just the trailing word', () => {
+        it('starts right after the "sound:" prefix and ends at the cursor, for a value part-typed after a dot', () => {
+            // '  - playsound sound:block.st'
+            //  0123456789...
+            // 's' of 'sound:' is at index 14, so 'sound:' spans [14,20) and the value
+            // ('block.st') begins at index 20. The whole string is 28 characters long
+            // (indices 0..27), so the cursor sits at character 28.
+            const text = '  - playsound sound:block.st';
+            expect(text.length).toBe(28);
+            const items = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0);
+            expect(items.length).toBeGreaterThan(0);
+            for (const item of items) {
+                expect(item.textEdit).toEqual({
+                    range: { start: { line: 0, character: 20 }, end: { line: 0, character: 28 } },
+                    newText: item.label
+                });
+            }
+        });
+
+        it('sets newText to the full value', () => {
+            const text = '  - playsound sound:block.stone.st';
+            const items = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0);
+            const stepItem = items.find(i => i.label === 'block.stone.step');
+            expect(stepItem).toBeDefined();
+            expect((stepItem!.textEdit as { newText: string }).newText).toBe('block.stone.step');
+        });
+
+        it('has an equal start and end, both at the cursor, when the value is empty', () => {
+            // '  - playsound sound:' is 20 characters long (indices 0..19), so the
+            // cursor sits at character 20, and there is no typed value to replace.
+            const text = '  - playsound sound:';
+            expect(text.length).toBe(20);
+            const items = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 0);
+            expect(items.length).toBeGreaterThan(0);
+            for (const item of items) {
+                expect(item.textEdit).toEqual({
+                    range: { start: { line: 0, character: 20 }, end: { line: 0, character: 20 } },
+                    newText: item.label
+                });
+            }
+        });
+
+        it('places the range on the given line, not always line 0, in a multi-line document', () => {
+            // A leading '\n' puts everything else on line 1. The line's own text is
+            // identical to the single-line case above, so the character offsets within
+            // the line are unchanged (20 and 28) — only the line number differs.
+            const text = '\n  - playsound sound:block.st';
+            expect(text.length).toBe(29);
+            const items = provideCompletions(playsoundDocs(), EXTRA, text, text.length, 1);
+            expect(items.length).toBeGreaterThan(0);
+            for (const item of items) {
+                expect(item.textEdit).toEqual({
+                    range: { start: { line: 1, character: 20 }, end: { line: 1, character: 28 } },
+                    newText: item.label
+                });
+            }
+        });
     });
 });
 

@@ -107,7 +107,7 @@ export function createServer(): Connection {
             return [];
         }
         try {
-            return provideCompletions(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position));
+            return provideCompletions(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position), params.position.line);
         }
         catch (err) {
             connection.console.error(`Completion failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
