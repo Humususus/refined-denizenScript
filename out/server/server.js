@@ -36,6 +36,7 @@ const metaDocsManager_1 = require("./metaDocs/metaDocsManager");
 const extraData_1 = require("./metaDocs/extraData");
 const completionProvider_1 = require("./providers/completionProvider");
 const hoverProvider_1 = require("./providers/hoverProvider");
+const signatureHelpProvider_1 = require("./providers/signatureHelpProvider");
 const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 /** C# refreshes this document every 15 days (ExtraData.cs:51); match that. */
 const EXTRA_DATA_TTL_MS = 15 * 24 * 60 * 60 * 1000;
@@ -69,7 +70,10 @@ function buildCapabilities() {
             resolveProvider: false,
             triggerCharacters: ['-', ' ', ':']
         },
-        hoverProvider: true
+        hoverProvider: true,
+        signatureHelpProvider: {
+            triggerCharacters: [' ', ':']
+        },
     };
 }
 exports.buildCapabilities = buildCapabilities;
@@ -137,6 +141,20 @@ function createServer() {
         }
         catch (err) {
             connection.console.error(`Hover failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+            return null;
+        }
+    });
+    connection.onSignatureHelp((params) => {
+        var _a;
+        const doc = documents.get(params.textDocument.uri);
+        if (doc === undefined || loadedDocs === null || !params.textDocument.uri.endsWith('.dsc')) {
+            return null;
+        }
+        try {
+            return (0, signatureHelpProvider_1.provideSignatureHelp)(loadedDocs, doc.getText(), doc.offsetAt(params.position));
+        }
+        catch (err) {
+            connection.console.error(`Signature help failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
             return null;
         }
     });
