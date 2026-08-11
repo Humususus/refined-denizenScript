@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCursorContext, parseCommandLine } from './cursorContext';
+import { parseCursorContext, parseCommandLine, splitTopLevelArguments } from './cursorContext';
 
 describe('parseCommandLine', () => {
     it('reports a name still being typed', () => {
@@ -106,5 +106,65 @@ describe('argIndex through parseCursorContext', () => {
     it('carries the index through from a real document', () => {
         const text = 'my_task:\n  type: task\n  script:\n  - narrate hello for';
         expect(parseCursorContext(text, text.length)!.argIndex).toBe(1);
+    });
+});
+
+describe('splitTopLevelArguments', () => {
+    it('keeps a quoted value with a space as one argument', () => {
+        const text = 'narrate "hello world" fo';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('narrate');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('"hello world"');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('fo');
+    });
+
+    it('keeps a tag containing a space as one argument', () => {
+        const text = 'narrate <player.flag[a b]> fo';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('narrate');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('<player.flag[a b]>');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('fo');
+    });
+
+    it('collapses consecutive spaces without emitting an empty token', () => {
+        const text = 'narrate  hello';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(2);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('narrate');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('hello');
+    });
+
+    it('treats an unterminated quote as running to the end of the text', () => {
+        const text = 'narrate "hello wo';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(2);
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('"hello wo');
+    });
+
+    it('treats an unterminated tag as running to the end of the text', () => {
+        const text = 'narrate <player.flag[a b';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(2);
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('<player.flag[a b');
+    });
+});
+
+describe('argIndex with quotes, tags, and consecutive spaces', () => {
+    it('does not inflate on a double space between plain arguments', () => {
+        expect(parseCommandLine('- narrate a  b', 2)!.argIndex).toBe(1);
+    });
+
+    it('does not inflate on a double space right after the command name', () => {
+        expect(parseCommandLine('- narrate  hello', 2)!.argIndex).toBe(0);
+    });
+
+    it('does not split a quoted value containing a space', () => {
+        expect(parseCommandLine('- narrate "hello world" fo', 2)!.argIndex).toBe(1);
+    });
+
+    it('does not split a tag containing a space', () => {
+        expect(parseCommandLine('- narrate <player.flag[a b]> fo', 2)!.argIndex).toBe(1);
     });
 });

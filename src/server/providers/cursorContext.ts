@@ -6,6 +6,65 @@
 
 import { getLineContext } from './lineContext';
 
+/** One top-level argument of a command line, with its bounds inside the scanned text. */
+export interface ArgumentSpan { start: number; end: number; }
+
+/**
+ * Splits command-line text into top-level arguments: a space separates arguments only
+ * when it is outside quotes and outside tag brackets. Mirrors how DenizenCore itself
+ * builds arguments (see SharpDenizenTools ScriptChecker.BuildArgs), which a naive
+ * split cannot: `narrate "hello world"` is ONE argument, and so is `<player.flag[a b]>`.
+ */
+export function splitTopLevelArguments(text: string): ArgumentSpan[] {
+    const spans: ArgumentSpan[] = [];
+    let quote: string | null = null;
+    let depth = 0;
+    let tokenStart = -1;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (quote !== null) {
+            if (ch === quote) {
+                quote = null;
+            }
+            continue;
+        }
+        if (ch === '"' || ch === '\'') {
+            quote = ch;
+            if (tokenStart === -1) {
+                tokenStart = i;
+            }
+            continue;
+        }
+        if (ch === '<') {
+            depth++;
+            if (tokenStart === -1) {
+                tokenStart = i;
+            }
+            continue;
+        }
+        if (ch === '>') {
+            if (depth > 0) {
+                depth--;
+            }
+            continue;
+        }
+        if (ch === ' ' && depth === 0) {
+            if (tokenStart !== -1) {
+                spans.push({ start: tokenStart, end: i });
+                tokenStart = -1;
+            }
+            continue;
+        }
+        if (tokenStart === -1) {
+            tokenStart = i;
+        }
+    }
+    if (tokenStart !== -1) {
+        spans.push({ start: tokenStart, end: text.length });
+    }
+    return spans;
+}
+
 /** What the cursor is looking at on a `- command args...` line. */
 export interface CommandCursorContext {
     /** The command name, lowercased. May be a partial word while being typed. */
@@ -54,7 +113,9 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
     const argOffsetInRest = typingName ? rest.length : rest.lastIndexOf(' ') + 1;
     const argThusFar = typingName ? '' : rest.substring(argOffsetInRest);
     const colon = argThusFar.indexOf(':');
-    const argIndex = typingName ? -1 : rest.substring(0, rest.lastIndexOf(' ')).split(' ').length - 1;
+    const spans = splitTopLevelArguments(rest);
+    const endsWithSeparator = rest.length > 0 && rest.endsWith(' ') && spans.length > 0 && spans[spans.length - 1].end < rest.length;
+    const argIndex = typingName ? -1 : (endsWithSeparator ? spans.length - 1 : spans.length - 2);
     return {
         name,
         typingName,
