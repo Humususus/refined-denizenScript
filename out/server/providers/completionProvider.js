@@ -11,7 +11,6 @@ exports.provideCompletions = exports.completeEnumValues = exports.completeComman
 const vscode_languageserver_1 = require("vscode-languageserver");
 const describe_1 = require("./describe");
 const cursorContext_1 = require("./cursorContext");
-const lineContext_1 = require("./lineContext");
 const argumentCompleters_1 = require("./argumentCompleters");
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 function completeCommandNames(docs, partial) {
@@ -53,20 +52,25 @@ exports.completeCommandArguments = completeCommandArguments;
  * of a wordPattern, which makes `.` and `:` break VS Code's default word boundaries.
  */
 function completeEnumValues(extra, commandName, argPrefix, argValue, range) {
-    const completer = (0, argumentCompleters_1.findEnumCompleter)(commandName, argPrefix);
-    if (completer === null) {
-        return [];
-    }
+    const completers = (0, argumentCompleters_1.findEnumCompleters)(commandName, argPrefix);
     const results = [];
-    for (const value of completer.values(extra)) {
-        if (value.startsWith(argValue)) {
-            const textEdit = { range, newText: value };
-            results.push({
-                label: value,
-                kind: vscode_languageserver_1.CompletionItemKind.Enum,
-                documentation: { kind: vscode_languageserver_1.MarkupKind.Markdown, value: `**${completer.label}**: ${value}` },
-                textEdit
-            });
+    for (const completer of completers) {
+        for (const value of completer.values(extra)) {
+            if (value.startsWith(argValue)) {
+                const textEdit = { range, newText: value };
+                const item = {
+                    label: value,
+                    kind: vscode_languageserver_1.CompletionItemKind.Enum,
+                    textEdit
+                };
+                // Some registrations (e.g. `determine`) intentionally carry no enum
+                // label, meaning no documentation should be attached — see
+                // CommandTabCompletions.cs's `key == null ? null : ...` in CompleteEnum.
+                if (completer.label !== null) {
+                    item.documentation = { kind: vscode_languageserver_1.MarkupKind.Markdown, value: `**${completer.label}**: ${value}` };
+                }
+                results.push(item);
+            }
         }
     }
     return results;
@@ -88,15 +92,11 @@ function provideCompletions(docs, extra, text, offset, line) {
     // `- give q` would list quartz items but swallow `quantity:`.
     const command = docs.commands.get(ctx.name);
     const argResults = command === undefined ? [] : completeCommandArguments(command, ctx.argThusFar);
-    const lineCtx = (0, lineContext_1.getLineContext)(text, offset);
-    if (lineCtx === null) {
-        // Unreachable in practice: parseCursorContext already succeeded above, and it
-        // derives from the same getLineContext call over the same (text, offset).
-        return argResults;
-    }
-    const cursorChar = lineCtx.linePrefix.length;
-    const valueStart = cursorChar - ctx.argValue.length;
-    const range = { start: { line, character: valueStart }, end: { line, character: cursorChar } };
+    // Start of the value within argThusFar: argThusFar may still carry a `prefix:`
+    // that argValue does not, so the difference in their lengths is exactly how far
+    // into argThusFar (from ctx.argStart) the value itself begins.
+    const valueStart = ctx.argStart + (ctx.argThusFar.length - ctx.argValue.length);
+    const range = { start: { line, character: valueStart }, end: { line, character: ctx.argEnd } };
     return [...argResults, ...completeEnumValues(extra, ctx.name, ctx.argPrefix, ctx.argValue, range)];
 }
 exports.provideCompletions = provideCompletions;

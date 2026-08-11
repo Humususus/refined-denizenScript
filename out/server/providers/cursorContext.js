@@ -25,7 +25,11 @@ function parseCommandLine(trimmed, indent) {
     const firstSpace = rest.indexOf(' ');
     const name = firstSpace === -1 ? rest : rest.substring(0, firstSpace);
     const typingName = firstSpace === -1;
-    const argThusFar = typingName ? '' : rest.substring(rest.lastIndexOf(' ') + 1);
+    // Offset of argThusFar within `rest`: the empty string right after `rest`
+    // itself while the name is still being typed (there is no argument yet), or
+    // the text following the last space otherwise.
+    const argOffsetInRest = typingName ? rest.length : rest.lastIndexOf(' ') + 1;
+    const argThusFar = typingName ? '' : rest.substring(argOffsetInRest);
     const colon = argThusFar.indexOf(':');
     return {
         name,
@@ -34,7 +38,9 @@ function parseCommandLine(trimmed, indent) {
         nameEnd: nameStart + name.length,
         argThusFar,
         argPrefix: colon === -1 ? '' : argThusFar.substring(0, colon),
-        argValue: colon === -1 ? argThusFar : argThusFar.substring(colon + 1)
+        argValue: colon === -1 ? argThusFar : argThusFar.substring(colon + 1),
+        argStart: nameStart + argOffsetInRest,
+        argEnd: indent + trimmed.length
     };
 }
 exports.parseCommandLine = parseCommandLine;

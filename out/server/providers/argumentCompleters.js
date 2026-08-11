@@ -9,7 +9,7 @@
  * machinery that does not exist yet and arrive in later phases.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.findEnumCompleter = exports.COMMAND_VALUE_COMPLETERS = void 0;
+exports.findEnumCompleters = exports.COMMAND_VALUE_COMPLETERS = void 0;
 function register(map, commands, completer) {
     for (const command of commands) {
         const existing = map.get(command);
@@ -43,17 +43,27 @@ function build() {
     register(map, ['take'], { prefix: 'item', label: 'Item', values: d => d.items });
     register(map, ['cast'], { prefix: '', label: 'Potion Effect Type', values: d => d.potionEffects });
     register(map, ['statistic'], { prefix: '', label: 'Statistic', values: d => d.statistics });
+    // CommandTabCompletions.cs:66-67 registers `determine` under the empty prefix
+    // with a hardcoded set and a null enum key (no documentation attached). It needs
+    // neither workspace tracking nor tags, so ExtraData is accepted but unused here.
+    register(map, ['determine'], { prefix: '', label: null, values: () => new Set(['cancelled', 'cancelled:false']) });
     return map;
 }
 exports.COMMAND_VALUE_COMPLETERS = build();
-/** The enum backing `commandName`'s `argPrefix` argument, or null when there is none. */
-function findEnumCompleter(commandName, argPrefix) {
-    var _a;
+/**
+ * Every enum backing `commandName`'s `argPrefix` argument, in registration order.
+ * The map stores an array per command specifically so multiple sources can coexist
+ * under the same prefix (see the modifyblock note above) — returning only the first
+ * match here would silently make any later-registered completer unreachable once
+ * appended to the same array, which is the C#'s registration-collision bug mirrored
+ * in TypeScript instead of fixed. Returns an empty array when nothing matches.
+ */
+function findEnumCompleters(commandName, argPrefix) {
     const completers = exports.COMMAND_VALUE_COMPLETERS.get(commandName.toLowerCase());
     if (completers === undefined) {
-        return null;
+        return [];
     }
-    return (_a = completers.find(c => c.prefix === argPrefix.toLowerCase())) !== null && _a !== void 0 ? _a : null;
+    return completers.filter(c => c.prefix === argPrefix.toLowerCase());
 }
-exports.findEnumCompleter = findEnumCompleter;
+exports.findEnumCompleters = findEnumCompleters;
 //# sourceMappingURL=argumentCompleters.js.map

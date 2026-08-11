@@ -39,6 +39,41 @@ it would be a genuine improvement over the original, not just parity.
 Same idea generalises to script container names (the owner's original `LSP_REWRITE_PLAN.md` asked for
 "on script container definition(name) память").
 
+### 4. Dialect switcher: Default Denizen vs DenizenM (Energobro), with async thread-safety checking
+Added 2026-08-10 from the owner. This is a **large** feature — likely its own phase, not a backlog item
+to squeeze into 2B.
+
+A setting selects which Denizen dialect the workspace targets:
+- **Default Denizen** — upstream behaviour, what everything built so far assumes.
+- **DenizenM (Energobro)** — a fork with modified tags and commands.
+
+Two distinct pieces of work fall out of this:
+
+**a) Dialect-aware meta.** DenizenM changes tags and other meta, so the loaded meta set has to differ per
+dialect. Worth checking whether this collapses into the existing `denizenscript.server.extra_sources`
+mechanism (an extra meta source layered on top) or genuinely needs a separate/replacement source set —
+that decision shapes everything else. `MetaExtension` merge semantics already append rather than
+overwrite, which may or may not be what a dialect override wants.
+
+**b) `async` block thread-safety diagnostics.** DenizenM adds an `async` block inside scripts. Commands
+and tags used inside it must be thread-safe, and the owner will supply the list of what is and is not
+safe. The server must detect the enclosing `async` block and flag any non-thread-safe tag or command
+used within it.
+
+Notes for whoever plans this:
+- The detection half lands naturally on top of Phase 2C's `ScriptChecker`, which already walks commands
+  with their line/char positions and already has a warning-emission path (`Warn(...)` into
+  `Errors`/`Warnings`/`MinorWarnings`, surfaced through `DiagnosticProvider`). Do NOT build a second
+  parallel checker for this — wait for 2C and add a rule.
+- Block-scope tracking is the new part: `ScriptChecker` currently walks a flat command list per key;
+  knowing "am I inside an `async` block" needs the nesting context that `checkAsScript` already
+  recurses through, so the hook point exists.
+- The safe/unsafe list should be data, not code — a file the owner can edit without a rebuild, in the
+  same spirit as the meta sources.
+- Interaction to settle early: does the dialect switch also change which hardcoded/legacy behaviour
+  applies, and does it interact with `denizenscript.server.engine`? Two orthogonal switches could get
+  confusing fast.
+
 ## Deferred minors from Phase 2A reviews
 
 Triaged by the final whole-branch review as defer-to-2B:
