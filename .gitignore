@@ -15,3 +15,6 @@ vitest.config.js.map
 
 # Subagent-driven-development scratch workspace (briefs, reports, review packages)
 .superpowers/
+
+# Planning docs stay local — this repo keeps them out of history (see LSP_REWRITE_PLAN.md above)
+docs/superpowers/
