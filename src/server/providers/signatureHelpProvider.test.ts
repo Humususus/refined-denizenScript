@@ -15,6 +15,11 @@ function docsWith(name: string, syntax: string, short: string): MetaDocs {
 
 const NARRATE = () => docsWith('narrate', 'narrate [<text>] (targets:<player>|...) (format:<script>)', 'Shows text.');
 
+/** Real `inventory` syntax, verbatim from meta — its first parameter is a single
+ * bracketed group containing a dozen `/`-separated choices and nested groups. */
+const INVENTORY_SYNTAX =
+    'inventory [open/close/copy/move/swap/set/keep/exclude/fill/clear/update/adjust <mechanism>:<value>/flag <name>(:<action>)[:<value>] (expire:<time>)] (destination:<inventory>) (origin:<inventory>/<item>|...) (slot:<slot>)';
+
 describe('tokenizeSyntax', () => {
     it('returns each argument token with its offsets into the syntax string', () => {
         const tokens = tokenizeSyntax('narrate [<text>] (format:<script>)');
@@ -35,6 +40,32 @@ describe('tokenizeSyntax', () => {
 
     it('returns an empty list for an empty syntax string', () => {
         expect(tokenizeSyntax('')).toEqual([]);
+    });
+
+    it('treats a bracketed group containing spaces as a single top-level parameter (real inventory syntax)', () => {
+        const tokens = tokenizeSyntax(INVENTORY_SYNTAX);
+        expect(tokens.map(t => t.text)).toEqual([
+            '[open/close/copy/move/swap/set/keep/exclude/fill/clear/update/adjust <mechanism>:<value>/flag <name>(:<action>)[:<value>] (expire:<time>)]',
+            '(destination:<inventory>)',
+            '(origin:<inventory>/<item>|...)',
+            '(slot:<slot>)'
+        ]);
+    });
+
+    it('keeps a nested (:<action>)[:<value>] group inside its parent token rather than splitting it out', () => {
+        const tokens = tokenizeSyntax('flag [<name>(:<action>)[:<value>]] (expire:<time>)');
+        expect(tokens.map(t => t.text)).toEqual([
+            '[<name>(:<action>)[:<value>]]',
+            '(expire:<time>)'
+        ]);
+    });
+
+    it('produces offset pairs that are all valid [start, end) ranges into the syntax string', () => {
+        for (const token of tokenizeSyntax(INVENTORY_SYNTAX)) {
+            expect(token.start).toBeGreaterThanOrEqual(0);
+            expect(token.start).toBeLessThan(token.end);
+            expect(token.end).toBeLessThanOrEqual(INVENTORY_SYNTAX.length);
+        }
     });
 });
 
@@ -61,9 +92,24 @@ describe('provideSignatureHelp', () => {
         expect(params[0].label).toEqual([8, 16]);
     });
 
-    it('clamps the active parameter to the last one when extra arguments are typed', () => {
+    it('returns null when extra arguments are typed past a non-variadic last parameter', () => {
+        // narrate's real last parameter is (format:<script>), which takes exactly one
+        // value, not a list — so there is nothing meaningful to highlight once the
+        // argument count runs past it.
         const text = '  - narrate a b c d e';
-        expect(provideSignatureHelp(NARRATE(), text, text.length)!.activeParameter).toBe(2);
+        expect(provideSignatureHelp(NARRATE(), text, text.length)!.activeParameter).toBeNull();
+    });
+
+    it('clamps to the last parameter when extra arguments are typed past a variadic last parameter', () => {
+        const docs = docsWith('echoall', 'echoall [<text>] (format:<script>) (targets:<player>|...)', 'Shows text to everyone.');
+        const text = '  - echoall a b c d e';
+        expect(provideSignatureHelp(docs, text, text.length)!.activeParameter).toBe(2);
+    });
+
+    it('returns null for a zero-argument command', () => {
+        const docs = docsWith('stop', 'stop', 'Stops a script.');
+        const text = '  - stop ';
+        expect(provideSignatureHelp(docs, text, text.length)!.activeParameter).toBeNull();
     });
 
     it('returns null while the command name is still being typed', () => {
