@@ -15,7 +15,7 @@ export interface ArgumentSpan { start: number; end: number; }
  * letters, digits, `&`, `_`, `[`) exactly, including its ASCII-only scope — deliberately
  * not Unicode-aware, so behaviour matches C# bit for bit.
  */
-function isValidTagFirstChar(ch: string): boolean {
+export function isValidTagFirstChar(ch: string): boolean {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch === '&' || ch === '_' || ch === '[';
 }
 

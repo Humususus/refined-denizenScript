@@ -5,7 +5,7 @@
  * TextDocumentService.GetCompletionsFor (the `- ` branch) and GetHoverAt.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseCursorContext = exports.parseCommandLine = exports.splitTopLevelArguments = void 0;
+exports.parseCursorContext = exports.parseCommandLine = exports.splitTopLevelArguments = exports.isValidTagFirstChar = void 0;
 const lineContext_1 = require("./lineContext");
 /**
  * ASCII characters that may legally begin a Denizen tag immediately after `<`. Mirrors
@@ -16,6 +16,7 @@ const lineContext_1 = require("./lineContext");
 function isValidTagFirstChar(ch) {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch === '&' || ch === '_' || ch === '[';
 }
+exports.isValidTagFirstChar = isValidTagFirstChar;
 /**
  * Splits command-line text into top-level arguments: a space separates arguments only
  * when it is outside quotes and outside tag brackets. Mirrors how DenizenCore itself

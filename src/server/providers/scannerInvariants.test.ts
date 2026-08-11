@@ -30,7 +30,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { splitTopLevelArguments } from './cursorContext';
+import { splitTopLevelArguments, isValidTagFirstChar } from './cursorContext';
 import { tokenizeSyntax } from './signatureHelpProvider';
 import { buildMetaDocs } from '../metaDocs/metaDocsManager';
 import { MetaBlock } from '../metaDocs/metaLoader';
@@ -42,15 +42,33 @@ interface Span { start: number; end: number; }
 // Independent reference separator classifiers.
 //
 // These deliberately mirror the RULES documented on the two scanners (not their code) as
-// a second, separately-written implementation. `isValidTagFirstCharRef` in particular is a
-// standalone copy of cursorContext.ts's `isValidTagFirstChar` — kept separate so that if a
-// future edit to the scanner's copy drifts from the documented VALID_TAG_FIRST_CHAR rule,
-// this oracle still reflects the rule and the mismatch surfaces as a test failure instead
-// of silently traveling into both places at once.
+// a second, separately-written implementation.
 // ---------------------------------------------------------------------------------------
 
+/**
+ * Independent reference for the C# source rule cursorContext.ts's `isValidTagFirstChar`
+ * ports, `VALID_TAG_FIRST_CHAR` in SharpDenizenTools/ScriptAnalysis/ScriptChecker.cs:650:
+ *
+ *     public static AsciiMatcher VALID_TAG_FIRST_CHAR = new(AsciiMatcher.BothCaseLetters + AsciiMatcher.Digits + "&_[");
+ *
+ * Derived from that rule directly (ASCII letters, digits, `&`, `_`, `[`), not from
+ * production's `ch >= 'a' && ch <= 'z'`-shaped ranges — spelled out as an explicit literal
+ * set and tested with `.has(ch)`, so a boundary mistake in production's range comparisons
+ * (an off-by-one, a mistyped bound) has no equivalent shape here to reproduce by accident.
+ * `isValidTagFirstChar` is imported from cursorContext.ts (not copied) so the "two agree"
+ * test below is a real, visible equivalence check rather than two copies of the same text.
+ */
+const VALID_TAG_FIRST_CHARS = new Set<string>([
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    '&', '_', '['
+]);
+
 function isValidTagFirstCharRef(ch: string): boolean {
-    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch === '&' || ch === '_' || ch === '[';
+    return VALID_TAG_FIRST_CHARS.has(ch);
 }
 
 /** Ground truth for `splitTopLevelArguments`: mask[i] is true iff text[i] is a space outside quotes and outside tag depth. */
@@ -111,6 +129,24 @@ function syntaxSeparatorMask(syntax: string): boolean[] {
     }
     return mask;
 }
+
+describe('isValidTagFirstCharRef matches production isValidTagFirstChar', () => {
+    it('agrees across the full ASCII range and a few characters above it', () => {
+        const codePoints: number[] = [];
+        for (let cp = 0; cp <= 127; cp++) {
+            codePoints.push(cp);
+        }
+        // A handful of representative non-ASCII code points, to confirm the two stay in
+        // agreement on the "ASCII-only, not Unicode-aware" boundary too (an accented
+        // letter, a combining mark, a fullwidth Latin letter, a CJK ideograph, an emoji)
+        // rather than only ever being exercised over 0-127.
+        codePoints.push(0x00E9, 0x0301, 0xFF21, 0x4E2D, 0x1F600);
+        for (const cp of codePoints) {
+            const ch = String.fromCodePoint(cp);
+            expect(isValidTagFirstCharRef(ch), `code point ${cp} (${JSON.stringify(ch)})`).toBe(isValidTagFirstChar(ch));
+        }
+    });
+});
 
 /**
  * `tokenizeSyntax` deliberately drops the leading command-name token (see its doc
