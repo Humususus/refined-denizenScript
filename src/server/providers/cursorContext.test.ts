@@ -221,3 +221,66 @@ describe('splitTopLevelArguments with a bare comparison operator', () => {
         expect(parseCommandLine('- if a > b', 2)!.argIndex).toBe(2);
     });
 });
+
+describe('splitTopLevelArguments with a bare "<" comparison operator', () => {
+    it('keeps a standalone "<" as its own argument when followed by a space', () => {
+        const text = 'a < b';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('a');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('<');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('b');
+    });
+
+    it('keeps "<=" together as one argument, since "=" cannot start a tag', () => {
+        const text = 'a <= b';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('a');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('<=');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('b');
+    });
+
+    it('does not swallow the rest of the line after a bare "<"', () => {
+        const text = 'a < b c d';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(5);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('a');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('<');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('b');
+        expect(text.substring(spans[3].start, spans[3].end)).toBe('c');
+        expect(text.substring(spans[4].start, spans[4].end)).toBe('d');
+    });
+
+    it('splits a bare "<" from real tags on either side of it', () => {
+        const text = '- if <[a]> < <[b]>';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(5);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('-');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('if');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('<[a]>');
+        expect(text.substring(spans[3].start, spans[3].end)).toBe('<');
+        expect(text.substring(spans[4].start, spans[4].end)).toBe('<[b]>');
+    });
+
+    it('counts the comparator as its own argument in argIndex', () => {
+        expect(parseCommandLine('- if a < b', 2)!.argIndex).toBe(2);
+    });
+
+    it('does not over-correct: a real tag starting with a letter still stays one argument', () => {
+        const text = 'narrate <player.name> x';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('narrate');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('<player.name>');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('x');
+    });
+
+    it('does not over-correct: a real tag starting with "[" still stays one argument', () => {
+        const text = '<[def]> y';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(2);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('<[def]>');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('y');
+    });
+});

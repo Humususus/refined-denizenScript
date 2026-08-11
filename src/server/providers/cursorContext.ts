@@ -10,6 +10,16 @@ import { getLineContext } from './lineContext';
 export interface ArgumentSpan { start: number; end: number; }
 
 /**
+ * ASCII characters that may legally begin a Denizen tag immediately after `<`. Mirrors
+ * `VALID_TAG_FIRST_CHAR` in SharpDenizenTools/ScriptAnalysis/ScriptChecker.cs:650 (ASCII
+ * letters, digits, `&`, `_`, `[`) exactly, including its ASCII-only scope — deliberately
+ * not Unicode-aware, so behaviour matches C# bit for bit.
+ */
+function isValidTagFirstChar(ch: string): boolean {
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch === '&' || ch === '_' || ch === '[';
+}
+
+/**
  * Splits command-line text into top-level arguments: a space separates arguments only
  * when it is outside quotes and outside tag brackets. Mirrors how DenizenCore itself
  * builds arguments (see SharpDenizenTools ScriptChecker.BuildArgs), which a naive
@@ -50,7 +60,12 @@ export function splitTopLevelArguments(text: string): ArgumentSpan[] {
             continue;
         }
         if (ch === '<') {
-            depth++;
+            // C# only opens a tag scope when the next character could actually begin a
+            // tag (ScriptChecker.cs:681's lookahead) — otherwise a bare `<` used as a
+            // comparator, e.g. `a < b`, would swallow the rest of the line.
+            if (i + 1 < text.length && isValidTagFirstChar(text[i + 1])) {
+                depth++;
+            }
             continue;
         }
         if (ch === '>') {
