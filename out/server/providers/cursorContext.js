@@ -104,7 +104,11 @@ function parseCommandLine(trimmed, indent) {
     const colon = argThusFar.indexOf(':');
     const spans = splitTopLevelArguments(rest);
     const endsWithSeparator = rest.length > 0 && rest.endsWith(' ') && spans.length > 0 && spans[spans.length - 1].end < rest.length;
-    const argIndex = typingName ? -1 : (endsWithSeparator ? spans.length - 1 : spans.length - 2);
+    // spans.length - 2 can go below -1 (e.g. a line that is just `- ` followed only by
+    // more spaces: spans is empty and endsWithSeparator is false, giving -2). Clamp so
+    // the documented contract below ("0-based index, or -1 while typing the name") holds
+    // even for that degenerate input, rather than leaking a garbage negative value.
+    const argIndex = typingName ? -1 : Math.max(endsWithSeparator ? spans.length - 1 : spans.length - 2, -1);
     return {
         name,
         typingName,

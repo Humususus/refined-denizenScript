@@ -1,7 +1,7 @@
 "use strict";
 /**
  * TypeScript LSP server entry point. Connects, loads meta documentation, and
- * serves command completion and hover. Diagnostics remain future work.
+ * serves command completion, hover, and signature help. Diagnostics remain future work.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;

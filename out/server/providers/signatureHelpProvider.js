@@ -93,17 +93,34 @@ function provideSignatureHelp(docs, text, offset) {
 }
 exports.provideSignatureHelp = provideSignatureHelp;
 /**
- * Picks which parameter to highlight, or `null` per the LSP contract
- * (`SignatureHelp.activeParameter`, vscode-languageserver-types `main.d.ts`:
- * "Set to `null` if the active signature has no parameters").
+ * Picks which parameter to highlight. Returns `null` only when there are no
+ * parameters at all (`tokens.length === 0`) — that case is spec-correct per the
+ * LSP contract (`SignatureHelp.activeParameter`, vscode-languageserver-types
+ * `main.d.ts`: "Set to `null` if the active signature has no parameters") and
+ * harmless, since there is nothing to emphasise either way.
  *
- * When `argIndex` runs past the documented parameter list — legal for commands
- * whose last argument is variadic, e.g. `narrate`'s own
- * `(targets:<player>|...)` — the highlight clamps to that last parameter only if
- * it is actually variadic (its text contains `|...`, meaning it can absorb more
- * values). Otherwise there is nothing meaningful left to highlight, so this
- * returns `null` rather than pinning the highlight to a parameter that only ever
- * takes one value (e.g. `narrate`'s trailing `(format:<script>)`).
+ * When `argIndex` runs past the documented parameter list, the highlight clamps
+ * UNCONDITIONALLY to the last parameter — including for a non-variadic last
+ * parameter. An earlier version of this function returned `null` in that case
+ * (reserving the clamp for variadic last parameters, e.g. `narrate`'s own
+ * `(targets:<player>|...)`), reasoning that `null` means "emphasise nothing" per
+ * the type declaration above. That reasoning does not survive contact with the
+ * shipped client: `vscode-languageclient`'s `protocolConverter.js:345-351` does
+ *
+ *     if (Is.number(item.activeParameter)) { result.activeParameter = item.activeParameter; }
+ *     else { result.activeParameter = 0; }   // activeParameter was optional in the past
+ *
+ * and `Is.number(null)` is `false` (see `utils/is.js`: it tests
+ * `typeof value === 'number' || value instanceof Number`). So a deliberate
+ * `null` is silently converted to `0` on the client side — which highlights the
+ * FIRST parameter, the exact opposite of "nothing is active". Concretely: once
+ * the user types a space past their last argument, the highlight would jump
+ * back to parameter 1 instead of staying near where they are typing. Clamping
+ * to the last parameter is a far closer approximation of "still on this
+ * signature, nothing more specific to say" than jumping to the first one, so
+ * the clamp is now unconditional and the variadic-only special case is gone.
+ * Do not reintroduce a `null` return here for a non-empty `tokens` — it will be
+ * silently rewritten to `0` by the client before it ever reaches the user.
  */
 function activeParameterFor(tokens, argIndex) {
     if (tokens.length === 0) {
@@ -112,7 +129,6 @@ function activeParameterFor(tokens, argIndex) {
     if (argIndex < tokens.length) {
         return argIndex;
     }
-    const lastIndex = tokens.length - 1;
-    return tokens[lastIndex].text.includes('|...') ? lastIndex : null;
+    return tokens.length - 1;
 }
 //# sourceMappingURL=signatureHelpProvider.js.map
