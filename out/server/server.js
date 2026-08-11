@@ -33,15 +33,25 @@ const path = __importStar(require("path"));
 const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
 const metaDocsManager_1 = require("./metaDocs/metaDocsManager");
+const extraData_1 = require("./metaDocs/extraData");
 const completionProvider_1 = require("./providers/completionProvider");
 const hoverProvider_1 = require("./providers/hoverProvider");
 const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+/** C# refreshes this document every 15 days (ExtraData.cs:51); match that. */
+const EXTRA_DATA_TTL_MS = 15 * 24 * 60 * 60 * 1000;
 /** The loaded meta documentation, or null until the initial load resolves. */
 let loadedDocs = null;
+/** Minecraft enum data. Starts empty so completion degrades gracefully while loading. */
+let loadedExtra = (0, extraData_1.createEmptyExtraData)();
 function getMetaCacheFile() {
     var _a;
     const base = (_a = process.env.LOCALAPPDATA) !== null && _a !== void 0 ? _a : path.join(os.homedir(), 'AppData', 'Local');
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
+}
+function getExtraDataCacheFile() {
+    var _a;
+    const base = (_a = process.env.LOCALAPPDATA) !== null && _a !== void 0 ? _a : path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(base, 'DenizenVSCodeExtension', 'cache', 'minecraft.fds');
 }
 /** Merges the default meta sources with any user-configured extra sources, filtering out blank entries. Extracted as its own function so it's independently unit-testable without a live LSP connection. */
 function combineSources(defaults, extra) {
@@ -89,6 +99,18 @@ function createServer() {
             var _a;
             connection.console.error(`Denizen meta load failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
         });
+        (0, extraData_1.loadExtraData)({ cacheFile: getExtraDataCacheFile(), ttlMs: EXTRA_DATA_TTL_MS })
+            .then(extra => {
+            loadedExtra = extra;
+            connection.console.log(`Minecraft enum data loaded: ${extra.sounds.size} sounds, ${extra.materials.size} materials, ${extra.entities.size} entities. ${extra.loadErrors.length} load error(s).`);
+            for (const err of extra.loadErrors.slice(0, 20)) {
+                connection.console.warn(`Extra data load error: ${err}`);
+            }
+        })
+            .catch(err => {
+            var _a;
+            connection.console.error(`Minecraft enum data load failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+        });
     });
     connection.onCompletion((params) => {
         var _a;
@@ -97,7 +119,7 @@ function createServer() {
             return [];
         }
         try {
-            return (0, completionProvider_1.provideCompletions)(loadedDocs, doc.getText(), doc.offsetAt(params.position));
+            return (0, completionProvider_1.provideCompletions)(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position), params.position.line);
         }
         catch (err) {
             connection.console.error(`Completion failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);

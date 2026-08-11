@@ -10,6 +10,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.provideHover = void 0;
 const describe_1 = require("./describe");
 const lineContext_1 = require("./lineContext");
+const cursorContext_1 = require("./cursorContext");
 const TYPE_PREFIX = 'type: ';
 /** Characters that can appear in a Denizen command name. */
 const COMMAND_NAME_PATTERN = /^[a-z0-9_]+$/;
@@ -31,29 +32,21 @@ function provideHover(docs, text, offset, line) {
     const trimmedRaw = raw.trimStart();
     const indent = raw.length - trimmedRaw.length;
     const trimmed = trimmedRaw.toLowerCase();
-    if (trimmed.startsWith('- ')) {
-        let nameStart = indent + 2;
-        let rest = trimmed.substring(2);
-        if (rest.startsWith('~')) {
-            rest = rest.substring(1);
-            nameStart++;
-        }
-        const spaceIndex = rest.indexOf(' ');
-        const commandName = spaceIndex === -1 ? rest : rest.substring(0, spaceIndex);
-        if (!COMMAND_NAME_PATTERN.test(commandName)) {
+    const cmdCtx = (0, cursorContext_1.parseCommandLine)(trimmed, indent);
+    if (cmdCtx !== null) {
+        if (!COMMAND_NAME_PATTERN.test(cmdCtx.name)) {
             return null;
         }
-        const nameEnd = nameStart + commandName.length;
-        if (character < nameStart || character > nameEnd) {
+        if (character < cmdCtx.nameStart || character > cmdCtx.nameEnd) {
             return null;
         }
-        const command = docs.commands.get(commandName);
+        const command = docs.commands.get(cmdCtx.name);
         if (command === undefined) {
             return null;
         }
         return {
             contents: (0, describe_1.describeCommand)(command),
-            range: { start: { line, character: nameStart }, end: { line, character: nameEnd } }
+            range: { start: { line, character: cmdCtx.nameStart }, end: { line, character: cmdCtx.nameEnd } }
         };
     }
     if (trimmed.startsWith(TYPE_PREFIX)) {

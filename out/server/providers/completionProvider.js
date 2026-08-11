@@ -7,10 +7,12 @@
  * mechanism, event, and workspace-driven completions arrive in later phases.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.provideCompletions = exports.completeCommandArguments = exports.completeCommandNames = void 0;
+exports.provideCompletions = exports.completeEnumValues = exports.completeCommandArguments = exports.completeCommandNames = void 0;
 const vscode_languageserver_1 = require("vscode-languageserver");
 const describe_1 = require("./describe");
+const cursorContext_1 = require("./cursorContext");
 const lineContext_1 = require("./lineContext");
+const argumentCompleters_1 = require("./argumentCompleters");
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 function completeCommandNames(docs, partial) {
     const results = [];
@@ -43,25 +45,59 @@ function completeCommandArguments(command, argSoFar) {
     return results;
 }
 exports.completeCommandArguments = completeCommandArguments;
-/** Entry point: what should be offered at `offset` within `text`. */
-function provideCompletions(docs, text, offset) {
-    const ctx = (0, lineContext_1.getLineContext)(text, offset);
-    if (ctx === null || !ctx.trimmed.startsWith('- ')) {
+/**
+ * Values of the enum backing this command argument, filtered by what has been typed.
+ * `range` covers the entire typed argument value (not just the VS Code "current word"),
+ * so accepting a dotted value like a sound name replaces all of `block.` rather than
+ * leaving it in place and appending after it — see language-configuration.json's lack
+ * of a wordPattern, which makes `.` and `:` break VS Code's default word boundaries.
+ */
+function completeEnumValues(extra, commandName, argPrefix, argValue, range) {
+    const completer = (0, argumentCompleters_1.findEnumCompleter)(commandName, argPrefix);
+    if (completer === null) {
         return [];
     }
-    let afterDash = ctx.trimmed.substring(2);
-    if (afterDash.startsWith('~')) {
-        afterDash = afterDash.substring(1);
+    const results = [];
+    for (const value of completer.values(extra)) {
+        if (value.startsWith(argValue)) {
+            const textEdit = { range, newText: value };
+            results.push({
+                label: value,
+                kind: vscode_languageserver_1.CompletionItemKind.Enum,
+                documentation: { kind: vscode_languageserver_1.MarkupKind.Markdown, value: `**${completer.label}**: ${value}` },
+                textEdit
+            });
+        }
     }
-    const firstSpace = afterDash.indexOf(' ');
-    if (firstSpace === -1) {
-        return completeCommandNames(docs, afterDash);
-    }
-    const command = docs.commands.get(afterDash.substring(0, firstSpace));
-    if (command === undefined) {
+    return results;
+}
+exports.completeEnumValues = completeEnumValues;
+/** Entry point: what should be offered at `offset` on `line` within `text`. */
+function provideCompletions(docs, extra, text, offset, line) {
+    const ctx = (0, cursorContext_1.parseCursorContext)(text, offset);
+    if (ctx === null) {
         return [];
     }
-    return completeCommandArguments(command, afterDash.substring(afterDash.lastIndexOf(' ') + 1));
+    if (ctx.typingName) {
+        return completeCommandNames(docs, ctx.name);
+    }
+    // C# merges both sources rather than choosing one (TextDocumentService.cs:362-367
+    // appends the ByCommand completer's output onto the argument-name results), and the
+    // order matters: argument names first, enum values after. Returning only the enum
+    // results would hide a command's own arguments behind any bare-prefix enum — e.g.
+    // `- give q` would list quartz items but swallow `quantity:`.
+    const command = docs.commands.get(ctx.name);
+    const argResults = command === undefined ? [] : completeCommandArguments(command, ctx.argThusFar);
+    const lineCtx = (0, lineContext_1.getLineContext)(text, offset);
+    if (lineCtx === null) {
+        // Unreachable in practice: parseCursorContext already succeeded above, and it
+        // derives from the same getLineContext call over the same (text, offset).
+        return argResults;
+    }
+    const cursorChar = lineCtx.linePrefix.length;
+    const valueStart = cursorChar - ctx.argValue.length;
+    const range = { start: { line, character: valueStart }, end: { line, character: cursorChar } };
+    return [...argResults, ...completeEnumValues(extra, ctx.name, ctx.argPrefix, ctx.argValue, range)];
 }
 exports.provideCompletions = provideCompletions;
 //# sourceMappingURL=completionProvider.js.map
