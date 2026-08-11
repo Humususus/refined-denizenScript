@@ -45,3 +45,11 @@ describe('buildCapabilities', () => {
         expect(buildCapabilities().textDocumentSync).toBe(2);
     });
 });
+
+describe('signature help capability', () => {
+    it('advertises signature help with the Denizen trigger characters', () => {
+        const caps = buildCapabilities();
+        expect(caps.signatureHelpProvider).toBeDefined();
+        expect(caps.signatureHelpProvider!.triggerCharacters).toContain(' ');
+    });
+});

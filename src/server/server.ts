@@ -8,7 +8,7 @@ import * as path from 'path';
 import {
     createConnection, ProposedFeatures, TextDocuments, TextDocumentSyncKind,
     InitializeParams, InitializeResult, Connection, ServerCapabilities,
-    CompletionItem, Hover, TextDocumentPositionParams
+    CompletionItem, Hover, SignatureHelp, TextDocumentPositionParams
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { loadMetaDocs, DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
@@ -16,6 +16,7 @@ import { MetaDocs } from './metaDocs/metaTypes';
 import { ExtraData, createEmptyExtraData, loadExtraData } from './metaDocs/extraData';
 import { provideCompletions } from './providers/completionProvider';
 import { provideHover } from './providers/hoverProvider';
+import { provideSignatureHelp } from './providers/signatureHelpProvider';
 
 const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -54,7 +55,10 @@ export function buildCapabilities(): ServerCapabilities {
             resolveProvider: false,
             triggerCharacters: ['-', ' ', ':']
         },
-        hoverProvider: true
+        hoverProvider: true,
+        signatureHelpProvider: {
+            triggerCharacters: [' ', ':']
+        },
     };
 }
 
@@ -126,6 +130,20 @@ export function createServer(): Connection {
         }
         catch (err) {
             connection.console.error(`Hover failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            return null;
+        }
+    });
+
+    connection.onSignatureHelp((params: TextDocumentPositionParams): SignatureHelp | null => {
+        const doc = documents.get(params.textDocument.uri);
+        if (doc === undefined || loadedDocs === null || !params.textDocument.uri.endsWith('.dsc')) {
+            return null;
+        }
+        try {
+            return provideSignatureHelp(loadedDocs, doc.getText(), doc.offsetAt(params.position));
+        }
+        catch (err) {
+            connection.console.error(`Signature help failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
             return null;
         }
     });
