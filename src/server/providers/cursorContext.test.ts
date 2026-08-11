@@ -100,6 +100,12 @@ describe('argIndex', () => {
     it('counts a trailing space as starting the next argument', () => {
         expect(parseCommandLine('- narrate hello ', 2)!.argIndex).toBe(1);
     });
+
+    it('clamps to -1 rather than going negative on a dash followed only by spaces', () => {
+        // rest is all spaces here: spans is empty and endsWithSeparator is false, so the
+        // raw computation (spans.length - 2) would be -2 without the clamp.
+        expect(parseCommandLine('-   ', 0)!.argIndex).toBe(-1);
+    });
 });
 
 describe('argIndex through parseCursorContext', () => {

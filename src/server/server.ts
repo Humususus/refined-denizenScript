@@ -1,6 +1,6 @@
 /**
  * TypeScript LSP server entry point. Connects, loads meta documentation, and
- * serves command completion and hover. Diagnostics remain future work.
+ * serves command completion, hover, and signature help. Diagnostics remain future work.
  */
 
 import * as os from 'os';

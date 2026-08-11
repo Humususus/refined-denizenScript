@@ -92,18 +92,13 @@ describe('provideSignatureHelp', () => {
         expect(params[0].label).toEqual([8, 16]);
     });
 
-    it('returns null when extra arguments are typed past a non-variadic last parameter', () => {
+    it('clamps to the last parameter when extra arguments are typed past a non-variadic last parameter', () => {
         // narrate's real last parameter is (format:<script>), which takes exactly one
-        // value, not a list — so there is nothing meaningful to highlight once the
-        // argument count runs past it.
+        // value, not a list — but the shipped client rewrites a `null` activeParameter
+        // to 0 (protocolConverter.js:345-351), so clamping to the last parameter is
+        // still closer to correct than letting the highlight jump back to parameter 1.
         const text = '  - narrate a b c d e';
-        expect(provideSignatureHelp(NARRATE(), text, text.length)!.activeParameter).toBeNull();
-    });
-
-    it('clamps to the last parameter when extra arguments are typed past a variadic last parameter', () => {
-        const docs = docsWith('echoall', 'echoall [<text>] (format:<script>) (targets:<player>|...)', 'Shows text to everyone.');
-        const text = '  - echoall a b c d e';
-        expect(provideSignatureHelp(docs, text, text.length)!.activeParameter).toBe(2);
+        expect(provideSignatureHelp(NARRATE(), text, text.length)!.activeParameter).toBe(2);
     });
 
     it('returns null for a zero-argument command', () => {
