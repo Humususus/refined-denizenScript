@@ -168,3 +168,56 @@ describe('argIndex with quotes, tags, and consecutive spaces', () => {
         expect(parseCommandLine('- narrate <player.flag[a b]> fo', 2)!.argIndex).toBe(1);
     });
 });
+
+describe('splitTopLevelArguments with a bare comparison operator', () => {
+    it('keeps a standalone ">" as its own argument', () => {
+        const text = 'narrate > a';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('narrate');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('>');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('a');
+    });
+
+    it('keeps ">" as an argument in the middle of a comparison', () => {
+        const text = 'if a > b';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(4);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('if');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('a');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('>');
+        expect(text.substring(spans[3].start, spans[3].end)).toBe('b');
+    });
+
+    it('includes a leading ">" in the token it starts, since nothing separates them', () => {
+        const text = '>a b';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(2);
+        expect(spans[0].start).toBe(0);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('>a');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('b');
+    });
+
+    it('keeps adjacent ">" characters together as one token', () => {
+        const text = 'a >> b';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(3);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('a');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('>>');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('b');
+    });
+
+    it('does not let a bare ">" corrupt a tag that follows it', () => {
+        const text = 'a > <b c> d';
+        const spans = splitTopLevelArguments(text);
+        expect(spans.length).toBe(4);
+        expect(text.substring(spans[0].start, spans[0].end)).toBe('a');
+        expect(text.substring(spans[1].start, spans[1].end)).toBe('>');
+        expect(text.substring(spans[2].start, spans[2].end)).toBe('<b c>');
+        expect(text.substring(spans[3].start, spans[3].end)).toBe('d');
+    });
+
+    it('counts the comparator as its own argument in argIndex', () => {
+        expect(parseCommandLine('- if a > b', 2)!.argIndex).toBe(2);
+    });
+});

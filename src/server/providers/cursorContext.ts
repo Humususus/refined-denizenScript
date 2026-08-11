@@ -22,6 +22,23 @@ export function splitTopLevelArguments(text: string): ArgumentSpan[] {
     let tokenStart = -1;
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
+        // A space is a separator only outside quotes and outside tag brackets. This is
+        // decided once, up front, from the state carried in from previous characters —
+        // every other branch below only toggles that state, never decides separator-ness.
+        const isSeparator = ch === ' ' && quote === null && depth === 0;
+        if (isSeparator) {
+            if (tokenStart !== -1) {
+                spans.push({ start: tokenStart, end: i });
+                tokenStart = -1;
+            }
+            continue;
+        }
+        // Any non-separator character opens a token if one is not already open. This is
+        // the single place that decision is made, so no branch below can skip it — that
+        // was the bug: `>` used to close depth without ever opening a token itself.
+        if (tokenStart === -1) {
+            tokenStart = i;
+        }
         if (quote !== null) {
             if (ch === quote) {
                 quote = null;
@@ -30,16 +47,10 @@ export function splitTopLevelArguments(text: string): ArgumentSpan[] {
         }
         if (ch === '"' || ch === '\'') {
             quote = ch;
-            if (tokenStart === -1) {
-                tokenStart = i;
-            }
             continue;
         }
         if (ch === '<') {
             depth++;
-            if (tokenStart === -1) {
-                tokenStart = i;
-            }
             continue;
         }
         if (ch === '>') {
@@ -47,16 +58,6 @@ export function splitTopLevelArguments(text: string): ArgumentSpan[] {
                 depth--;
             }
             continue;
-        }
-        if (ch === ' ' && depth === 0) {
-            if (tokenStart !== -1) {
-                spans.push({ start: tokenStart, end: i });
-                tokenStart = -1;
-            }
-            continue;
-        }
-        if (tokenStart === -1) {
-            tokenStart = i;
         }
     }
     if (tokenStart !== -1) {
