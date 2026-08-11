@@ -78,3 +78,33 @@ describe('parseCursorContext', () => {
         expect(parseCursorContext('  - narrate', 999)).toBeNull();
     });
 });
+
+describe('argIndex', () => {
+    it('is -1 while the command name is still being typed', () => {
+        expect(parseCommandLine('- narr', 2)!.argIndex).toBe(-1);
+    });
+
+    it('is 0 on the first argument', () => {
+        expect(parseCommandLine('- narrate hel', 2)!.argIndex).toBe(0);
+    });
+
+    it('is 0 immediately after the command name and a space', () => {
+        expect(parseCommandLine('- narrate ', 2)!.argIndex).toBe(0);
+    });
+
+    it('counts each further argument', () => {
+        expect(parseCommandLine('- narrate hello format:x', 2)!.argIndex).toBe(1);
+        expect(parseCommandLine('- narrate hello format:x targets:y', 2)!.argIndex).toBe(2);
+    });
+
+    it('counts a trailing space as starting the next argument', () => {
+        expect(parseCommandLine('- narrate hello ', 2)!.argIndex).toBe(1);
+    });
+});
+
+describe('argIndex through parseCursorContext', () => {
+    it('carries the index through from a real document', () => {
+        const text = 'my_task:\n  type: task\n  script:\n  - narrate hello for';
+        expect(parseCursorContext(text, text.length)!.argIndex).toBe(1);
+    });
+});

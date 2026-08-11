@@ -26,6 +26,8 @@ export interface CommandCursorContext {
     argStart: number;
     /** Column on the line where `argThusFar` ends — the cursor column. */
     argEnd: number;
+    /** 0-based index of the argument the cursor sits in, counting after the command name. -1 while the name itself is being typed. */
+    argIndex: number;
 }
 
 /**
@@ -52,6 +54,7 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
     const argOffsetInRest = typingName ? rest.length : rest.lastIndexOf(' ') + 1;
     const argThusFar = typingName ? '' : rest.substring(argOffsetInRest);
     const colon = argThusFar.indexOf(':');
+    const argIndex = typingName ? -1 : rest.substring(0, rest.lastIndexOf(' ')).split(' ').length - 1;
     return {
         name,
         typingName,
@@ -61,7 +64,8 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
         argPrefix: colon === -1 ? '' : argThusFar.substring(0, colon),
         argValue: colon === -1 ? argThusFar : argThusFar.substring(colon + 1),
         argStart: nameStart + argOffsetInRest,
-        argEnd: indent + trimmed.length
+        argEnd: indent + trimmed.length,
+        argIndex
     };
 }
 
