@@ -241,26 +241,65 @@ describe('enum results merge with the command\'s own argument names (bare-prefix
 
     it('lists the argument name before the enum values when a typed prefix matches both', () => {
         const text = '  - give q';
-        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels).toEqual(['quantity:', 'quartz', 'quartz_block']);
     });
 
     it('still yields enum values when the typed prefix matches only the enum', () => {
         const text = '  - give quar';
-        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels).toEqual(['quartz', 'quartz_block']);
     });
 
     it('still yields the argument name when the typed prefix matches only an argument', () => {
         const text = '  - give sl';
-        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(giveDocs(), GIVE_EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels).toEqual(['slot:']);
     });
 
     it('yields enum values for a command unknown to the meta docs but registered in the enum table', () => {
         const docs = docsWith();
         const text = '  - cast sp';
-        const labels = provideCompletions(docs, GIVE_EXTRA, text, text.length).map(i => i.label);
+        const labels = provideCompletions(docs, GIVE_EXTRA, text, text.length, 0).map(i => i.label);
         expect(labels).toEqual(['speed']);
+    });
+});
+
+// Pins the exact replace range computed from cursorContext's argStart/argEnd
+// (rather than a second getLineContext call reconstructing it by subtracting
+// ctx.argValue.length). Verified against live behaviour before the refactor —
+// must hold unchanged after it.
+describe('replace range from cursorContext argStart/argEnd (regression pin)', () => {
+    it('matches the pre-refactor range for a partially-typed sound value', () => {
+        const docs = docsWith(makeCommand('playsound',
+            'playsound [<location>|...] [sound:<name>] (volume:<#.#>)', 'Plays a sound.'));
+        const extra = buildExtraData(parseFlatFds([
+            'sounds:', '- BLOCK.AMBIENT', ''
+        ].join('\n')));
+        const text = '  - playsound sound:block.a';
+        const items = provideCompletions(docs, extra, text, text.length, 0);
+        expect(items.length).toBeGreaterThan(0);
+        for (const item of items) {
+            expect((item.textEdit as { range: unknown }).range).toEqual({
+                start: { line: 0, character: 20 },
+                end: { line: 0, character: 27 }
+            });
+        }
+    });
+});
+
+// Regression coverage for Fix 5: `determine` needs neither workspace tracking nor
+// tags (CommandTabCompletions.cs:66-67), registers a hardcoded value set under a
+// null enum key, and that null key must suppress the documentation field entirely
+// (CommandTabCompletions.cs:206's `key == null ? null : ...` in CompleteEnum).
+describe('determine enum completer (suppressed documentation)', () => {
+    it('offers both values with no documentation attached', () => {
+        const docs = docsWith();
+        const text = '  - determine ';
+        const items = provideCompletions(docs, createEmptyExtraData(), text, text.length, 0);
+        expect(items.map(i => i.label).sort()).toEqual(['cancelled', 'cancelled:false']);
+        for (const item of items) {
+            expect(item.documentation).toBeUndefined();
+        }
     });
 });

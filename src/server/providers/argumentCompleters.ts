@@ -14,8 +14,13 @@ import { ExtraData } from '../metaDocs/extraData';
 export interface EnumCompleter {
     /** The argument prefix this applies to. `''` means a bare, unprefixed argument. */
     prefix: string;
-    /** Human-readable name of the enum, shown in the completion detail. */
-    label: string;
+    /**
+     * Human-readable name of the enum, shown in the completion detail.
+     * `null` suppresses documentation entirely — mirrors C#'s
+     * `key == null ? null : ...` in `CommandTabCompletions.cs`'s `CompleteEnum`
+     * (line 206), used for registrations like `determine` that need no docs.
+     */
+    label: string | null;
     /** The candidate values, drawn from the loaded enum data. */
     values: (data: ExtraData) => Set<string>;
 }
@@ -54,16 +59,27 @@ function build(): Map<string, EnumCompleter[]> {
     register(map, ['take'], { prefix: 'item', label: 'Item', values: d => d.items });
     register(map, ['cast'], { prefix: '', label: 'Potion Effect Type', values: d => d.potionEffects });
     register(map, ['statistic'], { prefix: '', label: 'Statistic', values: d => d.statistics });
+    // CommandTabCompletions.cs:66-67 registers `determine` under the empty prefix
+    // with a hardcoded set and a null enum key (no documentation attached). It needs
+    // neither workspace tracking nor tags, so ExtraData is accepted but unused here.
+    register(map, ['determine'], { prefix: '', label: null, values: () => new Set(['cancelled', 'cancelled:false']) });
     return map;
 }
 
 export const COMMAND_VALUE_COMPLETERS: Map<string, EnumCompleter[]> = build();
 
-/** The enum backing `commandName`'s `argPrefix` argument, or null when there is none. */
-export function findEnumCompleter(commandName: string, argPrefix: string): EnumCompleter | null {
+/**
+ * Every enum backing `commandName`'s `argPrefix` argument, in registration order.
+ * The map stores an array per command specifically so multiple sources can coexist
+ * under the same prefix (see the modifyblock note above) — returning only the first
+ * match here would silently make any later-registered completer unreachable once
+ * appended to the same array, which is the C#'s registration-collision bug mirrored
+ * in TypeScript instead of fixed. Returns an empty array when nothing matches.
+ */
+export function findEnumCompleters(commandName: string, argPrefix: string): EnumCompleter[] {
     const completers = COMMAND_VALUE_COMPLETERS.get(commandName.toLowerCase());
     if (completers === undefined) {
-        return null;
+        return [];
     }
-    return completers.find(c => c.prefix === argPrefix.toLowerCase()) ?? null;
+    return completers.filter(c => c.prefix === argPrefix.toLowerCase());
 }

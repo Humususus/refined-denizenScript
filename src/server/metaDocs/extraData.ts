@@ -140,9 +140,19 @@ export async function loadExtraData(options: LoadExtraDataOptions): Promise<Extr
         const content = (await download(source)).toString('utf8');
         const data = buildExtraData(parseFlatFds(content));
         data.loadErrors.push(...loadErrors);
-        if (data.all.size > 0) {
-            fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
-            fs.writeFileSync(options.cacheFile, content);
+        // The write is its own try/catch, separate from the download+parse above:
+        // a read-only cache directory, a full disk, or antivirus locking the file
+        // must not discard a perfectly good freshly-parsed result. Record the
+        // failure and return the data anyway rather than falling through to the
+        // outer catch's empty sets.
+        try {
+            if (data.all.size > 0) {
+                fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
+                fs.writeFileSync(options.cacheFile, content);
+            }
+        }
+        catch (writeErr) {
+            data.loadErrors.push(`Extra data cache write failed: ${describeError(writeErr)}`);
         }
         return data;
     }

@@ -6,6 +6,7 @@
 const path = require('path');
 const os = require('os');
 const { loadMetaDocs, DEFAULT_META_SOURCES } = require('../out/server/metaDocs/metaDocsManager');
+const { createEmptyExtraData } = require('../out/server/metaDocs/extraData');
 const { provideCompletions } = require('../out/server/providers/completionProvider');
 const { provideHover } = require('../out/server/providers/hoverProvider');
 
@@ -31,13 +32,13 @@ loadMetaDocs({ cacheFile, ttlMs: 12 * 60 * 60 * 1000, sources: DEFAULT_META_SOUR
     failures += check('narrate has parsed argument prefixes', narrate.argPrefixes.length > 0);
 
     const nameText = 'my_task:\n  type: task\n  script:\n  - narr';
-    const nameResults = provideCompletions(docs, nameText, nameText.length);
+    const nameResults = provideCompletions(docs, createEmptyExtraData(), nameText, nameText.length, 0);
     failures += check('command name completion offers narrate',
         nameResults.some(i => i.label === 'narrate'),
         `got ${nameResults.length} item(s): ${nameResults.map(i => i.label).slice(0, 5).join(', ')}`);
 
     const argText = '  - narrate hello ';
-    const argResults = provideCompletions(docs, argText, argText.length);
+    const argResults = provideCompletions(docs, createEmptyExtraData(), argText, argText.length, 0);
     failures += check('argument completion returns items',
         argResults.length > 0,
         `got ${argResults.map(i => i.label).join(', ')}`);

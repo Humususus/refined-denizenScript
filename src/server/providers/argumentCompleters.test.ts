@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findEnumCompleter, COMMAND_VALUE_COMPLETERS } from './argumentCompleters';
+import { findEnumCompleters, COMMAND_VALUE_COMPLETERS } from './argumentCompleters';
 import { buildExtraData, parseFlatFds } from '../metaDocs/extraData';
 
 const DATA = buildExtraData(parseFlatFds([
@@ -14,41 +14,48 @@ const DATA = buildExtraData(parseFlatFds([
     ''
 ].join('\n')));
 
-describe('findEnumCompleter', () => {
+describe('findEnumCompleters', () => {
     it('matches playsound on its sound prefix', () => {
-        const completer = findEnumCompleter('playsound', 'sound')!;
-        expect(completer.label).toBe('Sound Enum');
-        expect(completer.values(DATA).has('block.stone.step')).toBe(true);
+        const completers = findEnumCompleters('playsound', 'sound');
+        expect(completers).toHaveLength(1);
+        expect(completers[0].label).toBe('Sound Enum');
+        expect(completers[0].values(DATA).has('block.stone.step')).toBe(true);
     });
 
     it('matches modifyblock on its empty prefix', () => {
-        const completer = findEnumCompleter('modifyblock', '')!;
-        expect(completer.values(DATA).has('stone')).toBe(true);
+        const completers = findEnumCompleters('modifyblock', '');
+        expect(completers).toHaveLength(1);
+        expect(completers[0].values(DATA).has('stone')).toBe(true);
     });
 
     it('matches cast on potion effects', () => {
-        expect(findEnumCompleter('cast', '')!.values(DATA).has('speed')).toBe(true);
+        const completers = findEnumCompleters('cast', '');
+        expect(completers).toHaveLength(1);
+        expect(completers[0].values(DATA).has('speed')).toBe(true);
     });
 
     it('matches statistic', () => {
-        expect(findEnumCompleter('statistic', '')!.values(DATA).has('jump')).toBe(true);
+        const completers = findEnumCompleters('statistic', '');
+        expect(completers).toHaveLength(1);
+        expect(completers[0].values(DATA).has('jump')).toBe(true);
     });
 
-    it('returns null for a command with no registered completer', () => {
-        expect(findEnumCompleter('narrate', '')).toBeNull();
+    it('returns an empty array for a command with no registered completer', () => {
+        expect(findEnumCompleters('narrate', '')).toEqual([]);
     });
 
-    it('returns null when the prefix does not match a registered one', () => {
-        expect(findEnumCompleter('playsound', 'volume')).toBeNull();
+    it('returns an empty array when the prefix does not match a registered one', () => {
+        expect(findEnumCompleters('playsound', 'volume')).toEqual([]);
     });
 
     it('is keyed by lowercase command name', () => {
-        expect(findEnumCompleter('PLAYSOUND', 'sound')).not.toBeNull();
+        expect(findEnumCompleters('PLAYSOUND', 'sound')).toHaveLength(1);
     });
 
     it('keeps block materials for modifyblock even though C# loses them to a registration collision', () => {
-        const completer = findEnumCompleter('modifyblock', '')!;
-        expect(completer.values(DATA).has('stone')).toBe(true);
+        const completers = findEnumCompleters('modifyblock', '');
+        expect(completers).toHaveLength(1);
+        expect(completers[0].values(DATA).has('stone')).toBe(true);
     });
 });
 

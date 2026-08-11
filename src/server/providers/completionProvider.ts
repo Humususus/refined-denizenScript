@@ -10,9 +10,8 @@ import { CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 
 import { MetaDocs, MetaCommand } from '../metaDocs/metaTypes';
 import { describeCommand } from './describe';
 import { parseCursorContext } from './cursorContext';
-import { getLineContext } from './lineContext';
 import { ExtraData } from '../metaDocs/extraData';
-import { findEnumCompleter } from './argumentCompleters';
+import { findEnumCompleters } from './argumentCompleters';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -54,20 +53,25 @@ export function completeCommandArguments(command: MetaCommand, argSoFar: string)
  * of a wordPattern, which makes `.` and `:` break VS Code's default word boundaries.
  */
 export function completeEnumValues(extra: ExtraData, commandName: string, argPrefix: string, argValue: string, range: Range): CompletionItem[] {
-    const completer = findEnumCompleter(commandName, argPrefix);
-    if (completer === null) {
-        return [];
-    }
+    const completers = findEnumCompleters(commandName, argPrefix);
     const results: CompletionItem[] = [];
-    for (const value of completer.values(extra)) {
-        if (value.startsWith(argValue)) {
-            const textEdit: TextEdit = { range, newText: value };
-            results.push({
-                label: value,
-                kind: CompletionItemKind.Enum,
-                documentation: { kind: MarkupKind.Markdown, value: `**${completer.label}**: ${value}` },
-                textEdit
-            });
+    for (const completer of completers) {
+        for (const value of completer.values(extra)) {
+            if (value.startsWith(argValue)) {
+                const textEdit: TextEdit = { range, newText: value };
+                const item: CompletionItem = {
+                    label: value,
+                    kind: CompletionItemKind.Enum,
+                    textEdit
+                };
+                // Some registrations (e.g. `determine`) intentionally carry no enum
+                // label, meaning no documentation should be attached — see
+                // CommandTabCompletions.cs's `key == null ? null : ...` in CompleteEnum.
+                if (completer.label !== null) {
+                    item.documentation = { kind: MarkupKind.Markdown, value: `**${completer.label}**: ${value}` };
+                }
+                results.push(item);
+            }
         }
     }
     return results;
@@ -89,14 +93,10 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     // `- give q` would list quartz items but swallow `quantity:`.
     const command = docs.commands.get(ctx.name);
     const argResults = command === undefined ? [] : completeCommandArguments(command, ctx.argThusFar);
-    const lineCtx = getLineContext(text, offset);
-    if (lineCtx === null) {
-        // Unreachable in practice: parseCursorContext already succeeded above, and it
-        // derives from the same getLineContext call over the same (text, offset).
-        return argResults;
-    }
-    const cursorChar = lineCtx.linePrefix.length;
-    const valueStart = cursorChar - ctx.argValue.length;
-    const range: Range = { start: { line, character: valueStart }, end: { line, character: cursorChar } };
+    // Start of the value within argThusFar: argThusFar may still carry a `prefix:`
+    // that argValue does not, so the difference in their lengths is exactly how far
+    // into argThusFar (from ctx.argStart) the value itself begins.
+    const valueStart = ctx.argStart + (ctx.argThusFar.length - ctx.argValue.length);
+    const range: Range = { start: { line, character: valueStart }, end: { line, character: ctx.argEnd } };
     return [...argResults, ...completeEnumValues(extra, ctx.name, ctx.argPrefix, ctx.argValue, range)];
 }
