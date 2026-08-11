@@ -290,3 +290,54 @@ describe('splitTopLevelArguments with a bare "<" comparison operator', () => {
         expect(text.substring(spans[1].start, spans[1].end)).toBe('y');
     });
 });
+
+describe('argument fields agree with argIndex', () => {
+    it('keeps a quoted argument whole instead of truncating at the last raw space', () => {
+        const ctx = parseCommandLine('- narrate "hello world', 2)!;
+        expect(ctx.argIndex).toBe(0);
+        expect(ctx.argThusFar).toBe('"hello world');
+    });
+
+    it('keeps a tag containing a space whole', () => {
+        const ctx = parseCommandLine('- narrate <player.flag[a b]', 2)!;
+        expect(ctx.argIndex).toBe(0);
+        expect(ctx.argThusFar).toBe('<player.flag[a b]');
+    });
+
+    it('still reports the plain last token when nothing is quoted', () => {
+        const ctx = parseCommandLine('- narrate hello wor', 2)!;
+        expect(ctx.argIndex).toBe(1);
+        expect(ctx.argThusFar).toBe('wor');
+    });
+
+    it('reports an empty argument after a trailing separator space', () => {
+        const ctx = parseCommandLine('- narrate hello ', 2)!;
+        expect(ctx.argIndex).toBe(1);
+        expect(ctx.argThusFar).toBe('');
+        expect(ctx.argStart).toBe(ctx.argEnd);
+    });
+
+    it('places argStart at the argument, not at the last raw space', () => {
+        const ctx = parseCommandLine('- narrate "hello world', 2)!;
+        expect(ctx.argStart).toBe(12);
+        expect(ctx.argEnd).toBe(24);
+    });
+
+    it('splits prefix and value on the first colon of the whole argument', () => {
+        const ctx = parseCommandLine('- playsound sound:block.stone', 2)!;
+        expect(ctx.argPrefix).toBe('sound');
+        expect(ctx.argValue).toBe('block.stone');
+    });
+
+    it('accounts for a leading tilde when locating a quoted argument', () => {
+        // nameStart for '- ~waituntil ...' at indent 2 is 5 (indent 2 + '- ' (2) + '~' (1)),
+        // per the existing 'skips a leading tilde' test. rest (after stripping '- ' and '~')
+        // is 'waituntil "hello world': the quoted span starts at rest offset 10, so argStart
+        // is nameStart(5) + 10 = 15. The full trimmed line '- ~waituntil "hello world' is 25
+        // characters, so argEnd (the cursor column) is indent(2) + 25 = 27.
+        const ctx = parseCommandLine('- ~waituntil "hello world', 2)!;
+        expect(ctx.argThusFar).toBe('"hello world');
+        expect(ctx.argStart).toBe(15);
+        expect(ctx.argEnd).toBe(27);
+    });
+});

@@ -84,16 +84,9 @@ export function splitTopLevelArguments(text: string): ArgumentSpan[] {
 /**
  * What the cursor is looking at on a `- command args...` line.
  *
- * WARNING: `argIndex` is derived from the quote/tag-aware `splitTopLevelArguments`,
- * but `argThusFar`/`argStart`/`argEnd`/`argPrefix`/`argValue` are still derived from a
- * plain `rest.lastIndexOf(' ')`. They can therefore disagree about which argument is
- * "current": `parseCommandLine('- narrate "hello world', 2)` gives `argIndex` `0`
- * (correct — the cursor is inside the single open-quoted argument) but `argThusFar`
- * `'world'` (truncated at the last plain space, inside the quotes — it loses the
- * open quote and the `hello ` before it). Do not assume a
- * consumer can naively combine `argIndex` with the `arg*` fields to mean the same
- * span of text. This is a known gap, deliberately left unfixed here — fixing it moves
- * completion filtering behaviour, which is deferred to a later phase.
+ * `argIndex` and `argThusFar`/`argStart`/`argEnd` are both derived from the same
+ * quote/tag-aware `splitTopLevelArguments` spans, so they always agree about which
+ * argument is "current" — including when it contains a space inside quotes or a tag.
  */
 export interface CommandCursorContext {
     /** The command name, lowercased. May be a partial word while being typed. */
@@ -136,12 +129,6 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
     const firstSpace = rest.indexOf(' ');
     const name = firstSpace === -1 ? rest : rest.substring(0, firstSpace);
     const typingName = firstSpace === -1;
-    // Offset of argThusFar within `rest`: the empty string right after `rest`
-    // itself while the name is still being typed (there is no argument yet), or
-    // the text following the last space otherwise.
-    const argOffsetInRest = typingName ? rest.length : rest.lastIndexOf(' ') + 1;
-    const argThusFar = typingName ? '' : rest.substring(argOffsetInRest);
-    const colon = argThusFar.indexOf(':');
     const spans = splitTopLevelArguments(rest);
     const endsWithSeparator = rest.length > 0 && rest.endsWith(' ') && spans.length > 0 && spans[spans.length - 1].end < rest.length;
     // spans.length - 2 can go below -1 (e.g. a line that is just `- ` followed only by
@@ -149,6 +136,34 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
     // the documented contract below ("0-based index, or -1 while typing the name") holds
     // even for that degenerate input, rather than leaking a garbage negative value.
     const argIndex = typingName ? -1 : Math.max(endsWithSeparator ? spans.length - 1 : spans.length - 2, -1);
+
+    // The cursor's column on the full line — also `argEnd` in every case below, since
+    // the cursor always sits at the end of whatever the caller passed in.
+    const cursorColumn = indent + trimmed.length;
+    let argThusFar: string;
+    let argStart: number;
+    const argEnd = cursorColumn;
+    if (typingName) {
+        // No argument exists yet while the command name itself is still being typed —
+        // leave this exactly as it was before spans existed.
+        argThusFar = '';
+        argStart = nameStart + rest.length;
+    } else {
+        const lastSpan = spans.length > 0 ? spans[spans.length - 1] : undefined;
+        if (endsWithSeparator || !lastSpan) {
+            // A trailing separator space (or an all-whitespace `rest`, e.g. `-   `, where
+            // no span ever opens) means the cursor is starting a new, still-empty argument.
+            argThusFar = '';
+            argStart = cursorColumn;
+        } else {
+            // The cursor sits inside the same top-level argument span argIndex was derived
+            // from, so the two can no longer disagree about which argument is "current" the
+            // way the old `rest.lastIndexOf(' ')` derivation could.
+            argThusFar = rest.substring(lastSpan.start, lastSpan.end);
+            argStart = nameStart + lastSpan.start;
+        }
+    }
+    const colon = argThusFar.indexOf(':');
     return {
         name,
         typingName,
@@ -157,8 +172,8 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
         argThusFar,
         argPrefix: colon === -1 ? '' : argThusFar.substring(0, colon),
         argValue: colon === -1 ? argThusFar : argThusFar.substring(colon + 1),
-        argStart: nameStart + argOffsetInRest,
-        argEnd: indent + trimmed.length,
+        argStart,
+        argEnd,
         argIndex
     };
 }
