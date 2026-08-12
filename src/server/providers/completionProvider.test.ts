@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { CompletionItemKind } from 'vscode-languageserver';
-import { provideCompletions, completeCommandNames, completeCommandArguments } from './completionProvider';
-import { MetaCommand, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND } from '../metaDocs/metaTypes';
+import { provideCompletions, completeCommandNames, completeCommandArguments, completeTag } from './completionProvider';
+import { MetaCommand, MetaTag, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_TAG } from '../metaDocs/metaTypes';
 import { buildExtraData, parseFlatFds, createEmptyExtraData } from '../metaDocs/extraData';
+import { TagCursorContext } from './tagContext';
 
 function makeCommand(name: string, syntax: string, short: string): MetaCommand {
     const cmd = new MetaCommand();
@@ -18,6 +19,27 @@ function docsWith(...commands: MetaCommand[]): MetaDocs {
     for (const cmd of commands) {
         cmd.addTo(docs);
     }
+    return docs;
+}
+
+function makeTag(attribute: string, returns: string, description: string): MetaTag {
+    const tag = new MetaTag();
+    tag.type = META_TYPE_TAG;
+    tag.applyValue('attribute', attribute);
+    tag.applyValue('returns', returns);
+    tag.applyValue('description', description);
+    return tag;
+}
+
+// Registers two tags: `<PlayerTag.name>` (base "playertag", part "name", no exact
+// docs.tags entry for the bare base "playertag") and `<player>` (base "player" with
+// no dot, so its own cleanName IS the base — an exact docs.tags entry for "player").
+// The pair is what lets a single fixture cover both "has documentation" and "does not"
+// for base completion without a third tag.
+function tagDocs(): MetaDocs {
+    const docs = createEmptyMetaDocs();
+    makeTag('<PlayerTag.name>', 'ElementTag', 'Returns the name of the player.').addTo(docs);
+    makeTag('<player>', 'PlayerTag', 'Returns the linked player.').addTo(docs);
     return docs;
 }
 
@@ -366,5 +388,95 @@ describe('key-line value completion', () => {
     it('does not fire on a command line', () => {
         const text = '  - narrate mat';
         expect(provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)).toEqual([]);
+    });
+});
+
+describe('tag completion', () => {
+    it('offers base tags starting with the typed prefix, with a textEdit replacing the whole typed base', () => {
+        // '  - narrate <pla': '  - narrate ' is 12 characters (indices 0-11: two spaces,
+        // '-', space, 'narrate', space), '<' is index 12, 'pla' occupies indices 13-15.
+        // The string is 16 characters long (indices 0-15), so the cursor sits at
+        // character 16. componentCount is 0 (no dot yet), so lastComponentStart equals
+        // tagStart, which is 13 (just after '<').
+        const text = '  - narrate <pla';
+        expect(text.length).toBe(16);
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0);
+        expect(items.map(i => i.label).sort()).toEqual(['player', 'playertag']);
+        for (const item of items) {
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 13 }, end: { line: 0, character: 16 } },
+                newText: item.label
+            });
+        }
+    });
+
+    it('attaches documentation for a base tag with an exact docs.tags entry ("player", a dotless tag), but still returns one without ("playertag", which only exists as "playertag.name")', () => {
+        const text = '  - narrate <pla';
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0);
+        const player = items.find(i => i.label === 'player');
+        const playertag = items.find(i => i.label === 'playertag');
+        expect(player).toBeDefined();
+        expect(playertag).toBeDefined();
+        expect(String((player!.documentation as { value: string }).value)).toContain('### Tag');
+        expect(playertag!.documentation).toBeUndefined();
+    });
+
+    it('offers tag parts starting with the typed prefix once a component follows a dot', () => {
+        // '  - narrate <player.na': '<' is at index 12, 'player.na' occupies indices
+        // 13-21 (p13 l14 a15 y16 e17 r18 .19 n20 a21). The string is 22 characters long,
+        // so the cursor is at character 22. The single dot inside the tag is at index 19
+        // (relative index 6 within "player.na"), so the component after it, "na", starts
+        // at index 20 — that is lastComponentStart.
+        const text = '  - narrate <player.na';
+        expect(text.length).toBe(22);
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0);
+        expect(items.map(i => i.label)).toEqual(['name']);
+        expect(items[0].textEdit).toEqual({
+            range: { start: { line: 0, character: 20 }, end: { line: 0, character: 22 } },
+            newText: 'name'
+        });
+    });
+
+    it('offers every part when nothing follows the dot yet', () => {
+        // '  - narrate <player.': same as above minus the two "na" characters, so the
+        // string is 20 characters long and the cursor (and lastComponentStart, since
+        // lastComponent is empty) is at character 20.
+        const text = '  - narrate <player.';
+        expect(text.length).toBe(20);
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0);
+        expect(items.map(i => i.label)).toEqual(['name']);
+        expect(items[0].textEdit).toEqual({
+            range: { start: { line: 0, character: 20 }, end: { line: 0, character: 20 } },
+            newText: 'name'
+        });
+    });
+
+    it('does not fire outside a tag', () => {
+        const text = '  - narrate hello';
+        expect(provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0)).toEqual([]);
+    });
+
+    // Carried-over finding from Task 3's review: findTagAtCursor deliberately does not
+    // lowercase tagSoFar/lastComponent (tagContext.ts's file header explains why — the
+    // position-scanning passes don't need case normalization). tagBases/tagParts hold
+    // only lowercase entries (MetaTag.addTo). completeTag is exercised directly here,
+    // with a hand-built TagCursorContext carrying a capitalised lastComponent, rather
+    // than through provideCompletions/the full text pipeline — that pipeline already
+    // lowercases the whole line in getLineContext before parseCommandLine ever runs, so
+    // driving this through provideCompletions would never actually exercise a capitalised
+    // lastComponent and would silently confound the thing this test is meant to prove.
+    // completeTag's own declared contract takes a TagCursorContext directly, so a caller
+    // that (now or later) does not pre-lowercase must still get correct matches.
+    it('lowercases the typed component before matching, so a capitalised prefix still matches', () => {
+        const docs = tagDocs();
+        const ctx: TagCursorContext = {
+            tagSoFar: 'Pla',
+            tagStart: 5,
+            componentCount: 0,
+            lastComponent: 'Pla',
+            lastComponentStart: 5
+        };
+        const labels = completeTag(docs, ctx, 0).map(i => i.label).sort();
+        expect(labels).toEqual(['player', 'playertag']);
     });
 });
