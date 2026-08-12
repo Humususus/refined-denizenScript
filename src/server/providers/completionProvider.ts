@@ -9,9 +9,9 @@
 import { CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand } from '../metaDocs/metaTypes';
 import { describeCommand } from './describe';
-import { parseCursorContext } from './cursorContext';
+import { parseCursorContext, LineCursorContext } from './cursorContext';
 import { ExtraData } from '../metaDocs/extraData';
-import { findEnumCompleters } from './argumentCompleters';
+import { findEnumCompleters, findKeyLineCompleter } from './argumentCompleters';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -77,11 +77,57 @@ export function completeEnumValues(extra: ExtraData, commandName: string, argPre
     return results;
 }
 
+/**
+ * Values of the enum backing a container key's value (e.g. `material: sto`), for a
+ * non-command line. Mirrors TextDocumentService.cs:408-420's `LinePrefixCompleters`
+ * branch: bail out if the line has no `:`, or if it already contains a `<` — a
+ * tag's resolved value is not statically knowable, so no enum can be offered.
+ * `range` follows `completeEnumValues`'s shape, covering the whole typed value so
+ * a dotted or underscored value replaces cleanly instead of duplicating.
+ */
+export function completeKeyLineValues(extra: ExtraData, ctx: LineCursorContext, line: number): CompletionItem[] {
+    const trimmed = ctx.trimmed;
+    const colon = trimmed.indexOf(':');
+    if (colon === -1 || trimmed.includes('<')) {
+        return [];
+    }
+    const key = trimmed.substring(0, colon);
+    const completer = findKeyLineCompleter(key);
+    if (completer === null) {
+        return [];
+    }
+    const rawValue = trimmed.substring(colon + 1);
+    const value = rawValue.trim();
+    const leadingSpaces = rawValue.length - rawValue.trimStart().length;
+    const valueStart = ctx.indent + colon + 1 + leadingSpaces;
+    const valueEnd = ctx.indent + trimmed.length;
+    const range: Range = { start: { line, character: valueStart }, end: { line, character: valueEnd } };
+    const results: CompletionItem[] = [];
+    for (const candidate of completer.values(extra)) {
+        if (candidate.startsWith(value)) {
+            const textEdit: TextEdit = { range, newText: candidate };
+            const item: CompletionItem = {
+                label: candidate,
+                kind: CompletionItemKind.Enum,
+                textEdit
+            };
+            if (completer.label !== null) {
+                item.documentation = { kind: MarkupKind.Markdown, value: `**${completer.label}**: ${candidate}` };
+            }
+            results.push(item);
+        }
+    }
+    return results;
+}
+
 /** Entry point: what should be offered at `offset` on `line` within `text`. */
 export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number): CompletionItem[] {
     const ctx = parseCursorContext(text, offset);
     if (ctx === null) {
         return [];
+    }
+    if (ctx.kind === 'line') {
+        return completeKeyLineValues(extra, ctx, line);
     }
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);

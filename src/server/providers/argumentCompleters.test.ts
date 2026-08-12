@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findEnumCompleters, COMMAND_VALUE_COMPLETERS } from './argumentCompleters';
+import { findEnumCompleters, COMMAND_VALUE_COMPLETERS, findKeyLineCompleter } from './argumentCompleters';
 import { buildExtraData, parseFlatFds } from '../metaDocs/extraData';
 
 const DATA = buildExtraData(parseFlatFds([
@@ -64,5 +64,23 @@ describe('COMMAND_VALUE_COMPLETERS', () => {
         for (const name of ['modifyblock', 'showfake', 'playeffect', 'playsound', 'cast', 'statistic']) {
             expect(COMMAND_VALUE_COMPLETERS.has(name)).toBe(true);
         }
+    });
+});
+
+describe('findKeyLineCompleter', () => {
+    it('maps material to items, matching the C# LinePrefixCompleters table', () => {
+        expect(findKeyLineCompleter('material')!.values(DATA).has('stick')).toBe(true);
+    });
+
+    it('maps entity_type to entities', () => {
+        expect(findKeyLineCompleter('entity_type')!.values(DATA).has('zombie')).toBe(true);
+    });
+
+    it('is case-insensitive and tolerates surrounding whitespace on the key', () => {
+        expect(findKeyLineCompleter('  MATERIAL ')).not.toBeNull();
+    });
+
+    it('returns null for an unregistered key', () => {
+        expect(findKeyLineCompleter('title')).toBeNull();
     });
 });

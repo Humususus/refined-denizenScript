@@ -83,3 +83,17 @@ export function findEnumCompleters(commandName: string, argPrefix: string): Enum
     }
     return completers.filter(c => c.prefix === argPrefix.toLowerCase());
 }
+
+/**
+ * Container keys whose value comes from a fixed Minecraft enum.
+ * Ported from TextDocumentService.cs:288-292 (LinePrefixCompleters).
+ */
+export const KEY_LINE_COMPLETERS: Map<string, EnumCompleter> = new Map([
+    ['material', { prefix: '', label: 'Item', values: (d: ExtraData) => d.items }],
+    ['entity_type', { prefix: '', label: 'Entity Type', values: (d: ExtraData) => d.entities }]
+]);
+
+/** The enum backing a container key's value, or null when that key takes free text. */
+export function findKeyLineCompleter(key: string): EnumCompleter | null {
+    return KEY_LINE_COMPLETERS.get(key.toLowerCase().trim()) ?? null;
+}

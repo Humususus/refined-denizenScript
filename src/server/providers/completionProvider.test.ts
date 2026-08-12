@@ -303,3 +303,53 @@ describe('determine enum completer (suppressed documentation)', () => {
         }
     });
 });
+
+describe('key-line value completion', () => {
+    const KEY_EXTRA = buildExtraData(parseFlatFds([
+        'items:', '- STONE', '- STONE_BRICKS', '- STICK',
+        'entities:', '- ZOMBIE', '- ZOMBIE_HORSE',
+        ''
+    ].join('\n')));
+
+    it('completes material values on a container key line', () => {
+        const text = '  material: stone';
+        const labels = provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0).map(i => i.label);
+        expect(labels.sort()).toEqual(['stone', 'stone_bricks']);
+    });
+
+    it('completes entity_type values', () => {
+        const text = '  entity_type: zombie_';
+        const labels = provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0).map(i => i.label);
+        expect(labels).toEqual(['zombie_horse']);
+    });
+
+    it('offers everything when the value is still empty', () => {
+        const text = '  material: ';
+        const labels = provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0).map(i => i.label);
+        expect(labels.sort()).toEqual(['stick', 'stone', 'stone_bricks']);
+    });
+
+    it('replaces the whole typed value, not just the last word fragment', () => {
+        const text = '  material: stone_b';
+        const item = provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)[0];
+        expect(item.textEdit).toEqual({
+            range: { start: { line: 0, character: 12 }, end: { line: 0, character: 19 } },
+            newText: 'stone_bricks'
+        });
+    });
+
+    it('does not fire on a key line that already contains a tag', () => {
+        const text = '  material: <[mat]>';
+        expect(provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)).toEqual([]);
+    });
+
+    it('does not fire on an unregistered key', () => {
+        const text = '  title: sto';
+        expect(provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)).toEqual([]);
+    });
+
+    it('does not fire on a command line', () => {
+        const text = '  - narrate mat';
+        expect(provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)).toEqual([]);
+    });
+});

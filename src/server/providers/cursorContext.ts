@@ -178,11 +178,39 @@ export function parseCommandLine(trimmed: string, indent: number): CommandCursor
     };
 }
 
-/** Parses the command context at `offset` within `text`, or null if the cursor is not on a command line. */
-export function parseCursorContext(text: string, offset: number): CommandCursorContext | null {
+/** What the cursor is looking at on a line that is not a `- command` line — a container key line, a script key, or plain text. */
+export interface LineCursorContext {
+    kind: 'line';
+    /** Raw text from line start up to (not including) the cursor. */
+    linePrefix: string;
+    /** `linePrefix` with leading whitespace removed and lowercased. */
+    trimmed: string;
+    /** How many leading whitespace characters were removed to produce `trimmed`. */
+    indent: number;
+}
+
+/**
+ * What the cursor is looking at, on any kind of line. A discriminated union on
+ * `kind` so callers can narrow before touching fields that only one branch has —
+ * `CommandCursorContext`'s fields (`name`, `argThusFar`, ...) only exist when
+ * `kind === 'command'`.
+ */
+export type CursorContext = ({ kind: 'command' } & CommandCursorContext) | LineCursorContext;
+
+/**
+ * Parses the context at `offset` within `text`. Returns a `'command'` context on a
+ * `- command` line, a `'line'` context otherwise (mirrors TextDocumentService.cs's
+ * `LinePrefixCompleters` branch at :408-420, which runs on any non-command line),
+ * and `null` only when `offset` is out of range.
+ */
+export function parseCursorContext(text: string, offset: number): CursorContext | null {
     const line = getLineContext(text, offset);
     if (line === null) {
         return null;
     }
-    return parseCommandLine(line.trimmed, line.indent);
+    const command = parseCommandLine(line.trimmed, line.indent);
+    if (command !== null) {
+        return { kind: 'command', ...command };
+    }
+    return { kind: 'line', linePrefix: line.linePrefix, trimmed: line.trimmed, indent: line.indent };
 }

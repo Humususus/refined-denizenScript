@@ -69,12 +69,34 @@ describe('parseCursorContext', () => {
         expect(ctx.argValue).toBe('amb');
     });
 
-    it('returns null when the cursor is not on a command line', () => {
+    it('reports a line context (not null) when the cursor is not on a command line', () => {
         const text = 'my_task:\n  type: task';
-        expect(parseCursorContext(text, text.length)).toBeNull();
+        const ctx = parseCursorContext(text, text.length)!;
+        expect(ctx.kind).toBe('line');
     });
 
     it('returns null for an out-of-range offset', () => {
+        expect(parseCursorContext('  - narrate', 999)).toBeNull();
+    });
+});
+
+describe('parseCursorContext on non-command lines', () => {
+    it('reports a key line instead of returning null', () => {
+        const text = 'my_item:\n  type: item\n  material: stone_b';
+        const ctx = parseCursorContext(text, text.length)!;
+        expect(ctx.kind).toBe('line');
+        expect((ctx as { trimmed: string }).trimmed).toBe('material: stone_b');
+        expect((ctx as { indent: number }).indent).toBe(2);
+    });
+
+    it('still reports a command line as a command context', () => {
+        const text = '  - narrate hi';
+        const ctx = parseCursorContext(text, text.length)!;
+        expect(ctx.kind).toBe('command');
+        expect((ctx as { name: string }).name).toBe('narrate');
+    });
+
+    it('returns null only for an out-of-range offset', () => {
         expect(parseCursorContext('  - narrate', 999)).toBeNull();
     });
 });
