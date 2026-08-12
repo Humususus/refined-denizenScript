@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MetaCommand, MetaTag, MetaEvent, MetaMechanism, MetaProperty, MetaAction, MetaLanguage, MetaObjectType, createEmptyMetaDocs, cleanTag } from './metaTypes';
+import { MetaCommand, MetaTag, MetaEvent, MetaMechanism, MetaProperty, MetaAction, MetaLanguage, MetaObjectType, MetaDocs, createEmptyMetaDocs, cleanTag } from './metaTypes';
 
 describe('createEmptyMetaDocs', () => {
     it('creates empty maps for every meta type', () => {
@@ -248,5 +248,62 @@ describe('MetaCommand.parseSyntax', () => {
         cmd.syntax = 'narrate [<text>] (format:<name>)';
         cmd.addTo(docs);
         expect(docs.commands.get('narrate')!.argPrefixes.map(a => a.clean)).toEqual(['format']);
+    });
+});
+
+describe('tag lookup sets', () => {
+    function tagDocs(...attributes: string[]): MetaDocs {
+        const docs = createEmptyMetaDocs();
+        for (const attribute of attributes) {
+            const tag = new MetaTag();
+            tag.applyValue('attribute', attribute);
+            tag.addTo(docs);
+        }
+        return docs;
+    }
+
+    it('seeds the bases with context and entry before any tag loads', () => {
+        const docs = createEmptyMetaDocs();
+        expect(docs.tagBases.has('context')).toBe(true);
+        expect(docs.tagBases.has('entry')).toBe(true);
+    });
+
+    it('records the text before the first dot as a base', () => {
+        const docs = tagDocs('<PlayerTag.name>');
+        expect(docs.tagBases.has('playertag')).toBe(true);
+    });
+
+    it('records every dot-separated bit after the base as a part', () => {
+        const docs = tagDocs('<PlayerTag.flag[<name>].expiration>');
+        expect(docs.tagParts.has('flag')).toBe(true);
+        expect(docs.tagParts.has('expiration')).toBe(true);
+    });
+
+    it('does not record the base itself as a part', () => {
+        const docs = tagDocs('<PlayerTag.name>');
+        expect(docs.tagParts.has('playertag')).toBe(false);
+    });
+
+    it('maps every bit of a deprecated tag to its message', () => {
+        const docs = createEmptyMetaDocs();
+        const tag = new MetaTag();
+        tag.applyValue('attribute', '<PlayerTag.old_thing>');
+        tag.applyValue('deprecated', 'Use the new thing.');
+        tag.addTo(docs);
+        expect(docs.tagDeprecations.get('old_thing')).toBe('Use the new thing.');
+        expect(docs.tagDeprecations.get('playertag')).toBe('Use the new thing.');
+    });
+
+    it('records nothing in deprecations for a healthy tag', () => {
+        expect(tagDocs('<PlayerTag.name>').tagDeprecations.size).toBe(0);
+    });
+
+    it('does not poison the sets with an empty-string entry when the clean name is empty', () => {
+        const docs = createEmptyMetaDocs();
+        const tag = new MetaTag();
+        // No applyValue('attribute', ...) call — simulates a missing/unparseable @Attribute line.
+        tag.addTo(docs);
+        expect(docs.tagBases.has('')).toBe(false);
+        expect(docs.tagParts.has('')).toBe(false);
     });
 });

@@ -276,6 +276,29 @@ export class MetaTag extends MetaObject {
 
     addTo(docs: MetaDocs): void {
         docs.tags.set(this.cleanName, this);
+        // Ported from MetaTag.cs:20-34. The clean name's first dot-separated
+        // bit is the "base" (e.g. "playertag"); everything after is split
+        // into individual "parts" (e.g. "flag", "expiration"). Guard against
+        // an empty/unparsed cleanedName (missing or malformed @Attribute)
+        // adding a poisoning '' entry to either set.
+        const dotIndex = this.cleanedName.indexOf('.');
+        const base = dotIndex >= 0 ? this.cleanedName.substring(0, dotIndex) : this.cleanedName;
+        const rest = dotIndex >= 0 ? this.cleanedName.substring(dotIndex + 1) : '';
+        if (base.length > 0) {
+            docs.tagBases.add(base);
+        }
+        for (const bit of rest.split('.')) {
+            if (bit.length > 0) {
+                docs.tagParts.add(bit);
+            }
+        }
+        if (this.deprecated && this.deprecated.trim().length > 0) {
+            for (const bit of this.cleanedName.split('.')) {
+                if (bit.length > 0) {
+                    docs.tagDeprecations.set(bit, this.deprecated);
+                }
+            }
+        }
     }
 }
 
@@ -714,6 +737,25 @@ export interface MetaDocs {
     guidePages: Map<string, MetaGuidePage>;
     extensions: Map<string, MetaExtension>;
     loadErrors: string[];
+    /**
+     * Every known tag "base": the clean-name text before a tag's first dot
+     * (e.g. "playertag" for `<PlayerTag.name>`). Seeded with "context" and
+     * "entry", which are valid tag bases with no dedicated MetaTag entry
+     * (MetaDocs.cs:79). Used to offer completions for the first part of a tag.
+     */
+    tagBases: Set<string>;
+    /**
+     * Every known tag "part": each dot-separated bit of a tag's clean name
+     * after its base (e.g. "flag", "expiration" for `<PlayerTag.flag.expiration>`).
+     * Used to offer completions after the first dot in a tag.
+     */
+    tagParts: Set<string>;
+    /**
+     * Maps each dot-separated bit of a deprecated tag's clean name to that
+     * tag's deprecation message, so completion can surface a warning for any
+     * bit of a deprecated tag.
+     */
+    tagDeprecations: Map<string, string>;
 }
 
 export function createEmptyMetaDocs(): MetaDocs {
@@ -728,6 +770,10 @@ export function createEmptyMetaDocs(): MetaDocs {
         languages: new Map(),
         guidePages: new Map(),
         extensions: new Map(),
-        loadErrors: []
+        loadErrors: [],
+        // Seeded per MetaDocs.cs:79.
+        tagBases: new Set(['context', 'entry']),
+        tagParts: new Set(),
+        tagDeprecations: new Map()
     };
 }
