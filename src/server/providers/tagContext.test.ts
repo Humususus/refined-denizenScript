@@ -32,9 +32,11 @@ describe('findTagAtCursor', () => {
         expect(ctx.lastComponentStart).toBe(13);
     });
 
-    it('does not count a dot inside a [...] parameter as a top-level dot', () => {
-        // "<player.flag[a].ex": the '.' inside "[a]" must not count; only the two dots
-        // outside brackets (after "player" and after "flag[a]") do.
+    it('has a [...] parameter with no dot inside it, alongside the two real top-level dots', () => {
+        // "<player.flag[a].ex": "[a]" happens to contain no '.', so this case alone does
+        // not exercise the squareBrackets guard on the dot condition — see the next test
+        // for that. It still pins that the two dots outside any brackets (after "player"
+        // and after "flag[a]") are the only ones counted.
         const ctx = findTagAtCursor('<player.flag[a].ex', 0)!;
         expect(ctx.tagSoFar).toBe('player.flag[a].ex');
         expect(ctx.tagStart).toBe(1);
@@ -43,15 +45,65 @@ describe('findTagAtCursor', () => {
         expect(ctx.lastComponentStart).toBe(16);
     });
 
-    it('does not let a nested tag inside a parameter affect the dot count', () => {
-        // "<player.flag[<[d]>].ex": the nested "<[d]>" (and the '.' it could contain,
-        // though this one has none) must not perturb component counting.
+    it('does not count a dot inside a [...] parameter as a top-level dot', () => {
+        // "<player.flag[a.b].ex": the '.' inside "[a.b]" (tagSoFar index 13) must not
+        // count; only the two dots outside brackets, after "player" (tagSoFar index 6)
+        // and after "flag[a.b]" (tagSoFar index 16, giving lastDot 17), do.
+        const ctx = findTagAtCursor('<player.flag[a.b].ex', 0)!;
+        expect(ctx.tagSoFar).toBe('player.flag[a.b].ex');
+        expect(ctx.tagStart).toBe(1);
+        expect(ctx.componentCount).toBe(2);
+        expect(ctx.lastComponent).toBe('ex');
+        expect(ctx.lastComponentStart).toBe(18);
+    });
+
+    it('has a nested tag with no dot inside it, alongside the two real top-level dots', () => {
+        // "<player.flag[<[d]>].ex": the nested "<[d]>" happens to contain no '.', so this
+        // case alone does not exercise the subTags guard on the dot condition — see the
+        // next test for that.
         const ctx = findTagAtCursor('<player.flag[<[d]>].ex', 0)!;
         expect(ctx.tagSoFar).toBe('player.flag[<[d]>].ex');
         expect(ctx.tagStart).toBe(1);
         expect(ctx.componentCount).toBe(2);
         expect(ctx.lastComponent).toBe('ex');
         expect(ctx.lastComponentStart).toBe(20);
+    });
+
+    it('does not count a dot inside a nested tag as a top-level dot', () => {
+        // "<player.flag[<player.name>].ex": the '.' inside the nested "<player.name>"
+        // (tagSoFar index 19) must not count; only the two dots outside any nesting,
+        // after "player" (tagSoFar index 6) and after "flag[<player.name>]" (tagSoFar
+        // index 26, giving lastDot 27), do.
+        //
+        // NOTE: because this nested tag also happens to sit inside "[...]", this case
+        // alone cannot distinguish the subTags guard from the squareBrackets guard —
+        // squareBrackets stays nonzero for that entire span regardless of subTags, so it
+        // alone would still suppress the dot at index 19 even if subTags tracking were
+        // deleted. Confirmed by mutation testing (see task-3-report.md's fix section):
+        // deleting the subTags increment/decrement does NOT make this test fail. The
+        // next test exists specifically to isolate the subTags guard.
+        const ctx = findTagAtCursor('<player.flag[<player.name>].ex', 0)!;
+        expect(ctx.tagSoFar).toBe('player.flag[<player.name>].ex');
+        expect(ctx.tagStart).toBe(1);
+        expect(ctx.componentCount).toBe(2);
+        expect(ctx.lastComponent).toBe('ex');
+        expect(ctx.lastComponentStart).toBe(28);
+    });
+
+    it('does not count a dot inside a nested tag that is not itself bracket-wrapped', () => {
+        // "<player.<a.b>.x": unlike the previous case, this nested "<a.b>" is NOT
+        // inside "[...]", so squareBrackets is 0 for its whole span — only the subTags
+        // guard suppresses the '.' inside it (tagSoFar index 9). This isolates the
+        // subTags guard from squareBrackets: with subTags tracking removed, this dot
+        // would wrongly count (componentCount 3 instead of 2). Two dots are genuinely
+        // top-level: after "player" (tagSoFar index 6) and after "<a.b>" (tagSoFar
+        // index 12, giving lastDot 13).
+        const ctx = findTagAtCursor('<player.<a.b>.x', 0)!;
+        expect(ctx.tagSoFar).toBe('player.<a.b>.x');
+        expect(ctx.tagStart).toBe(1);
+        expect(ctx.componentCount).toBe(2);
+        expect(ctx.lastComponent).toBe('x');
+        expect(ctx.lastComponentStart).toBe(14);
     });
 
     it('accounts for text preceding the tag when computing tagStart', () => {
