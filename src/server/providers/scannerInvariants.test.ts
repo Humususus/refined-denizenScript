@@ -71,41 +71,85 @@ function isValidTagFirstCharRef(ch: string): boolean {
     return VALID_TAG_FIRST_CHARS.has(ch);
 }
 
-/** Ground truth for `splitTopLevelArguments`: mask[i] is true iff text[i] is a space outside quotes and outside tag depth. */
-function argumentSeparatorMask(text: string): boolean[] {
+/**
+ * The reference's per-index quote/depth state, alongside the separator mask. `quoteBefore[i]`
+ * and `depthBefore[i]` are the quote/depth values in effect BEFORE index `i` is scanned —
+ * i.e. the state a span starting at `i` would begin from. Fix 2 uses these to anchor a new
+ * invariant clause (see `assertSpansStartOutsideQuoteAndDepth` below); previously this state
+ * was computed and thrown away.
+ */
+interface SeparatorState {
+    mask: boolean[];
+    quoteBefore: (string | null)[];
+    depthBefore: number[];
+}
+
+/**
+ * Ground truth for `splitTopLevelArguments`: mask[i] is true iff text[i] is a space outside
+ * quotes and outside tag depth.
+ *
+ * The quote-open gate below is an INDEPENDENT port of the same C# rule production's
+ * `splitTopLevelArguments` takes it from — SharpDenizenTools/ScriptAnalysis/ScriptChecker.cs:
+ * 706-716's `BuildArgs`:
+ *
+ *     if (currentQuote == '\0' && inTagParams == 0)
+ *     {
+ *         ...
+ *         if (i == 0 || stringArgs[i - 1] == ' ')
+ *         {
+ *             currentQuote = c;
+ *
+ * a quote opens only at the very start of the text or immediately after a space. Rather than
+ * indexing `text[i - 1]` the way production does, this carries the previous character forward
+ * in a running variable (`prevChar`, updated at the bottom of every loop iteration) — a
+ * differently-shaped second implementation of the same rule, not the same expression copied
+ * under a new name.
+ */
+function argumentSeparatorMask(text: string): SeparatorState {
     const mask: boolean[] = new Array(text.length).fill(false);
+    const quoteBefore: (string | null)[] = new Array(text.length).fill(null);
+    const depthBefore: number[] = new Array(text.length).fill(0);
     let quote: string | null = null;
     let depth = 0;
+    let prevChar: string | null = null;
     for (let i = 0; i < text.length; i++) {
+        quoteBefore[i] = quote;
+        depthBefore[i] = depth;
         const ch = text[i];
         mask[i] = ch === ' ' && quote === null && depth === 0;
         if (mask[i]) {
+            prevChar = ch;
             continue;
         }
         if (quote !== null) {
             if (ch === quote) {
                 quote = null;
             }
+            prevChar = ch;
             continue;
         }
-        if (ch === '"' || ch === '\'') {
+        if ((ch === '"' || ch === '\'') && (i === 0 || prevChar === ' ')) {
             quote = ch;
+            prevChar = ch;
             continue;
         }
         if (ch === '<') {
             if (i + 1 < text.length && isValidTagFirstCharRef(text[i + 1])) {
                 depth++;
             }
+            prevChar = ch;
             continue;
         }
         if (ch === '>') {
             if (depth > 0) {
                 depth--;
             }
+            prevChar = ch;
             continue;
         }
+        prevChar = ch;
     }
-    return mask;
+    return { mask, quoteBefore, depthBefore };
 }
 
 /** Ground truth for `tokenizeSyntax`: mask[i] is true iff syntax[i] is a space outside the shared []()<> depth. */
@@ -247,6 +291,27 @@ function assertReconstructs(input: string, spans: Span[], mask: boolean[]): void
     }
 }
 
+/**
+ * Fix 2's new invariant clause, checked only for `splitTopLevelArguments` (the scanner the
+ * next phase extends to report per-span quote/tag state): every returned span must begin
+ * from a state where no quote is open and tag depth is zero. A top-level argument, by
+ * definition, cannot start while still "inside" a quote or a tag from what came before it —
+ * that carried-over state would make it not top-level. Checked against the reference
+ * `quoteBefore`/`depthBefore` trace above (never against the scanner's own internal state),
+ * so this becomes the anchor the next phase's per-span state field has to satisfy from day
+ * one, not something that would silently pass today even if that field were wrong.
+ */
+function assertSpansStartOutsideQuoteAndDepth(input: string, spans: Span[], quoteBefore: (string | null)[], depthBefore: number[]): void {
+    for (const span of spans) {
+        if (quoteBefore[span.start] !== null) {
+            throw new Error(`Span state invariant failed for input ${JSON.stringify(input)}: span {start: ${span.start}, end: ${span.end}} begins with an open quote (${JSON.stringify(quoteBefore[span.start])})`);
+        }
+        if (depthBefore[span.start] !== 0) {
+            throw new Error(`Span state invariant failed for input ${JSON.stringify(input)}: span {start: ${span.start}, end: ${span.end}} begins at tag depth ${depthBefore[span.start]}`);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // Deterministic corpus. Alphabet covers every character class that has historically broken
 // either scanner: letters and digits (tag-first-char boundaries), space (the separator
@@ -315,8 +380,9 @@ describe('splitTopLevelArguments structural invariants', () => {
     it(`reconstructs every one of the ${CORPUS.length} corpus inputs`, () => {
         for (const input of CORPUS) {
             const spans = splitTopLevelArguments(input);
-            const mask = argumentSeparatorMask(input);
+            const { mask, quoteBefore, depthBefore } = argumentSeparatorMask(input);
             assertReconstructs(input, spans, mask);
+            assertSpansStartOutsideQuoteAndDepth(input, spans, quoteBefore, depthBefore);
         }
     });
 });

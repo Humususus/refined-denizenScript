@@ -338,6 +338,21 @@ describe('key-line value completion', () => {
         });
     });
 
+    it('replaces the whole typed value at a non-default indent (four spaces, not the two every other case here uses)', () => {
+        // '    material: stone_b': indent is 4 spaces (indices 0-3), 'material' is indices
+        // 4-11, ':' at 12, a single space at 13, then 'stone_b' at indices 14-20 (7
+        // characters). trimmed (post-indent) is 'material: stone_b', 17 characters below
+        // trimmed.length=17, so valueEnd = indent(4) + trimmed.length(17) = 21, and
+        // valueStart = indent(4) + colon(8) + 1 + leadingSpaces(1) = 14 — matching the
+        // literal index of 's' in 'stone_b' above.
+        const text = '    material: stone_b';
+        const item = provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)[0];
+        expect(item.textEdit).toEqual({
+            range: { start: { line: 0, character: 14 }, end: { line: 0, character: 21 } },
+            newText: 'stone_bricks'
+        });
+    });
+
     it('does not fire on a key line that already contains a tag', () => {
         const text = '  material: <[mat]>';
         expect(provideCompletions(createEmptyMetaDocs(), KEY_EXTRA, text, text.length, 0)).toEqual([]);

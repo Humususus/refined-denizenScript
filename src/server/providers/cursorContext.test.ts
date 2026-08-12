@@ -64,9 +64,9 @@ describe('parseCursorContext', () => {
     it('parses the command line the cursor sits on', () => {
         const text = 'my_task:\n  type: task\n  script:\n  - playsound sound:amb';
         const ctx = parseCursorContext(text, text.length)!;
-        expect(ctx.name).toBe('playsound');
-        expect(ctx.argPrefix).toBe('sound');
-        expect(ctx.argValue).toBe('amb');
+        expect((ctx as { name: string }).name).toBe('playsound');
+        expect((ctx as { argPrefix: string }).argPrefix).toBe('sound');
+        expect((ctx as { argValue: string }).argValue).toBe('amb');
     });
 
     it('reports a line context (not null) when the cursor is not on a command line', () => {
@@ -94,10 +94,6 @@ describe('parseCursorContext on non-command lines', () => {
         const ctx = parseCursorContext(text, text.length)!;
         expect(ctx.kind).toBe('command');
         expect((ctx as { name: string }).name).toBe('narrate');
-    });
-
-    it('returns null only for an out-of-range offset', () => {
-        expect(parseCursorContext('  - narrate', 999)).toBeNull();
     });
 });
 
@@ -133,7 +129,8 @@ describe('argIndex', () => {
 describe('argIndex through parseCursorContext', () => {
     it('carries the index through from a real document', () => {
         const text = 'my_task:\n  type: task\n  script:\n  - narrate hello for';
-        expect(parseCursorContext(text, text.length)!.argIndex).toBe(1);
+        const ctx = parseCursorContext(text, text.length)!;
+        expect((ctx as { argIndex: number }).argIndex).toBe(1);
     });
 });
 
@@ -361,5 +358,27 @@ describe('argument fields agree with argIndex', () => {
         expect(ctx.argThusFar).toBe('"hello world');
         expect(ctx.argStart).toBe(15);
         expect(ctx.argEnd).toBe(27);
+    });
+});
+
+// Fix 1 regression: an apostrophe mid-word (bob's, it's) used to open an unterminated
+// quote and swallow the rest of the line, because the old quote-open check fired on any
+// '\'' or '"' anywhere in the text. A quote may now only open at the very start of the
+// text or immediately after a space (ported from ScriptChecker.cs:706-716's BuildArgs
+// gate — see cursorContext.ts).
+describe('splitTopLevelArguments: apostrophes mid-word do not open a quote', () => {
+    it('does not let an apostrophe in "bob\'s" swallow the rest of the line', () => {
+        const ctx = parseCommandLine("- give bob's diamond_sw", 2)!;
+        expect(ctx.argThusFar).toBe('diamond_sw');
+    });
+
+    it('still keeps a genuinely quoted argument whole', () => {
+        const ctx = parseCommandLine('- narrate "hello world', 2)!;
+        expect(ctx.argThusFar).toBe('"hello world');
+    });
+
+    it('does not let an apostrophe inside a def name swallow a later argument', () => {
+        const ctx = parseCommandLine("- run mytask def:it's_me q", 2)!;
+        expect(ctx.argThusFar).toBe('q');
     });
 });

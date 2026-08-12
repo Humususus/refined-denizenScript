@@ -21,9 +21,15 @@ export function isValidTagFirstChar(ch: string): boolean {
 
 /**
  * Splits command-line text into top-level arguments: a space separates arguments only
- * when it is outside quotes and outside tag brackets. Mirrors how DenizenCore itself
- * builds arguments (see SharpDenizenTools ScriptChecker.BuildArgs), which a naive
- * split cannot: `narrate "hello world"` is ONE argument, and so is `<player.flag[a b]>`.
+ * when it is outside quotes and outside tag brackets. Mirrors the tag/argument walk in
+ * DenizenLangServer/Services/TextDocumentService.cs:427-448, which a naive split cannot:
+ * `narrate "hello world"` is ONE argument, and so is `<player.flag[a b]>`.
+ *
+ * This is a related but different algorithm from SharpDenizenTools/ScriptAnalysis/
+ * ScriptChecker.cs's `BuildArgs` — that method additionally strips quotes from the
+ * argument text it returns, tracks `[`/`]` nesting inside tags, and carries a fallback
+ * flag, none of which this scanner does. The one piece it DOES take from `BuildArgs` is
+ * the quote-open gate below (see that branch for the citation).
  */
 export function splitTopLevelArguments(text: string): ArgumentSpan[] {
     const spans: ArgumentSpan[] = [];
@@ -55,7 +61,20 @@ export function splitTopLevelArguments(text: string): ArgumentSpan[] {
             }
             continue;
         }
-        if (ch === '"' || ch === '\'') {
+        // A quote opens only at the very start of the text or immediately after a
+        // space — never mid-word — so an apostrophe in ordinary text (bob's, it's)
+        // stays part of the current token instead of opening an unterminated quote
+        // that swallows the rest of the line. Ported from the gate in
+        // SharpDenizenTools/ScriptAnalysis/ScriptChecker.cs:706-716's `BuildArgs`:
+        //     if (currentQuote == '\0' && inTagParams == 0)
+        //     {
+        //         if (i == 0 || stringArgs[i - 1] == ' ')
+        //         {
+        //             currentQuote = c;
+        // Only the `i == 0 || stringArgs[i - 1] == ' '` gate is ported here — the
+        // `inTagParams` condition is not, since this scanner has no separate
+        // tag-parameter depth (that is out of scope; see the file-level doc comment).
+        if ((ch === '"' || ch === '\'') && (i === 0 || text[i - 1] === ' ')) {
             quote = ch;
             continue;
         }
