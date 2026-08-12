@@ -39,8 +39,15 @@ Promise.all([
         docs.tagParts.size >= 1000, `${docs.tagParts.size}`);
     failures += check('tagDeprecations has at least 50 entries (observed 145)',
         docs.tagDeprecations.size >= 50, `${docs.tagDeprecations.size}`);
-    failures += check('tagBases is seeded with "context" and "entry"',
-        docs.tagBases.has('context') && docs.tagBases.has('entry'));
+    // Not just "the seed survived" (createEmptyMetaDocs() unconditionally seeds
+    // tagBases with these two, and nothing ever clears/reassigns tagBases -- that
+    // alone would be tautological, already covered by the seed's own unit test).
+    // This also requires "playertag", which comes only from parsing a real
+    // PlayerTag MetaTag in the downloaded corpus, so the check genuinely depends on
+    // live loading having worked, not merely on the static seed literal in source.
+    failures += check('tagBases carries the static "context"/"entry" seed and also gained "playertag" from real corpus loading',
+        docs.tagBases.has('context') && docs.tagBases.has('entry') && docs.tagBases.has('playertag'),
+        `context=${docs.tagBases.has('context')} entry=${docs.tagBases.has('entry')} playertag=${docs.tagBases.has('playertag')}`);
 
     // 2. Base-tag completion: '  - narrate <pla' offers 'player' (among others) as a
     // base candidate, with the textEdit replacing only the typed 'pla'.
