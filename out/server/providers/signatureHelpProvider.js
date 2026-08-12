@@ -69,7 +69,7 @@ exports.tokenizeSyntax = tokenizeSyntax;
 /** Describes the command under the cursor and which of its arguments is active. */
 function provideSignatureHelp(docs, text, offset) {
     const ctx = (0, cursorContext_1.parseCursorContext)(text, offset);
-    if (ctx === null || ctx.typingName) {
+    if (ctx === null || ctx.kind !== 'command' || ctx.typingName) {
         return null;
     }
     const command = docs.commands.get(ctx.name);

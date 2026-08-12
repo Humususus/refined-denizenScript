@@ -9,7 +9,7 @@
  * machinery that does not exist yet and arrive in later phases.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.findEnumCompleters = exports.COMMAND_VALUE_COMPLETERS = void 0;
+exports.findKeyLineCompleter = exports.KEY_LINE_COMPLETERS = exports.findEnumCompleters = exports.COMMAND_VALUE_COMPLETERS = void 0;
 function register(map, commands, completer) {
     for (const command of commands) {
         const existing = map.get(command);
@@ -66,4 +66,18 @@ function findEnumCompleters(commandName, argPrefix) {
     return completers.filter(c => c.prefix === argPrefix.toLowerCase());
 }
 exports.findEnumCompleters = findEnumCompleters;
+/**
+ * Container keys whose value comes from a fixed Minecraft enum.
+ * Ported from TextDocumentService.cs:288-292 (LinePrefixCompleters).
+ */
+exports.KEY_LINE_COMPLETERS = new Map([
+    ['material', { prefix: '', label: 'Item', values: (d) => d.items }],
+    ['entity_type', { prefix: '', label: 'Entity Type', values: (d) => d.entities }]
+]);
+/** The enum backing a container key's value, or null when that key takes free text. */
+function findKeyLineCompleter(key) {
+    var _a;
+    return (_a = exports.KEY_LINE_COMPLETERS.get(key.toLowerCase().trim())) !== null && _a !== void 0 ? _a : null;
+}
+exports.findKeyLineCompleter = findKeyLineCompleter;
 //# sourceMappingURL=argumentCompleters.js.map

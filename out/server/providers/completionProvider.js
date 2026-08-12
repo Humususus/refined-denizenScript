@@ -7,7 +7,7 @@
  * mechanism, event, and workspace-driven completions arrive in later phases.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.provideCompletions = exports.completeEnumValues = exports.completeCommandArguments = exports.completeCommandNames = void 0;
+exports.provideCompletions = exports.completeKeyLineValues = exports.completeEnumValues = exports.completeCommandArguments = exports.completeCommandNames = void 0;
 const vscode_languageserver_1 = require("vscode-languageserver");
 const describe_1 = require("./describe");
 const cursorContext_1 = require("./cursorContext");
@@ -76,11 +76,57 @@ function completeEnumValues(extra, commandName, argPrefix, argValue, range) {
     return results;
 }
 exports.completeEnumValues = completeEnumValues;
+/**
+ * Values of the enum backing a container key's value (e.g. `material: sto`), for a
+ * non-command line. Mirrors TextDocumentService.cs:408-420's `LinePrefixCompleters`
+ * branch: bail out if the line has no `:`, or if it already contains a `<` — a
+ * tag's resolved value is not statically knowable, so no enum can be offered.
+ * `range` follows `completeEnumValues`'s shape, covering the whole typed value so
+ * a dotted or underscored value replaces cleanly instead of duplicating.
+ */
+function completeKeyLineValues(extra, ctx, line) {
+    const trimmed = ctx.trimmed;
+    const colon = trimmed.indexOf(':');
+    if (colon === -1 || trimmed.includes('<')) {
+        return [];
+    }
+    const key = trimmed.substring(0, colon);
+    const completer = (0, argumentCompleters_1.findKeyLineCompleter)(key);
+    if (completer === null) {
+        return [];
+    }
+    const rawValue = trimmed.substring(colon + 1);
+    const value = rawValue.trim();
+    const leadingSpaces = rawValue.length - rawValue.trimStart().length;
+    const valueStart = ctx.indent + colon + 1 + leadingSpaces;
+    const valueEnd = ctx.indent + trimmed.length;
+    const range = { start: { line, character: valueStart }, end: { line, character: valueEnd } };
+    const results = [];
+    for (const candidate of completer.values(extra)) {
+        if (candidate.startsWith(value)) {
+            const textEdit = { range, newText: candidate };
+            const item = {
+                label: candidate,
+                kind: vscode_languageserver_1.CompletionItemKind.Enum,
+                textEdit
+            };
+            if (completer.label !== null) {
+                item.documentation = { kind: vscode_languageserver_1.MarkupKind.Markdown, value: `**${completer.label}**: ${candidate}` };
+            }
+            results.push(item);
+        }
+    }
+    return results;
+}
+exports.completeKeyLineValues = completeKeyLineValues;
 /** Entry point: what should be offered at `offset` on `line` within `text`. */
 function provideCompletions(docs, extra, text, offset, line) {
     const ctx = (0, cursorContext_1.parseCursorContext)(text, offset);
     if (ctx === null) {
         return [];
+    }
+    if (ctx.kind === 'line') {
+        return completeKeyLineValues(extra, ctx, line);
     }
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);

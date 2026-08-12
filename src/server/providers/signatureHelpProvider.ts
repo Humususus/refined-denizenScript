@@ -78,7 +78,7 @@ export function tokenizeSyntax(syntax: string): SyntaxToken[] {
 /** Describes the command under the cursor and which of its arguments is active. */
 export function provideSignatureHelp(docs: MetaDocs, text: string, offset: number): SignatureHelp | null {
     const ctx = parseCursorContext(text, offset);
-    if (ctx === null || ctx.typingName) {
+    if (ctx === null || ctx.kind !== 'command' || ctx.typingName) {
         return null;
     }
     const command = docs.commands.get(ctx.name);
