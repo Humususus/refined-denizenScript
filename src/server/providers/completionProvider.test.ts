@@ -407,6 +407,11 @@ describe('tag completion', () => {
                 range: { start: { line: 0, character: 13 }, end: { line: 0, character: 16 } },
                 newText: item.label
             });
+            // Property, not Field/Enum/Method — matches C#, which passes
+            // CompletionItemKind.Property on every tag completion it builds
+            // (TextDocumentService.cs:508 and :509 for bases, :535 for parts). Every
+            // sibling completer in this file picks its kind deliberately, so pin this one.
+            expect(item.kind).toBe(CompletionItemKind.Property);
         }
     });
 
@@ -451,9 +456,31 @@ describe('tag completion', () => {
         });
     });
 
-    it('does not fire outside a tag', () => {
-        const text = '  - narrate hello';
-        expect(provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0)).toEqual([]);
+    // The tag fixture plus a real command whose argument list actually contains a 'pla'
+    // match. `narrate` cannot serve here: none of its arguments starts with 'pla', so a
+    // `- narrate pla` fixture could only assert emptiness — and emptiness is exactly what
+    // this test must not rest on. (The previous version asserted `- narrate hello` gave
+    // `[]` against a fixture with NO commands at all, so it returned `[]` at the
+    // `docs.commands.get(ctx.name) === undefined` path no matter what the tag branch did.)
+    // Real syntax, taken from live meta: `money [give/take/set] (quantity:<#.#>)
+    // (players:<player>|...)`.
+    function moneyAndTagDocs(): MetaDocs {
+        const docs = tagDocs();
+        makeCommand('money', 'money [give/take/set] (quantity:<#.#>) (players:<player>|...)', 'Adjusts money.').addTo(docs);
+        return docs;
+    }
+
+    it('does not fire outside a tag: argument completion still runs and no tag candidate leaks in', () => {
+        // No '<' anywhere on the line, so findTagAtCursor must return null and the
+        // argument branch below it must run. Both halves discriminate: the tag bases
+        // 'player' and 'playertag' would BOTH match the typed prefix 'pla' if the tag
+        // branch wrongly fired, and because that branch returns early, firing it would
+        // also suppress the command's own 'players:' argument entirely.
+        const text = '  - money pla';
+        const labels = provideCompletions(moneyAndTagDocs(), createEmptyExtraData(), text, text.length, 0).map(i => i.label);
+        expect(labels).toContain('players:');
+        expect(labels).not.toContain('player');
+        expect(labels).not.toContain('playertag');
     });
 
     // Carried-over finding from Task 3's review: findTagAtCursor deliberately does not

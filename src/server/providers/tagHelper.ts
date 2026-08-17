@@ -1,14 +1,19 @@
 /**
  * Parser for Denizen tag plaintext (e.g. `player.flag[my_flag].expiration||fallback`),
- * structurally ported from `TagHelper.Parse` and the `SingleTag`/`SingleTag.Part`
- * classes in:
- *   DenizenVSCode/DenizenLangServer/SharpDenizenTools/SharpDenizenTools/MetaHandlers/TagHelper.cs:20-91
+ * structurally ported from `TagHelper.Parse` (TagHelper.cs:19-89) and the
+ * `SingleTag`/`SingleTag.Part` classes (TagHelper.cs:92-125) in:
+ *   DenizenVSCode/DenizenLangServer/SharpDenizenTools/SharpDenizenTools/MetaHandlers/TagHelper.cs
  *
  * `parseTag` lowercases its input up front, exactly as `TagHelper.Parse` does at
- * TagHelper.cs:21 (`tag = tag.ToLowerFast();`). Because lowercasing never changes
- * the length of the ASCII tag text this parser handles, the `startChar`/`endChar`
- * offsets below index the same positions in the caller's original string as they
- * do in the lowercased copy parsed here.
+ * TagHelper.cs:21 (`tag = tag.ToLowerFast();`). That lowercasing is ASCII-only (see
+ * the call site), so it can never change the string's length, and the
+ * `startChar`/`endChar` offsets below therefore index the same positions in the
+ * caller's original string as they do in the lowercased copy parsed here.
+ *
+ * NOTE: `parseTag` has no in-tree consumer yet — nothing in `src/` calls it as of Phase
+ * 2B-4, and it is covered only by its own unit tests. It is not dead code awaiting
+ * deletion: the `TagTracer` phase (2B-5) calls it on the text before the last dot,
+ * exactly as C# does at TextDocumentService.cs:524.
  */
 
 /** A single dot-separated part of a tag (e.g. `flag` in `player.flag[x]`). */
@@ -46,7 +51,15 @@ function isWhitespace(ch: string): boolean {
  * checked line by line.
  */
 export function parseTag(tag: string, trackError: (message: string) => void): SingleTag {
-    tag = tag.toLowerCase();
+    // ASCII-only lowercasing, matching `ToLowerFast()` (FreneticUtilities'
+    // StringExtensions, which walks the chars and only maps 'A'-'Z'). A plain
+    // `toLowerCase()` here would be Unicode-aware and can CHANGE THE STRING'S LENGTH —
+    // 'İ' (U+0130) lowercases to two code units — which shifts every `startChar`/
+    // `endChar` below off the caller's original string and breaks the offset invariant
+    // stated in this module's header. That matters as soon as a caller feeds in
+    // user-typed text and maps the offsets back onto document positions, which is what
+    // C# does at TextDocumentService.cs:524.
+    tag = tag.replace(/[A-Z]/g, (c) => c.toLowerCase());
     let brackets = 0;
     let firstBracket = 0;
     let start = 0;

@@ -2,6 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { findTagAtCursor } from './tagContext';
 
 describe('findTagAtCursor', () => {
+    // The most common real keystroke in this feature: the user has just typed '<' and
+    // nothing else. Derived by hand from tagContext.ts: pass 1 sees '<' at index 0 with
+    // unclosedGreaterThans still 0, so relevantTagStart = 0 + 1 = 1; tagSoFar =
+    // argThusFar.substring(1) = '' and tagStart = argStart + 1 = 1. Pass 2 never enters
+    // its loop (tagSoFar is empty), leaving componentCount 0 and lastDot 0, so
+    // lastComponent = ''.substring(0) = '' and lastComponentStart = tagStart + 0 = 1.
+    // A null here (or a tagStart of 0) would mean typing '<' offers nothing at all.
+    it('returns an empty base component for a bare "<" with nothing typed after it', () => {
+        const ctx = findTagAtCursor('<', 0)!;
+        expect(ctx).not.toBeNull();
+        expect(ctx.tagSoFar).toBe('');
+        expect(ctx.tagStart).toBe(1);
+        expect(ctx.componentCount).toBe(0);
+        expect(ctx.lastComponent).toBe('');
+        expect(ctx.lastComponentStart).toBe(1);
+    });
+
     it('finds a bare partial tag right after the opening <', () => {
         // "<pla": '<' at 0, tag text "pla" starts at column 1.
         const ctx = findTagAtCursor('<pla', 0)!;

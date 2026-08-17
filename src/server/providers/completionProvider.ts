@@ -126,24 +126,46 @@ export function completeKeyLineValues(extra: ExtraData, ctx: LineCursorContext, 
  * `findTagAtCursor`. `componentCount === 0` means the cursor is still in the tag's
  * base (the text before its first top-level dot, e.g. "player" in `<player.na`), so
  * candidates come from `docs.tagBases`; any later component draws from `docs.tagParts`
- * instead (TextDocumentService.cs's equivalent branch does the same base-vs-part split).
+ * instead (TextDocumentService.cs makes the same base-vs-part split: :506 for bases,
+ * :535 for parts).
  *
- * `tag.lastComponent` is matched case-insensitively: `findTagAtCursor` deliberately does
- * not lowercase it (see tagContext.ts's file header), but `tagBases`/`tagParts` hold only
- * lowercase entries (MetaTag.addTo), so a capitalised prefix like `<Pla` would otherwise
- * match nothing — this was flagged in Task 3's review as the bug most likely to survive
- * unnoticed here. The C# equivalent lowercases the whole tag before matching
- * (TextDocumentService.cs:473); this lowercases only the component being completed,
- * which is equivalent for prefix-matching against already-lowercase candidate sets.
+ * `tag.lastComponent` is matched case-insensitively. On every path that reaches here from
+ * `provideCompletions` it is ALREADY lowercase: `getLineContext` (lineContext.ts:55)
+ * lowercases the whole line prefix before `parseCommandLine` splits arguments out of it,
+ * so `ctx.argThusFar` — and with it `lastComponent` — cannot carry uppercase. That
+ * lowercasing is load-bearing for command-name and argument matching too, so it is not
+ * redundant with the `toLowerCase()` below and must not be deleted as such. The call
+ * below is defence-in-depth for `completeTag`'s own contract, which takes a
+ * `TagCursorContext` directly: `findTagAtCursor` deliberately preserves case (see
+ * tagContext.ts's file header) while `tagBases`/`tagParts` hold only lowercase entries
+ * (MetaTag.addTo), so a future caller that does not pre-lowercase still gets correct
+ * matches. Pinned by completionProvider.test.ts's "lowercases the typed component before
+ * matching" test, which drives `completeTag` directly for exactly that reason. The C#
+ * equivalent lowercases the whole tag before matching (TextDocumentService.cs:473); this
+ * lowercases only the component being completed, which is equivalent for prefix-matching
+ * against already-lowercase candidate sets.
  *
  * `textEdit` covers only `tag.lastComponent` — from `lastComponentStart` to the cursor —
  * not the whole tag, mirroring `completeEnumValues`'s replace-the-whole-typed-value shape
  * but scoped to the single dot-separated component being typed.
  *
- * Documentation is attached only when `docs.tags` has an exact entry for the candidate
- * itself (e.g. a bare tag like `<player>`, whose clean name has no dot). A part such as
- * "expiration" is not itself a full tag name, so most candidates carry no documentation —
- * that is expected, not a bug, and no documentation is synthesised for them.
+ * Documentation is attached to BASE candidates only, and only when `docs.tags` holds an
+ * exact entry for the candidate (e.g. the dotless tag `<player>`, whose clean name IS the
+ * base). C# resolves the two branches through two DIFFERENT lookups: bases use the exact
+ * `Tags.TryGetValue` (TextDocumentService.cs:507), which this ports exactly; parts use
+ * `TryFindLikelyTagForPart` (:535, defined :652-658 as
+ * `Tags.FirstOrDefault(t => t.Key.EndsWith("." + tagText))`), which is NOT ported yet.
+ * Reusing the base lookup on parts is not a rough approximation of the part lookup, it is
+ * wrong: a part can only hit `docs.tags` exactly when an unrelated *dotless base tag*
+ * happens to share its name. Measured on the real corpus (2493 tags, 1871 parts): the
+ * exact lookup documents 33 parts and all 33 are such collisions — completing `<queue.`
+ * would show the dotless base tag `<script>`'s documentation on the part `script` (which
+ * comes from `<queue.script>`/`<npc.script>`) — where C#'s real lookup documents 1826
+ * parts correctly. So parts deliberately carry no documentation rather than confidently
+ * wrong documentation, and none is synthesised for them. Porting
+ * `TryFindLikelyTagForPart` is a 2B-5 precondition (see docs/superpowers/plans/
+ * PHASE-2B-BACKLOG.md); it needs a suffix index precomputed alongside `tagParts`, since
+ * a naive scan is O(tags x parts) per keystroke.
  */
 export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number): CompletionItem[] {
     const prefix = tag.lastComponent.toLowerCase();
@@ -161,9 +183,13 @@ export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number)
                 kind: CompletionItemKind.Property,
                 textEdit
             };
-            const doc = docs.tags.get(candidate);
-            if (doc !== undefined) {
-                item.documentation = describeTag(doc);
+            // Bases only — see the doc comment above for why the exact lookup must not
+            // be reused for parts (all 33 of its part hits are namespace collisions).
+            if (tag.componentCount === 0) {
+                const doc = docs.tags.get(candidate);
+                if (doc !== undefined) {
+                    item.documentation = describeTag(doc);
+                }
             }
             results.push(item);
         }
