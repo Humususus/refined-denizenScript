@@ -257,6 +257,36 @@ class MetaTag extends MetaObject {
     }
     addTo(docs) {
         docs.tags.set(this.cleanName, this);
+        // Ported from MetaTag.cs:20-34. The clean name's first dot-separated
+        // bit is the "base" (e.g. "playertag"); everything after (already
+        // computed as afterDotCleaned) is split into individual "parts"
+        // (e.g. "flag", "expiration"). Guard against an empty/unparsed
+        // cleanedName (missing or malformed @Attribute) adding a poisoning
+        // '' entry to either set.
+        //
+        // Deliberate divergence from C#: `otherBits.Split('.')` yields [""]
+        // when the clean name has no dot (MetaTag.cs:24-27), so C#'s
+        // TagParts contains an empty string for every dotless tag. This
+        // port excludes it on purpose — an empty candidate would match
+        // every completion prefix. tagParts.size will therefore never equal
+        // C#'s TagParts.Count; the two are not comparable by count.
+        const dotIndex = this.cleanedName.indexOf('.');
+        const base = dotIndex >= 0 ? this.cleanedName.substring(0, dotIndex) : this.cleanedName;
+        if (base.length > 0) {
+            docs.tagBases.add(base);
+        }
+        for (const bit of this.afterDotCleaned.split('.')) {
+            if (bit.length > 0) {
+                docs.tagParts.add(bit);
+            }
+        }
+        if (this.deprecated && this.deprecated.trim().length > 0) {
+            for (const bit of this.cleanedName.split('.')) {
+                if (bit.length > 0) {
+                    docs.tagDeprecations.set(bit, this.deprecated);
+                }
+            }
+        }
     }
 }
 exports.MetaTag = MetaTag;
@@ -696,7 +726,11 @@ function createEmptyMetaDocs() {
         languages: new Map(),
         guidePages: new Map(),
         extensions: new Map(),
-        loadErrors: []
+        loadErrors: [],
+        // Seeded per MetaDocs.cs:79.
+        tagBases: new Set(['context', 'entry']),
+        tagParts: new Set(),
+        tagDeprecations: new Map()
     };
 }
 exports.createEmptyMetaDocs = createEmptyMetaDocs;
