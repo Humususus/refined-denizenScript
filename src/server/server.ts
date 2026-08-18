@@ -53,7 +53,15 @@ export function buildCapabilities(): ServerCapabilities {
         textDocumentSync: TextDocumentSyncKind.Incremental,
         completionProvider: {
             resolveProvider: false,
-            triggerCharacters: ['-', ' ', ':']
+            // The C# server advertises " .=<[;" (InitializationService.cs:34); '-' and ':'
+            // are ours, for command names and key lines. The union matters because the two
+            // engines are switchable at runtime: a character missing here is a completion
+            // that fires in one engine and silently never fires in the other. '<' and '.'
+            // in particular are what make tag completion appear as the tag is typed rather
+            // than only after a word character. '=', '[' and ';' serve tag-parameter
+            // completion, which is not ported yet — they request and get an empty list
+            // today, and start returning results when that lands.
+            triggerCharacters: ['-', ' ', ':', '<', '.', '=', '[', ';']
         },
         hoverProvider: true,
         signatureHelpProvider: {

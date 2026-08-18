@@ -41,6 +41,27 @@ describe('buildCapabilities', () => {
         expect(buildCapabilities().completionProvider!.triggerCharacters).toContain('-');
     });
 
+    it('triggers completion on the characters that open a tag and separate its parts', () => {
+        // Without these two the editor never asks for completions mid-tag: typing
+        // '<player.' produces no request at all, so the part list only appears once
+        // the user types a word character. This was a real user-visible regression
+        // against the C# server.
+        const triggers = buildCapabilities().completionProvider!.triggerCharacters;
+        expect(triggers).toContain('<');
+        expect(triggers).toContain('.');
+    });
+
+    it('advertises every trigger character the C# server does', () => {
+        // InitializationService.cs:34 — new CompletionOptions(true, " .=<[;").
+        // The two engines are switchable at runtime via denizenscript.server.engine,
+        // so a narrower set here shows up as completions that fire in one engine and
+        // not the other.
+        const triggers = buildCapabilities().completionProvider!.triggerCharacters;
+        for (const char of [' ', '.', '=', '<', '[', ';']) {
+            expect(triggers).toContain(char);
+        }
+    });
+
     it('keeps incremental document sync', () => {
         expect(buildCapabilities().textDocumentSync).toBe(2);
     });
