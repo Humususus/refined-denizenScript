@@ -42,6 +42,31 @@ function getCache(path : string) {
     return result;
 }
 
+/**
+ * Builds the middleware shared by both language clients (C# and TypeScript engines).
+ *
+ * This was previously inlined only in the C# client's `clientOptions`, so the TypeScript
+ * client ran with no middleware at all. Sharing it here means the TS client now also gets
+ * `provideCompletionItem`'s workspace-flag-completion suppression and `handleDiagnostics`'s
+ * dialog/DenizenM diagnostic filtering — that is an intentional consequence of sharing one
+ * middleware object, not an accident. Do not remove it from the TS client under the
+ * assumption it's unused; Task 3's selection-mute filter depends on both clients routing
+ * diagnostics through here.
+ */
+function buildSharedMiddleware() : languageClient.Middleware {
+    return {
+        provideCompletionItem: (document: vscode.TextDocument, position: vscode.Position, context: any, token: vscode.CancellationToken, next: Function) => {
+            if (isWorkspaceFlagCompletionContext(document, position)) {
+                return [];
+            }
+            return next(document, position, context, token);
+        },
+        handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
+            next(uri, diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic) && !isDenizenMDiagnostic(uri, diagnostic)));
+        }
+    }
+}
+
 function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : string) {
     if (!dotnetPath || dotnetPath.length === 0) {
         dotnetPath = "dotnet";
@@ -60,17 +85,7 @@ function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : s
         synchronize: {
             configurationSection: "denizenscript",
         },
-        middleware: {
-            provideCompletionItem: (document: vscode.TextDocument, position: vscode.Position, context: any, token: vscode.CancellationToken, next: Function) => {
-                if (isWorkspaceFlagCompletionContext(document, position)) {
-                    return [];
-                }
-                return next(document, position, context, token);
-            },
-            handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
-                next(uri, diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic) && !isDenizenMDiagnostic(uri, diagnostic)));
-            }
-        }
+        middleware: buildSharedMiddleware()
     }
     let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
     let disposable = client.start();
@@ -91,7 +106,8 @@ function activateTsLanguageServer(context: vscode.ExtensionContext) {
         documentSelector: ["denizenscript"],
         synchronize: {
             configurationSection: "denizenscript",
-        }
+        },
+        middleware: buildSharedMiddleware()
     }
     let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
     let disposable = client.start();
