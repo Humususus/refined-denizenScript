@@ -79,7 +79,10 @@ export class MutedRegions {
     }
 
     rangesFor(key: string): MuteRange[] {
-        return this.rangesByKey.get(key) ?? [];
+        // Defensive copy: callers must not be able to mutate our internal
+        // state by pushing/splicing/sorting the returned array.
+        const ranges = this.rangesByKey.get(key);
+        return ranges ? ranges.slice() : [];
     }
 
     forget(key: string): void {
@@ -119,9 +122,22 @@ export class MutedRegions {
                     start: { line: changed.start.line, character: changed.start.character },
                     end: { line: r.end.line + delta, character: r.end.character },
                 });
+            } else if (comparePositions(changed.start, r.start) > 0 && comparePositions(changed.end, r.end) >= 0) {
+                // Mirror of the front-overlap case: the edit starts strictly
+                // inside the range but reaches its end or beyond (e.g. mute
+                // 10-20, then delete 15-25 — old lines 10-14 survive
+                // untouched, since they're entirely before the edit). The
+                // range's old end no longer exists, so it truncates to where
+                // the edit began; the start is untouched (nothing before the
+                // edit's start shifts).
+                survivors.push({
+                    start: r.start,
+                    end: { line: changed.start.line, character: changed.start.character },
+                });
             }
-            // Otherwise the edit's end is at or past the range's end, so it
-            // spans the whole range (or more) and nothing survives: drop it.
+            // Otherwise the edit starts at or before the range's start and
+            // ends at or after the range's end, so it spans the whole range
+            // (or more) and nothing survives: drop it.
         }
         this.rangesByKey.set(key, survivors);
     }

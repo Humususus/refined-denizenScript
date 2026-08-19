@@ -101,4 +101,29 @@ describe('MutedRegions', () => {
         regions.applyEdit('a.dsc', range(5, 0, 20, 0), 0);
         expect(regions.rangesFor('a.dsc')).toEqual([]);
     });
+
+    it('keeps the surviving head when an edit overlaps the back of a muted range', () => {
+        // Mute 10-20; select 15-25 and delete it. The edit starts strictly
+        // inside the range and its end reaches past the range's end, so old
+        // lines 10-14 (before the edit) survive untouched — the mute must
+        // truncate to follow them, not vanish.
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(15, 0, 25, 0), 0);
+        expect(regions.rangesFor('a.dsc')[0]).toEqual(range(10, 0, 15, 0));
+    });
+
+    it('still drops a muted range when a back-overlapping edit starts exactly at its start', () => {
+        // The edit starts exactly at the range's start and reaches past its
+        // end: nothing of the muted region survives, so it drops.
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(10, 0, 25, 0), 0);
+        expect(regions.rangesFor('a.dsc')).toEqual([]);
+    });
+
+    it('returns a defensive copy from rangesFor, so mutating it does not affect the store', () => {
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        const returned = regions.rangesFor('a.dsc');
+        returned.push(range(99, 0, 99, 5));
+        expect(regions.rangesFor('a.dsc')).toEqual([range(10, 0, 20, 0)]);
+    });
 });
