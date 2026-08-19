@@ -45,10 +45,40 @@ describe('MutedRegions', () => {
         expect(regions.unmuteAt('a.dsc', { line: 99, character: 0 })).toBe(false);
     });
 
-    it('drops every range for a document on unmuteAll and on forget', () => {
+    it('unmutes every overlapping range at the position, not just the first match', () => {
+        // Mute 5-10, then mute 8-15: they overlap at line 9. Unmuting at line 9
+        // must clear both, or the diagnostics there stay silenced even though
+        // the command reported success.
+        regions.mute('a.dsc', range(5, 0, 10, 0));
+        regions.mute('a.dsc', range(8, 0, 15, 0));
+        expect(regions.unmuteAt('a.dsc', { line: 9, character: 0 })).toBe(true);
+        expect(regions.covers('a.dsc', range(9, 0, 9, 1))).toBe(false);
+        expect(regions.rangesFor('a.dsc')).toEqual([]);
+    });
+
+    it('unmutes every duplicate range at the position when the same selection was muted twice', () => {
+        // A repeated keybinding or double click can mute the identical range
+        // twice; a single unmuteAt must clear both copies, not leave one behind.
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        expect(regions.unmuteAt('a.dsc', { line: 15, character: 0 })).toBe(true);
+        expect(regions.covers('a.dsc', range(15, 0, 15, 1))).toBe(false);
+        expect(regions.rangesFor('a.dsc')).toEqual([]);
+    });
+
+    it('drops every range for a document on unmuteAll', () => {
         regions.mute('a.dsc', range(10, 0, 20, 0));
         regions.unmuteAll('a.dsc');
         expect(regions.rangesFor('a.dsc')).toEqual([]);
+    });
+
+    it('drops every range for a document on forget', () => {
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.mute('b.dsc', range(1, 0, 2, 0));
+        regions.forget('a.dsc');
+        expect(regions.rangesFor('a.dsc')).toEqual([]);
+        // forget must only clear the given key, not every document.
+        expect(regions.rangesFor('b.dsc')).toEqual([range(1, 0, 2, 0)]);
     });
 
     it('shifts a muted range down when lines are inserted above it', () => {
@@ -118,6 +148,23 @@ describe('MutedRegions', () => {
         regions.mute('a.dsc', range(10, 0, 20, 0));
         regions.applyEdit('a.dsc', range(10, 0, 25, 0), 0);
         expect(regions.rangesFor('a.dsc')).toEqual([]);
+    });
+
+    it('uses the wholly-inside branch (not the back-overlap branch) when an edit ends exactly at the range end', () => {
+        // Mute 10-20; edit the range 15-20 (replaced with newLineCount 3). The
+        // edit's end lands exactly on the range's end, so it satisfies both the
+        // "wholly inside" test (changed.end <= r.end) and the "back-overlap"
+        // test (changed.end >= r.end). Whichever branch runs first wins:
+        // - wholly-inside (correct): end = r.end.line + delta, where
+        //   delta = newLineCount - (changed.end.line - changed.start.line)
+        //         = 3 - (20 - 15) = -2, so end = 20 + (-2) = 18.
+        // - back-overlap (wrong, if it ran first): end = changed.start.line = 15,
+        //   which silently discards newLineCount entirely.
+        // This pins the branch order so a future reordering fails loudly
+        // instead of only failing in a comment nobody reads.
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(15, 0, 20, 0), 3);
+        expect(regions.rangesFor('a.dsc')[0]).toEqual(range(10, 0, 18, 0));
     });
 
     it('returns a defensive copy from rangesFor, so mutating it does not affect the store', () => {

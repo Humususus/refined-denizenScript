@@ -93,13 +93,18 @@ export class MutedRegions {
         if (!ranges) {
             return false;
         }
-        const index = ranges.findIndex(r =>
-            comparePositions(position, r.start) >= 0 && comparePositions(position, r.end) <= 0
+        // Every range covering the position is removed, not just the first
+        // match: "unmute at my cursor" means the cursor's line goes back to
+        // reporting diagnostics, and that is only true once none of the
+        // (possibly overlapping, possibly duplicate) muted ranges still cover
+        // it.
+        const survivors = ranges.filter(r =>
+            !(comparePositions(position, r.start) >= 0 && comparePositions(position, r.end) <= 0)
         );
-        if (index === -1) {
+        if (survivors.length === ranges.length) {
             return false;
         }
-        ranges.splice(index, 1);
+        this.rangesByKey.set(key, survivors);
         return true;
     }
 
@@ -114,8 +119,12 @@ export class MutedRegions {
     }
 
     rangesFor(key: string): MuteRange[] {
-        // Defensive copy: callers must not be able to mutate our internal
-        // state by pushing/splicing/sorting the returned array.
+        // Defensive copy, but only a shallow one: the returned array is a new
+        // array, so callers can freely push/splice/sort it without touching
+        // our internal state, but its MuteRange elements are the very same
+        // objects we hold internally. Callers must treat those elements as
+        // read-only (no mutating start/end in place) or they will corrupt
+        // this store.
         const ranges = this.rangesByKey.get(key);
         return ranges ? ranges.slice() : [];
     }

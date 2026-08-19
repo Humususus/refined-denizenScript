@@ -336,7 +336,7 @@ function selectionToMuteRange(document: vscode.TextDocument, selection: vscode.R
 function muteDiagnosticsInSelection() : void {
     const editor = vscode.window.activeTextEditor;
     if (!isDenizenEditor(editor)) {
-        vscode.window.showInformationMessage("Denizen: open a Denizen script to mute diagnostics in it.");
+        vscode.window.showInformationMessage("Refined DenizenScript: open a Denizen script to mute diagnostics in it.");
         return;
     }
     const document = editor.document;
@@ -353,13 +353,13 @@ function muteDiagnosticsInSelection() : void {
 function unmuteDiagnostics() : void {
     const editor = vscode.window.activeTextEditor;
     if (!isDenizenEditor(editor)) {
-        vscode.window.showInformationMessage("Denizen: open a Denizen script to unmute diagnostics in it.");
+        vscode.window.showInformationMessage("Refined DenizenScript: open a Denizen script to unmute diagnostics in it.");
         return;
     }
     const document = editor.document;
     const key = pathKey(document.uri);
     if (mutedRegions.rangesFor(key).length == 0) {
-        vscode.window.showInformationMessage("Denizen: nothing is muted in this script.");
+        vscode.window.showInformationMessage("Refined DenizenScript: nothing is muted in this script.");
         return;
     }
     const cursor = editor.selection.active;
@@ -368,11 +368,11 @@ function unmuteDiagnostics() : void {
     // silent no-op the user has to guess about.
     let message : string;
     if (mutedRegions.unmuteAt(key, { line: cursor.line, character: cursor.character })) {
-        message = "Denizen: unmuted the diagnostics region at the cursor.";
+        message = "Refined DenizenScript: unmuted the diagnostics region at the cursor.";
     }
     else {
         mutedRegions.unmuteAll(key);
-        message = "Denizen: unmuted all muted diagnostics in this script.";
+        message = "Refined DenizenScript: unmuted all muted diagnostics in this script.";
     }
     repaintDiagnostics(document.uri);
     refreshMutedDecorations();
