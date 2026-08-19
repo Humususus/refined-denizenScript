@@ -600,6 +600,14 @@ export class MetaObjectType extends MetaObject {
     generatedExampleAdjust: string | null = null;
     exampleValues: string[] = [];
     matchable: string | null = null;
+    /** Resolved from baseTypeName by linkTypeGraph. Null for a root type (`@base none`) or an unresolvable name. */
+    baseType: MetaObjectType | null = null;
+    /** Resolved from implementsNames by linkTypeGraph. Named implementsTypes, not implements, because `implements` is a reserved word in strict-mode TS. */
+    implementsTypes: MetaObjectType[] = [];
+    /** Reverse index: every type naming this one as its base or in its implements list (MetaObjectType.cs:63). */
+    extendedBy: MetaObjectType[] = [];
+    /** This type's own tags, keyed by afterDotCleaned — not counting base/implements (MetaObjectType.cs:57). */
+    subTags: Map<string, MetaTag> = new Map();
 
     get name(): string {
         return this.typeName;
@@ -763,6 +771,10 @@ export interface MetaDocs {
      * bit of a deprecated tag.
      */
     tagDeprecations: Map<string, string>;
+    /** The ObjectTag root type, set by linkTypeGraph (MetaObjectType.cs:25-32). */
+    objectTagType: MetaObjectType | null;
+    /** The ElementTag root type, set by linkTypeGraph (MetaObjectType.cs:25-32). */
+    elementTagType: MetaObjectType | null;
 }
 
 export function createEmptyMetaDocs(): MetaDocs {
@@ -781,6 +793,8 @@ export function createEmptyMetaDocs(): MetaDocs {
         // Seeded per MetaDocs.cs:79.
         tagBases: new Set(['context', 'entry']),
         tagParts: new Set(),
-        tagDeprecations: new Map()
+        tagDeprecations: new Map(),
+        objectTagType: null,
+        elementTagType: null
     };
 }

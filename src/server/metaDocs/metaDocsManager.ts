@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { downloadBinary, extractJavaCommentLines, extractMetaBlocks, MetaBlock } from './metaLoader';
+import { linkTypeGraph } from './metaLinker';
 import { loadInObject } from './metaObjectFactory';
 import { MetaDocs, createEmptyMetaDocs } from './metaTypes';
 
@@ -146,5 +147,9 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
     const docs = buildMetaDocs(blocks);
     docs.loadErrors.push(...loadErrors);
     applyExtensions(docs);
+    // linkTypeGraph must run after applyExtensions, not before: extensions
+    // can rewrite a type's @base or a tag's @returns, and linking earlier
+    // would resolve the object-type graph against the pre-extension values.
+    linkTypeGraph(docs);
     return docs;
 }
