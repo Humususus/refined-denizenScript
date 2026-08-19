@@ -6,6 +6,13 @@
  * later phases that actually consume them.
  */
 
+// Type-only import: MetaTag.parsedFormat needs the SingleTag shape to declare
+// its field type, but this is erased at compile time and creates no runtime
+// dependency — the model layer stays free of providers/ at runtime. The
+// parseTag() *call* that populates this field belongs in metaLinker.ts, not
+// here; see that file's header for why.
+import type { SingleTag } from '../providers/tagHelper';
+
 export interface MetaType {
     name: string;
     webPath: string | null;
@@ -229,6 +236,16 @@ export class MetaTag extends MetaObject {
     description: string = '';
     mechanism: string = '';
     examples: string[] = [];
+    /** Resolved from `returns` by linkTypeGraph, keyed on the text before any '(' (MetaTag.cs:86-87, 174). Null if `returns` does not name a known object type. */
+    returnType: MetaObjectType | null = null;
+    /** Resolved from `beforeDot` by linkTypeGraph (MetaTag.cs:89-90, 179). Null if `beforeDot` does not name a known object type. */
+    baseType: MetaObjectType | null = null;
+    /** The parsed tag syntax, set by linkTypeGraph (MetaTag.cs:107-108, 151). Null only before linking has run. */
+    parsedFormat: SingleTag | null = null;
+    /** Whether the tag's first relevant part accepts a bracketed parameter (MetaTag.cs:95-96, 153). */
+    allowsParam: boolean = false;
+    /** Whether that parameter is required rather than optional (MetaTag.cs:98-99, 154). */
+    requiresParam: boolean = false;
 
     get name(): string {
         return this.tagFull;

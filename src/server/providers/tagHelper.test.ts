@@ -100,3 +100,19 @@ describe('parseTag', () => {
         });
     });
 });
+
+describe('parseTag deferred coverage', () => {
+    it('trims whitespace off a part\'s text while leaving its offsets alone', () => {
+        const tag = parseTag('player. name', () => { /* ignore */ });
+        expect(tag.parts.map(p => p.text)).toEqual(['player', 'name']);
+        // startChar still points at the space — the trim changes text, not position.
+        expect(tag.parts[1].startChar).toBe(7);
+    });
+
+    it('still returns the parts it read when the input is malformed', () => {
+        const errors: string[] = [];
+        const tag = parseTag('a[b]c.d', (m) => errors.push(m));
+        expect(errors.length).toBeGreaterThan(0);
+        expect(tag.parts.map(p => p.text)).toContain('d');
+    });
+});

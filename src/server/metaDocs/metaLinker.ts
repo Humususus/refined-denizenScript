@@ -8,9 +8,21 @@
  * PostCheckLinkableText) — those belong to a diagnostics phase, not this
  * one. The AddTo half that sets ObjectTagType/ElementTagType is ported from
  * MetaObjectType.cs:22-33.
+ *
+ * Also links each MetaTag's parsed format, parameter shape, and return/base
+ * type, ported from MetaTag.cs:151-179 (also PostCheck) — again excluding
+ * that method's validation (Require, the spaces check, mechanism
+ * cross-checks, PostCheckSynonyms, PostCheckLinkableText).
+ *
+ * Imports parseTag from ../providers/tagHelper: this is the linker (not
+ * metaTypes.ts, the model layer) depending on a provider module. That
+ * direction is deliberate — it keeps metaTypes.ts free of runtime
+ * dependencies on providers/. Do not "tidy" this by moving the parseTag
+ * call into metaTypes.ts.
  */
 
 import { MetaDocs } from './metaTypes';
+import { parseTag, SingleTag } from '../providers/tagHelper';
 
 /**
  * Resolves the object-type graph in docs: baseType, implementsTypes,
@@ -71,5 +83,36 @@ export function linkTypeGraph(docs: MetaDocs): void {
         if (owner && tag.afterDotCleaned.length > 0) {
             owner.subTags.set(tag.afterDotCleaned, tag);
         }
+    }
+
+    // Step 5: parse each tag's syntax and resolve its return/base type
+    // (MetaTag.cs:151-179). Runs after the type-resolution steps above
+    // because it looks tags up against the now-populated docs.objectTypes.
+    for (const tag of docs.tags.values()) {
+        // MetaTag.cs:151 — the meta stores the full syntax including the angle brackets;
+        // parseTag wants the inside only.
+        const inner = tag.tagFull.startsWith('<') && tag.tagFull.endsWith('>')
+            ? tag.tagFull.substring(1, tag.tagFull.length - 1)
+            : tag.tagFull;
+        const parsedFormat: SingleTag = parseTag(inner, (message) => {
+            docs.loadErrors.push(`Failed to parse meta tag '${tag.tagFull}': ${message}`);
+        });
+        tag.parsedFormat = parsedFormat;
+        // MetaTag.cs:152-154. Guarded unlike the C# original: a malformed
+        // @attribute can yield fewer parts than firstPartIndex expects, and
+        // an uncaught exception here would abort the entire meta load —
+        // turning one bad meta block into a dead language server. A missing
+        // part is treated as "no parameter".
+        const firstPartIndex = parsedFormat.parts.length === 1 ? 0 : 1;
+        const parameter = parsedFormat.parts[firstPartIndex]?.parameter ?? null;
+        tag.allowsParam = parameter !== null;
+        tag.requiresParam = tag.allowsParam && !parameter!.endsWith(')');
+        // MetaTag.cs:174 — Before('(') so ListTag(PlayerTag) resolves to ListTag.
+        const returnsKey = tag.returns.toLowerCase().split('(')[0];
+        tag.returnType = docs.objectTypes.get(returnsKey) ?? null;
+        if (tag.returnType === null) {
+            docs.loadErrors.push(`Tag '${tag.name}' specifies return type '${tag.returns}' which does not appear to be a valid object type.`);
+        }
+        tag.baseType = docs.objectTypes.get(tag.beforeDot.toLowerCase()) ?? null;
     }
 }
