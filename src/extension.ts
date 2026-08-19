@@ -5,6 +5,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as https from "https";
 import { shouldUseTypeScriptServer } from './serverEngineSelector';
+import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
@@ -62,7 +63,11 @@ function buildSharedMiddleware() : languageClient.Middleware {
             return next(document, position, context, token);
         },
         handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
-            next(uri, diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic) && !isDenizenMDiagnostic(uri, diagnostic)));
+            // Remember what the server actually said, unfiltered. Muting has to be
+            // able to repaint a file the user isn't typing in, and the server may
+            // never republish for such a file - see repaintDiagnostics.
+            rawDiagnostics.set(pathKey(uri), diagnostics);
+            next(uri, filterDenizenDiagnostics(uri, diagnostics));
         }
     }
 }
@@ -90,6 +95,7 @@ function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : s
     let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
     let disposable = client.start();
     context.subscriptions.push(disposable);
+    registerDiagnosticClient(client);
 }
 
 function activateTsLanguageServer(context: vscode.ExtensionContext) {
@@ -112,6 +118,7 @@ function activateTsLanguageServer(context: vscode.ExtensionContext) {
     let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
     let disposable = client.start();
     context.subscriptions.push(disposable);
+    registerDiagnosticClient(client);
 }
 
 const highlightDecors: { [color: string]: vscode.TextEditorDecorationType } = {};
@@ -210,6 +217,193 @@ function activateHighlighter(context: vscode.ExtensionContext) {
 
 function pathKey(uri: vscode.Uri) : string {
     return uri.toString();
+}
+
+/**
+ * ===== Selection diagnostic muting =====
+ *
+ * Lets the user select a chunk of script and silence every diagnostic inside it
+ * while the rest of the file keeps warning. Mutes live in memory only: no marker
+ * comments are written into script files and nothing survives a restart. That is
+ * the intended shape - do not add persistence or comment markers.
+ */
+
+/** The muted regions of every document, keyed by pathKey(uri). Store is deliberately vscode-free. */
+const mutedRegions = new MutedRegions();
+
+/**
+ * The last diagnostics each server published for a document, keyed by pathKey(uri),
+ * before any of our filtering. Without this, a mute could not take effect until the
+ * server happened to publish again - which, for a file the user isn't typing in, may
+ * be never, so the command would look broken.
+ */
+const rawDiagnostics = new Map<string, vscode.Diagnostic[]>();
+
+/** Every language client we started, so repaints can write through their own diagnostic collections. */
+const diagnosticClients : languageClient.BaseLanguageClient[] = [];
+
+function registerDiagnosticClient(client: languageClient.BaseLanguageClient) : void {
+    diagnosticClients.push(client);
+}
+
+/** Adapter: the muted-region store keeps its own plain shapes so it can be unit-tested without vscode. */
+function toMuteRange(range: vscode.Range) : MuteRange {
+    return {
+        start: { line: range.start.line, character: range.start.character },
+        end: { line: range.end.line, character: range.end.character }
+    };
+}
+
+/**
+ * The single filter both the middleware and the repaint path use, so a repainted
+ * file is filtered exactly like a freshly published one.
+ */
+function filterDenizenDiagnostics(uri: vscode.Uri, diagnostics: vscode.Diagnostic[]) : vscode.Diagnostic[] {
+    const key = pathKey(uri);
+    return diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic) && !isDenizenMDiagnostic(uri, diagnostic)
+        && !mutedRegions.covers(key, toMuteRange(diagnostic.range)));
+}
+
+/**
+ * Re-filters the cached raw diagnostics for a document and writes the result back
+ * through the clients' own diagnostic collections, so muting and unmuting take
+ * effect the instant the command runs rather than whenever the server next speaks.
+ *
+ * Quietly does nothing when there is no cached publish yet or no client: the next
+ * server publish will produce the right result anyway, and a command must not throw.
+ */
+function repaintDiagnostics(uri: vscode.Uri) : void {
+    const raw = rawDiagnostics.get(pathKey(uri));
+    if (!raw) {
+        return;
+    }
+    const filtered = filterDenizenDiagnostics(uri, raw);
+    // activate() starts exactly one engine (C# or TypeScript), so in practice this
+    // writes to exactly one collection - the one that published `raw` in the first
+    // place. If both engines were ever started at once they would each publish their
+    // own diagnostics anyway, and this cache would need to be keyed per client too.
+    for (const client of diagnosticClients) {
+        const collection = client.diagnostics;
+        if (collection) {
+            collection.set(uri, filtered);
+        }
+    }
+}
+
+/**
+ * A faint background plus an overview-ruler mark, so a muted block never looks
+ * like ordinary code. Without it the user would forget a region is muted and
+ * wonder why a real error never showed up.
+ */
+const mutedRegionDecorationType : vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: "rgba(127, 127, 127, 0.10)",
+    overviewRulerColor: "rgba(127, 127, 127, 0.60)",
+    overviewRulerLane: vscode.OverviewRulerLane.Right
+});
+
+/**
+ * Repaints the muted-region decoration in every visible editor. Ranges are rebuilt
+ * as fresh vscode.Range objects and clamped to the document: the store's ranges are
+ * shared with its internals and must be treated as read-only.
+ */
+function refreshMutedDecorations() : void {
+    for (const editor of vscode.window.visibleTextEditors) {
+        const document = editor.document;
+        const ranges = mutedRegions.rangesFor(pathKey(document.uri));
+        const decorated : vscode.Range[] = [];
+        for (const range of ranges) {
+            const startLine = Math.max(0, Math.min(range.start.line, document.lineCount - 1));
+            const endLine = Math.max(startLine, Math.min(range.end.line, document.lineCount - 1));
+            decorated.push(new vscode.Range(new vscode.Position(startLine, 0), document.lineAt(endLine).range.end));
+        }
+        editor.setDecorations(mutedRegionDecorationType, decorated);
+    }
+}
+
+/** Widens a selection to the whole lines it touches, since mutes are line-oriented. */
+function selectionToMuteRange(document: vscode.TextDocument, selection: vscode.Range) : MuteRange {
+    const bounds = wholeLineMuteBounds(selection.start.line, selection.end.line, selection.end.character);
+    const lastLine = Math.max(0, document.lineCount - 1);
+    const startLine = Math.min(bounds.startLine, lastLine);
+    const endLine = Math.min(bounds.endLine, lastLine);
+    return {
+        start: { line: startLine, character: 0 },
+        end: { line: endLine, character: document.lineAt(endLine).range.end.character }
+    };
+}
+
+function muteDiagnosticsInSelection() : void {
+    const editor = vscode.window.activeTextEditor;
+    if (!isDenizenEditor(editor)) {
+        vscode.window.showInformationMessage("Denizen: open a Denizen script to mute diagnostics in it.");
+        return;
+    }
+    const document = editor.document;
+    const key = pathKey(document.uri);
+    // An empty selection mutes the cursor's line: a command that silently does
+    // nothing on a collapsed cursor reads as broken.
+    for (const selection of editor.selections) {
+        mutedRegions.mute(key, selectionToMuteRange(document, selection));
+    }
+    repaintDiagnostics(document.uri);
+    refreshMutedDecorations();
+}
+
+function unmuteDiagnostics() : void {
+    const editor = vscode.window.activeTextEditor;
+    if (!isDenizenEditor(editor)) {
+        vscode.window.showInformationMessage("Denizen: open a Denizen script to unmute diagnostics in it.");
+        return;
+    }
+    const document = editor.document;
+    const key = pathKey(document.uri);
+    if (mutedRegions.rangesFor(key).length == 0) {
+        vscode.window.showInformationMessage("Denizen: nothing is muted in this script.");
+        return;
+    }
+    const cursor = editor.selection.active;
+    // Cursor inside a muted region unmutes just that region; anywhere else means
+    // "unmute the file". Either way we say which happened, so this is never a
+    // silent no-op the user has to guess about.
+    let message : string;
+    if (mutedRegions.unmuteAt(key, { line: cursor.line, character: cursor.character })) {
+        message = "Denizen: unmuted the diagnostics region at the cursor.";
+    }
+    else {
+        mutedRegions.unmuteAll(key);
+        message = "Denizen: unmuted all muted diagnostics in this script.";
+    }
+    repaintDiagnostics(document.uri);
+    refreshMutedDecorations();
+    vscode.window.showInformationMessage(message);
+}
+
+function activateDiagnosticMuting(context: vscode.ExtensionContext) {
+    context.subscriptions.push(mutedRegionDecorationType);
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.muteDiagnosticsInSelection", muteDiagnosticsInSelection));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.unmuteDiagnostics", unmuteDiagnostics));
+    // Deliberately a separate subscription from the syntax-highlight refresh handler
+    // in activate(): that one's state is about highlighting and must not be entangled
+    // with mute tracking.
+    vscode.workspace.onDidChangeTextDocument(event => {
+        const key = pathKey(event.document.uri);
+        if (mutedRegions.rangesFor(key).length == 0) {
+            return;
+        }
+        for (const change of event.contentChanges) {
+            mutedRegions.applyEdit(key, toMuteRange(change.range), countNewLines(change.text));
+        }
+        refreshMutedDecorations();
+    }, null, context.subscriptions);
+    vscode.workspace.onDidCloseTextDocument(document => {
+        // Mutes are per-session and per-open-document; drop everything for a closed
+        // file so neither map grows for the lifetime of the window.
+        const key = pathKey(document.uri);
+        mutedRegions.forget(key);
+        rawDiagnostics.delete(key);
+    }, null, context.subscriptions);
+    vscode.window.onDidChangeVisibleTextEditors(() => refreshMutedDecorations(), null, context.subscriptions);
 }
 
 function sortedSetValues(values: Set<string>) : string[] {
@@ -2819,6 +3013,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateDenizenFileCommands(context);
     activateWorkspaceCompletions(context);
     activateDenizenEscaping(context);
+    activateDiagnosticMuting(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
         if (doc.uri.toString().endsWith(".dsc")) {
             tryLoadConfigYaml(doc);

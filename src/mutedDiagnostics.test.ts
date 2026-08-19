@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MutedRegions, MuteRange } from './mutedDiagnostics';
+import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 
 function range(sl: number, sc: number, el: number, ec: number): MuteRange {
     return { start: { line: sl, character: sc }, end: { line: el, character: ec } };
@@ -125,5 +125,59 @@ describe('MutedRegions', () => {
         const returned = regions.rangesFor('a.dsc');
         returned.push(range(99, 0, 99, 5));
         expect(regions.rangesFor('a.dsc')).toEqual([range(10, 0, 20, 0)]);
+    });
+});
+
+describe('countNewLines', () => {
+    it('counts no newlines in text that stays on one line', () => {
+        expect(countNewLines('')).toBe(0);
+        expect(countNewLines('- narrate "hi"')).toBe(0);
+    });
+
+    it('counts one newline for a single line break', () => {
+        expect(countNewLines('\n')).toBe(1);
+        expect(countNewLines('a\nb')).toBe(1);
+    });
+
+    it('counts CRLF breaks once each', () => {
+        expect(countNewLines('a\r\nb\r\nc')).toBe(2);
+    });
+
+    it('feeds applyEdit so that pressing Enter above a mute shifts it exactly one line', () => {
+        // The off-by-one guard: this is the exact call shape extension.ts uses,
+        // so if countNewLines ever returns "lines spanned" instead of "newlines",
+        // this expectation moves to 11-21 and fails.
+        const regions = new MutedRegions();
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(5, 0, 5, 0), countNewLines('\n'));
+        expect(regions.rangesFor('a.dsc')[0]).toEqual(range(11, 0, 21, 0));
+    });
+
+    it('feeds applyEdit so that a same-line edit does not move a mute at all', () => {
+        const regions = new MutedRegions();
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(5, 4, 5, 4), countNewLines('x'));
+        expect(regions.rangesFor('a.dsc')[0]).toEqual(range(10, 0, 20, 0));
+    });
+});
+
+describe('wholeLineMuteBounds', () => {
+    it('keeps an empty selection on its own single line', () => {
+        expect(wholeLineMuteBounds(7, 7, 0)).toEqual({ startLine: 7, endLine: 7 });
+        expect(wholeLineMuteBounds(7, 7, 12)).toEqual({ startLine: 7, endLine: 7 });
+    });
+
+    it('keeps both lines when the selection ends part-way into the last line', () => {
+        expect(wholeLineMuteBounds(3, 6, 4)).toEqual({ startLine: 3, endLine: 6 });
+    });
+
+    it('drops a trailing line the selection only touches at character 0', () => {
+        // What shift+down produces: lines 3 and 4 are selected as 3:0-5:0, but
+        // line 5 has no selected text and must not be muted.
+        expect(wholeLineMuteBounds(3, 5, 0)).toEqual({ startLine: 3, endLine: 4 });
+    });
+
+    it('never collapses a single fully-selected line to nothing', () => {
+        expect(wholeLineMuteBounds(3, 4, 0)).toEqual({ startLine: 3, endLine: 3 });
     });
 });

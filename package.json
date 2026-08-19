@@ -43,6 +43,14 @@
             {
                 "command": "refinedDenizenscript.undoEscapeOrBackspace",
                 "title": "Refined DenizenScript: Undo Escape or Backspace"
+            },
+            {
+                "command": "refinedDenizenscript.muteDiagnosticsInSelection",
+                "title": "Refined DenizenScript: Mute Diagnostics in Selection"
+            },
+            {
+                "command": "refinedDenizenscript.unmuteDiagnostics",
+                "title": "Refined DenizenScript: Unmute Diagnostics"
             }
         ],
         "keybindings": [
@@ -76,6 +84,18 @@
                 {
                     "command": "refinedDenizenscript.createScriptFile",
                     "group": "navigation@51"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "refinedDenizenscript.muteDiagnosticsInSelection",
+                    "when": "editorLangId == denizenscript",
+                    "group": "denizenscript@10"
+                },
+                {
+                    "command": "refinedDenizenscript.unmuteDiagnostics",
+                    "when": "editorLangId == denizenscript",
+                    "group": "denizenscript@11"
                 }
             ]
         },

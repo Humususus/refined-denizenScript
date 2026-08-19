@@ -37,6 +37,41 @@ function comparePositions(a: MutePosition, b: MutePosition): number {
     return a.character - b.character;
 }
 
+/**
+ * Counts the newlines in a piece of replacement text, which is exactly the
+ * value `applyEdit` wants for its `newLineCount` parameter.
+ *
+ * Beware the tempting off-by-one: `applyEdit`'s delta is
+ * `newLineCount - (changed.end.line - changed.start.line)`, and both halves of
+ * that subtraction are *line spans*, not line counts. Replacing the zero-span
+ * range `5:0-5:0` with the text `"\n"` adds exactly one line, so the delta must
+ * be `1 - 0 = 1`, which means `newLineCount` is the number of newline
+ * characters (1) and not the number of lines the text occupies (2). Passing the
+ * latter would silently shift every mute one line too far on every edit.
+ *
+ * Splitting on '\n' also handles CRLF text correctly, since each "\r\n" still
+ * contributes exactly one '\n'.
+ */
+export function countNewLines(text: string): number {
+    return text.split('\n').length - 1;
+}
+
+/**
+ * Widens a selection to the whole lines it touches, because mutes are
+ * line-oriented: muting half a line would be a lie about what got silenced.
+ *
+ * A selection that ends at character 0 of a line does not actually touch that
+ * line's text (this is what a shift+down selection looks like), so the last
+ * line is dropped — unless doing so would leave nothing, i.e. the selection is
+ * empty or sits entirely on one line, in which case that single line is muted.
+ */
+export function wholeLineMuteBounds(startLine: number, endLine: number, endCharacter: number): { startLine: number, endLine: number } {
+    if (endLine > startLine && endCharacter === 0) {
+        return { startLine: startLine, endLine: endLine - 1 };
+    }
+    return { startLine: startLine, endLine: endLine };
+}
+
 export class MutedRegions {
     private readonly rangesByKey = new Map<string, MuteRange[]>();
 
