@@ -82,4 +82,23 @@ describe('MutedRegions', () => {
         regions.applyEdit('a.dsc', range(5, 0, 25, 0), 0);
         expect(regions.rangesFor('a.dsc')).toEqual([]);
     });
+
+    it('keeps the surviving tail when an edit overlaps the front of a muted range', () => {
+        // Mute 10-20; select 5-15 and delete it. The edit's end (15) lands
+        // strictly inside the range, so old lines 15-20 survive the edit and
+        // land at 5-10 (delta = 0 - (15-5) = -10). The mute must follow that
+        // surviving tail, not vanish, or code the user deliberately silenced
+        // would light back up.
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(5, 0, 15, 0), 0);
+        expect(regions.rangesFor('a.dsc')[0]).toEqual(range(5, 0, 10, 0));
+    });
+
+    it('still drops a muted range when a front-overlapping edit reaches its end', () => {
+        // Same front overlap, but this time the edit's end lands exactly on
+        // the range's end: nothing of the muted region survives, so it drops.
+        regions.mute('a.dsc', range(10, 0, 20, 0));
+        regions.applyEdit('a.dsc', range(5, 0, 20, 0), 0);
+        expect(regions.rangesFor('a.dsc')).toEqual([]);
+    });
 });

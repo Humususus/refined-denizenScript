@@ -109,8 +109,19 @@ export class MutedRegions {
                     start: r.start,
                     end: { line: r.end.line + delta, character: r.end.character },
                 });
+            } else if (comparePositions(changed.start, r.start) <= 0 && comparePositions(changed.end, r.end) < 0) {
+                // Edit overlaps the front of the range but its end lands
+                // strictly inside it: a tail survives (e.g. mute 10-20, then
+                // delete 5-15 — old lines 15-20 survive and become 5-10). The
+                // range's old start no longer exists, so it follows the
+                // edit's start; the end shifts by delta like any other case.
+                survivors.push({
+                    start: { line: changed.start.line, character: changed.start.character },
+                    end: { line: r.end.line + delta, character: r.end.character },
+                });
             }
-            // Otherwise the edit spans the whole range (or more): drop it.
+            // Otherwise the edit's end is at or past the range's end, so it
+            // spans the whole range (or more) and nothing survives: drop it.
         }
         this.rangesByKey.set(key, survivors);
     }
