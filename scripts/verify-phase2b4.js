@@ -69,22 +69,33 @@ Promise.all([
             && playerItem.textEdit.newText === 'player',
         playerItem ? JSON.stringify(playerItem.textEdit) : 'no player item');
 
-    // 3. Part-tag completion, out of TagTracer scope: '  - narrate <player.' offers
-    // every known part (no return-type narrowing exists yet in this phase), so its
-    // count should equal docs.tagParts.size exactly rather than some smaller
-    // "plausible for PlayerTag" number -- narrowing that would be the TagTracer work
-    // this phase explicitly does not implement.
+    // 3. Part-tag completion, out of TagTracer scope: '  - narrate <player.' offered
+    // every known part when this script was written (no return-type narrowing existed
+    // yet). Phase 2B-5 added that narrowing (TagTracer + completeTagNarrowed) and
+    // defaulted it ON, so `provideCompletions`'s default behaviour for this input
+    // changed out from under this check: it now narrows to PlayerTag's reachable set
+    // (755 of 1871 observed), which is exactly the feature working as designed, not a
+    // regression. This script's job is still to prove the FLAT tagParts population is
+    // complete and plausible, not to re-litigate 2B-5's narrowing (verify-phase2b5.js
+    // owns that) -- so it passes `trace: false` explicitly to keep exercising the same
+    // flat branch it always did, rather than weakening the assertion to tolerate a
+    // smaller number.
     const allPartsText = '  - narrate <player.';
-    const allParts = provideCompletions(docs, extra, allPartsText, allPartsText.length, 0);
-    failures += check('narrate <player. offers exactly docs.tagParts.size parts (no return-type narrowing in this phase)',
+    const allParts = provideCompletions(docs, extra, allPartsText, allPartsText.length, 0, false);
+    failures += check('narrate <player. (untraced) offers exactly docs.tagParts.size parts',
         allParts.length === docs.tagParts.size,
         `${allParts.length} item(s) vs ${docs.tagParts.size} known parts`);
-    failures += check('narrate <player. offers a plausible (large) part count',
+    failures += check('narrate <player. (untraced) offers a plausible (large) part count',
         allParts.length >= 1000, `${allParts.length}`);
 
-    // 3b. Narrowing by prefix still works once a component follows the dot.
+    // 3b. Narrowing by prefix still works once a component follows the dot. Also
+    // pinned untraced (trace: false), for the same reason as above -- 2B-5's type-based
+    // narrowing on '<player.na' is verify-phase2b5.js's concern, and mixing it in here
+    // would make this comparison (naParts.length < allParts.length) conflate two
+    // different kinds of narrowing (prefix vs type) instead of isolating the one this
+    // script has always tested.
     const naPartsText = '  - narrate <player.na';
-    const naParts = provideCompletions(docs, extra, naPartsText, naPartsText.length, 0);
+    const naParts = provideCompletions(docs, extra, naPartsText, naPartsText.length, 0, false);
     failures += check('narrate <player.na narrows to parts starting with "na"',
         naParts.length > 0 && naParts.every(i => i.label.startsWith('na')),
         `${naParts.length} item(s): ${naParts.map(i => i.label).join(', ')}`);
