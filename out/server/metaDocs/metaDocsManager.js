@@ -44,6 +44,7 @@ exports.loadMetaDocs = exports.applyExtensions = exports.buildMetaDocs = exports
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const metaLoader_1 = require("./metaLoader");
+const metaLinker_1 = require("./metaLinker");
 const metaObjectFactory_1 = require("./metaObjectFactory");
 const metaTypes_1 = require("./metaTypes");
 exports.DEFAULT_META_SOURCES = [
@@ -172,6 +173,10 @@ function loadMetaDocs(options) {
         const docs = buildMetaDocs(blocks);
         docs.loadErrors.push(...loadErrors);
         applyExtensions(docs);
+        // linkTypeGraph must run after applyExtensions, not before: extensions
+        // can rewrite a type's @base or a tag's @returns, and linking earlier
+        // would resolve the object-type graph against the pre-extension values.
+        (0, metaLinker_1.linkTypeGraph)(docs);
         return docs;
     });
 }

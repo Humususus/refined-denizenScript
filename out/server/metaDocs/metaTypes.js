@@ -213,6 +213,16 @@ class MetaTag extends MetaObject {
         this.description = '';
         this.mechanism = '';
         this.examples = [];
+        /** Resolved from `returns` by linkTypeGraph, keyed on the text before any '(' (MetaTag.cs:86-87, 174). Null if `returns` does not name a known object type. */
+        this.returnType = null;
+        /** Resolved from `beforeDot` by linkTypeGraph (MetaTag.cs:89-90, 179). Null if `beforeDot` does not name a known object type. */
+        this.baseType = null;
+        /** The parsed tag syntax, set by linkTypeGraph (MetaTag.cs:107-108, 151). Null only before linking has run. */
+        this.parsedFormat = null;
+        /** Whether the tag's first relevant part accepts a bracketed parameter (MetaTag.cs:95-96, 153). */
+        this.allowsParam = false;
+        /** Whether that parameter is required rather than optional (MetaTag.cs:98-99, 154). */
+        this.requiresParam = false;
     }
     get name() {
         return this.tagFull;
@@ -584,6 +594,14 @@ class MetaObjectType extends MetaObject {
         this.generatedExampleAdjust = null;
         this.exampleValues = [];
         this.matchable = null;
+        /** Resolved from baseTypeName by linkTypeGraph. Null for a root type (`@base none`) or an unresolvable name. */
+        this.baseType = null;
+        /** Resolved from implementsNames by linkTypeGraph. Named implementsTypes, not implements, because `implements` is a reserved word in strict-mode TS. */
+        this.implementsTypes = [];
+        /** Reverse index: every type naming this one as its base or in its implements list (MetaObjectType.cs:63). */
+        this.extendedBy = [];
+        /** This type's own tags, keyed by afterDotCleaned — not counting base/implements (MetaObjectType.cs:57). */
+        this.subTags = new Map();
     }
     get name() {
         return this.typeName;
@@ -730,7 +748,9 @@ function createEmptyMetaDocs() {
         // Seeded per MetaDocs.cs:79.
         tagBases: new Set(['context', 'entry']),
         tagParts: new Set(),
-        tagDeprecations: new Map()
+        tagDeprecations: new Map(),
+        objectTagType: null,
+        elementTagType: null
     };
 }
 exports.createEmptyMetaDocs = createEmptyMetaDocs;
