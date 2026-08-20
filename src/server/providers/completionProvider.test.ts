@@ -7,6 +7,8 @@ import { TagCursorContext } from './tagContext';
 import { buildMetaDocs } from '../metaDocs/metaDocsManager';
 import { linkTypeGraph } from '../metaDocs/metaLinker';
 import type { MetaBlock } from '../metaDocs/metaLoader';
+import { parseTag } from './tagHelper';
+import { traceTag } from './tagTracer';
 
 function makeCommand(name: string, syntax: string, short: string): MetaCommand {
     const cmd = new MetaCommand();
@@ -706,7 +708,7 @@ describe('tag completion narrowed by the traced return type', () => {
         // Regression pin for the whole fallback branch.
         const docs = narrowingDocs();
         for (const text of ['  - narrate <mybase.sub.', '  - narrate <player.foo.bar.', '  - narrate <player[bob].',
-                            '  - narrate <player.flag[x].', '  - narrate <[mydef].']) {
+                            '  - narrate <player.flag[x].', '  - narrate <[mydef].', '  - narrate <player.name.']) {
             expect(labelsAt(docs, text)).toEqual(labelsAt(docs, text, false));
             expect(labelsAt(docs, text).length).toBe(ALL_PARTS.length);
         }
@@ -752,12 +754,42 @@ describe('tag completion narrowed by the traced return type', () => {
         expect(labelsAt(docs, '  - narrate <player.')).not.toContain('keys');
     });
 
-    it('gates on the traced set matching docs.objectTypes.size, not on a hardcoded count', () => {
+    it('gates on a fraction of docs.objectTypes.size, not on a hardcoded count', () => {
         // Guards against the gate being written against a literal. The fixture has 8
         // object types where live meta has 72; both must take the same branch.
         const docs = narrowingDocs();
         expect(docs.objectTypes.size).toBe(8);
         expect(labelsAt(docs, '  - narrate <[mydef].').length).toBe(ALL_PARTS.length);
+    });
+
+    it('falls back to the FULL flat part list when the traced set covers more than half the object types', () => {
+        // '<player.name.': PlayerTag.name returns ElementTag, and ParsePossibleTypes adds
+        // ElementTag.ExtendedBy (PlayerTag, MapTag); GetFullComplexSetFrom then pulls in
+        // ObjectTag and FlaggableObject. That is 5 of the fixture's 8 types - more than
+        // half, so informationless by the same argument as the all-types case. It is the
+        // fixture's stand-in for live meta's '<player.name.' at 67 of 72.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player.name.')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <player.name.'))
+            .toEqual(labelsAt(docs, '  - narrate <player.name.', false));
+    });
+
+    it('pins where each fixture input sits relative to the half-of-all-types cut', () => {
+        // The cut is "more than half", so a set of exactly half must still narrow. These
+        // sizes are what make the label expectations above correct; if a future change
+        // widens the threshold, this fails loudly instead of silently disabling narrowing.
+        const docs = narrowingDocs();
+        const half = docs.objectTypes.size / 2;
+        const sized = (t: string) => traceTag(docs, parseTag(t, () => { /* ignore */ })).possibleSubTypes.size;
+        expect(sized('player')).toBe(4);          // exactly half -> NARROWS (boundary)
+        expect(sized('queue')).toBe(2);           // well under   -> narrows
+        expect(sized('nosuchbase')).toBe(1);      // just ObjectTag -> narrows
+        expect(sized('player.name')).toBe(5);     // over half    -> falls back
+        expect(sized('player.flag[x]')).toBe(8);  // all types    -> falls back
+        expect(half).toBe(4);
+        // The boundary case must survive: exactly half still narrows.
+        expect(labelsAt(docs, '  - narrate <player.'))
+            .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
     });
 
     it('narrows an unknown base to ObjectTag\'s own tags rather than the full flat list', () => {

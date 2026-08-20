@@ -176,29 +176,51 @@ function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: stri
         return null;
     }
     // DELIBERATE DEVIATION from TextDocumentService.cs:531-533 — do not "restore fidelity"
-    // here. C# narrows whenever the set is non-empty, including when it holds EVERY object
-    // type. Such a set carries zero information: narrowing to it filters nothing out while
-    // paying the full cost of the narrowed branch. Measured on live meta (72 object types,
-    // 2493 tags, 1871 parts), for `<[mydef].` and `<player.flag[x].`:
-    //     narrowed  2240 items, 367 duplicate labels (name x28, id x13, size x9), 1136 KB, ~5.7 ms
-    //     flat      1871 items,   0 duplicates,                                     269 KB, ~0.1 ms
-    // Nothing absorbs that: C# has no Distinct(), `describeTag` is built eagerly per item,
-    // and `resolveProvider: false` (server.ts) forecloses lazy resolution. The all-types set
-    // arises exactly when a tag declines to narrow by documenting `@returns ObjectTag`
-    // (TagTracer.cs:126-129) — i.e. flags, definitions and `proc`, the most common
-    // constructs in Denizen script — so treating it as "the tracer does not know" makes
-    // those genuinely unnarrowed, rather than merely "not narrowed to a WRONG subset".
+    // here. THE C# HAS NO SUCH GATE: it narrows whenever the set is non-empty, however
+    // large. This port declines to narrow once the traced set covers more than HALF the
+    // known object types.
     //
-    // Verified safe against live meta before shipping: of all 2493 documented tags traced
-    // as written, exactly 3 produce an all-72 set and all 3 are ObjectTag-returning; the
-    // largest set from a legitimately narrowing trace is 5, a gap of 67. No real input
-    // narrows to all-72 for a good reason.
+    // WHY a near-total set carries no information. Narrowing to it filters almost nothing
+    // out, yet the narrowed branch still pays its full price, and nothing absorbs that
+    // price: C# has no Distinct(), so one label recurs once per type that documents it;
+    // `describeTag` is built EAGERLY for every item; and `resolveProvider: false`
+    // (server.ts, in buildCapabilities) forecloses resolving documentation lazily. So the
+    // server serialises a megabyte of duplicate-laden markdown to say "everything is still
+    // possible". Measured on live meta (72 object types, 2493 tags, 1871 parts):
     //
-    // Compared against `docs.objectTypes.size` rather than a literal, since the corpus
-    // grows. Equal size implies equal set here: every member of possibleSubTypes comes from
-    // docs.objectTypes (via objectTypes lookups, baseType, implementsTypes or extendedBy),
-    // so a subset of that map with the same cardinality IS that map.
-    if (traced.possibleSubTypes.size === docs.objectTypes.size) {
+    //   input               narrowed                                        flat fallback
+    //   <[mydef].           2240 items, 367 dupes, 1136 KB, ~5.7 ms   ->    1871, 0, 269 KB, ~1.8 ms
+    //   <player.flag[x].    (identical to the above)                  ->    (identical)
+    //   <player.name.       1761 items, 307 dupes,  896 KB, ~6.0 ms   ->    1871, 0, 269 KB
+    //
+    // `<player.name.` traces to 67 of 72 types: it excludes 5 types (7%) while costing 78%
+    // of the payload and 84% of the duplicates of the all-types case. That is the shape the
+    // half cut exists to catch.
+    //
+    // WHY HALF is not a tuned magic number. The traced-set size is BIMODAL on real data,
+    // with a wide empty band in the middle. Sweeping 39,944 realistic one- and two-component
+    // tag prefixes (every dotless base tag, with and without a parameter, and every part
+    // reachable from one) the only non-empty sizes that occur at all are:
+    //
+    //     2 (85)   3 (1624)   4 (847)   5 (987)   7 (130)   ||   67 (12392)   72 (125)
+    //
+    // Nothing whatsoever lands between 7 and 67. Half of 72 is 36, the middle of that
+    // 60-wide gap, so the cut is the midpoint of a bimodal distribution rather than a
+    // threshold tuned to a corpus. Genuine narrowing (`<player.` at 5 types -> 755 items,
+    // `<queue.` at 4 -> 218, `<server.` at 1 -> 147) sits an order of magnitude below it and
+    // is untouched. If a future corpus puts real mass between 7 and 67, this cut stops being
+    // obviously safe and should be re-derived — re-run the sweep before changing it.
+    //
+    // The high mode is not an accident either: it is what a tag documenting `@returns
+    // ObjectTag` produces, TagTracer.cs:126-129 deliberately declining to narrow. That
+    // covers flags, definitions and `proc` — the most common constructs in Denizen script —
+    // so treating these sets as "the tracer does not know" makes them genuinely unnarrowed,
+    // rather than merely "not narrowed to a WRONG subset".
+    //
+    // Expressed as a fraction of `docs.objectTypes.size`, never a literal, since the corpus
+    // grows. Strict `>` so a set of exactly half still narrows. This subsumes the all-types
+    // case, which reaches the same fallback through the same comparison.
+    if (traced.possibleSubTypes.size * 2 > docs.objectTypes.size) {
         return null;
     }
     const lastPartText = parsed.parts.length === 0 ? '' : parsed.parts[parsed.parts.length - 1].text;
