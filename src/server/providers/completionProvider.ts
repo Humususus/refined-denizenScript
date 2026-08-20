@@ -13,6 +13,8 @@ import { parseCursorContext, LineCursorContext } from './cursorContext';
 import { findTagAtCursor, TagCursorContext } from './tagContext';
 import { ExtraData } from '../metaDocs/extraData';
 import { findEnumCompleters, findKeyLineCompleter } from './argumentCompleters';
+import { parseTag } from './tagHelper';
+import { traceTag } from './tagTracer';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -122,6 +124,85 @@ export function completeKeyLineValues(extra: ExtraData, ctx: LineCursorContext, 
 }
 
 /**
+ * The narrowed half of tag-part completion: the tags actually valid on whatever the
+ * preceding tag part returns. Ported from TextDocumentService.cs:522-534.
+ *
+ * Returns null — NOT an empty array — when the trace could not narrow, meaning the
+ * caller must fall back to the full flat `docs.tagParts` list. That distinction is the
+ * single most load-bearing thing in this file:
+ *
+ *   C# reads `if (lastPart.PossibleSubTypes.Any())` at :531. When that is false control
+ *   falls through to :535, which returns `MetaDocs.CurrentMeta.TagParts.Where(tag =>
+ *   tag.StartsWith(subComponent))` — i.e. EVERY documented part name, filtered only by
+ *   the typed prefix. An empty type set means "I know nothing, so offer everything",
+ *   never "offer nothing".
+ *
+ * That is not an exotic edge case. `traceTag` leaves the last part's set empty whenever
+ * tracing never reached it, which happens for ordinary input:
+ *   - a multi-part base tag swallowing every part, e.g. `<server.flag[x].` (real meta
+ *     contains a tag literally named `server.flag`, so TagTracer.cs:69-76 consumes both
+ *     parts and resumes past the end);
+ *   - a multi-part subtag swallowing the final part, e.g. `<player.foo.bar.`
+ *     (TagTracer.cs:214 only records a set at the index a match STARTED at);
+ *   - any early return in the trace, e.g. a base tag handed a parameter it forbids.
+ * Treating those as "no candidates" would make them offer nothing at all — strictly
+ * worse than the unnarrowed behaviour this replaces.
+ *
+ * The text traced is everything before the last top-level dot (TextDocumentService.cs:
+ * 523-527), derived from the cursor context rather than re-scanned: `lastComponentStart
+ * - tagStart` is the offset just past that dot within `tagSoFar`, so one less drops the
+ * dot itself. `componentCount > 0` (checked by the caller) guarantees that offset is at
+ * least 1, so the slice is never negative.
+ *
+ * The candidate rule mirrors :533's two OR'd conditions: a tag qualifies if its
+ * `baseType` is one of the traced sub-types, OR its `beforeDot` equals the traced tag's
+ * last part text. The second condition is what keeps pseudo-object bases working —
+ * `<server.x>`, `<util.x>` and friends have no object type behind them, so their
+ * `baseType` is null and only the name match can find them. The comparison is
+ * case-sensitive, as in C#: `beforeDot` keeps the meta's original casing (MetaTag's
+ * `attribute` handler lowercases only AFTER taking it) while the traced part text is
+ * lowercased by `parseTag`, so this matches lowercase pseudo-bases like `server` and
+ * deliberately does not match object-type bases like `PlayerTag` — which the first
+ * condition already covers, by identity rather than by name.
+ */
+function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: string, range: Range): CompletionItem[] | null {
+    const beforeLastDot = tag.tagSoFar.substring(0, tag.lastComponentStart - tag.tagStart - 1);
+    // Parse errors are irrelevant here — this is a half-typed tag by definition, and the
+    // tracer copes with whatever parts come out. Diagnostics are a later phase.
+    const parsed = parseTag(beforeLastDot, () => { /* ignore */ });
+    const traced = traceTag(docs, parsed);
+    // TextDocumentService.cs:531. The `return null` is the fall-through to :535.
+    if (traced.possibleSubTypes.size === 0) {
+        return null;
+    }
+    const lastPartText = parsed.parts.length === 0 ? '' : parsed.parts[parsed.parts.length - 1].text;
+    const results: CompletionItem[] = [];
+    for (const candidate of docs.tags.values()) {
+        const byType = candidate.baseType !== null && traced.possibleSubTypes.has(candidate.baseType);
+        if (!byType && candidate.beforeDot !== lastPartText) {
+            continue;
+        }
+        // Same deliberate divergence from C# as MetaTag.addTo's tagParts population: a
+        // dotless tag has an empty afterDotCleaned, and an empty candidate would match
+        // every prefix and insert nothing. C#'s Select would emit it; this drops it.
+        if (candidate.afterDotCleaned.length === 0 || !candidate.afterDotCleaned.startsWith(prefix)) {
+            continue;
+        }
+        const textEdit: TextEdit = { range, newText: candidate.afterDotCleaned };
+        results.push({
+            label: candidate.afterDotCleaned,
+            kind: CompletionItemKind.Property,
+            textEdit,
+            // Unlike the flat branch, this IS the tag being completed, so its own
+            // documentation is genuinely its own — no namespace-collision risk, and so
+            // no need for that branch's `componentCount === 0` gate.
+            documentation: describeTag(candidate)
+        });
+    }
+    return results;
+}
+
+/**
  * Completions for the tag component the cursor sits inside, as located by
  * `findTagAtCursor`. `componentCount === 0` means the cursor is still in the tag's
  * base (the text before its first top-level dot, e.g. "player" in `<player.na`), so
@@ -166,14 +247,29 @@ export function completeKeyLineValues(extra: ExtraData, ctx: LineCursorContext, 
  * `TryFindLikelyTagForPart` is a 2B-5 precondition (see docs/superpowers/plans/
  * PHASE-2B-BACKLOG.md); it needs a suffix index precomputed alongside `tagParts`, since
  * a naive scan is O(tags x parts) per keystroke.
+ *
+ * That whole paragraph describes the FLAT branch only. When `trace` is on and the cursor
+ * is past the tag's base, `completeTagNarrowed` below runs first and, if it can narrow,
+ * returns real `MetaTag` objects that each carry their own documentation — which is why
+ * the `componentCount === 0` documentation gate does not apply there. See that function.
  */
-export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number): CompletionItem[] {
+export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number, trace: boolean = true): CompletionItem[] {
     const prefix = tag.lastComponent.toLowerCase();
     const source = tag.componentCount === 0 ? docs.tagBases : docs.tagParts;
     const range: Range = {
         start: { line, character: tag.lastComponentStart },
         end: { line, character: tag.lastComponentStart + tag.lastComponent.length }
     };
+    // TextDocumentService.cs:522-534. Only for a component past the base: component 0 is
+    // a tag base, which has nothing before it to trace. A null result means "the trace
+    // could not narrow", and control falls through to the flat branch below EXACTLY as
+    // C# falls from the `if (lastPart.PossibleSubTypes.Any())` block into :535.
+    if (trace && tag.componentCount > 0) {
+        const narrowed = completeTagNarrowed(docs, tag, prefix, range);
+        if (narrowed !== null) {
+            return narrowed;
+        }
+    }
     const results: CompletionItem[] = [];
     for (const candidate of source) {
         if (candidate.startsWith(prefix)) {
@@ -197,8 +293,13 @@ export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number)
     return results;
 }
 
-/** Entry point: what should be offered at `offset` on `line` within `text`. */
-export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number): CompletionItem[] {
+/**
+ * Entry point: what should be offered at `offset` on `line` within `text`.
+ *
+ * `trace` is the `denizenscript.server.tagTracing` setting, read in server.ts. It only
+ * reaches `completeTag`; every other branch is unaffected by it.
+ */
+export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number, trace: boolean = true): CompletionItem[] {
     const ctx = parseCursorContext(text, offset);
     if (ctx === null) {
         return [];
@@ -220,7 +321,7 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     // completion is the only branch that can offer anything useful here.
     const tagCtx = findTagAtCursor(ctx.argThusFar, ctx.argStart);
     if (tagCtx !== null) {
-        return completeTag(docs, tagCtx, line);
+        return completeTag(docs, tagCtx, line, trace);
     }
     // C# merges both sources rather than choosing one (TextDocumentService.cs:362-367
     // appends the ByCommand completer's output onto the argument-name results), and the

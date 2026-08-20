@@ -29,6 +29,15 @@ let loadedDocs: MetaDocs | null = null;
 /** Minecraft enum data. Starts empty so completion degrades gracefully while loading. */
 let loadedExtra: ExtraData = createEmptyExtraData();
 
+/**
+ * The `denizenscript.server.tagTracing` setting: whether tag-part completion is narrowed
+ * to the traced return type of the preceding part. Defaults to true, matching
+ * package.json, so completion behaves correctly before the configuration read resolves
+ * (and if it never does — an old client with no such setting yields undefined, which the
+ * `!== false` read below treats as the default rather than as "off").
+ */
+let tagTracingEnabled = true;
+
 function getMetaCacheFile(): string {
     const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
@@ -100,6 +109,15 @@ export function createServer(): Connection {
                 connection.console.error(`Denizen meta load failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
             });
 
+        connection.workspace.getConfiguration('denizenscript.server.tagTracing')
+            .then((tagTracing: boolean | undefined) => {
+                tagTracingEnabled = tagTracing !== false;
+                connection.console.log(`Tag tracing (denizenscript.server.tagTracing): ${tagTracingEnabled ? 'on' : 'off'}.`);
+            })
+            .catch(err => {
+                connection.console.error(`Reading denizenscript.server.tagTracing failed, leaving it on: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            });
+
         loadExtraData({ cacheFile: getExtraDataCacheFile(), ttlMs: EXTRA_DATA_TTL_MS })
             .then(extra => {
                 loadedExtra = extra;
@@ -119,7 +137,7 @@ export function createServer(): Connection {
             return [];
         }
         try {
-            return provideCompletions(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position), params.position.line);
+            return provideCompletions(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position), params.position.line, tagTracingEnabled);
         }
         catch (err) {
             connection.console.error(`Completion failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);

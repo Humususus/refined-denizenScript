@@ -4,6 +4,9 @@ import { provideCompletions, completeCommandNames, completeCommandArguments, com
 import { MetaCommand, MetaTag, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_TAG } from '../metaDocs/metaTypes';
 import { buildExtraData, parseFlatFds, createEmptyExtraData } from '../metaDocs/extraData';
 import { TagCursorContext } from './tagContext';
+import { buildMetaDocs } from '../metaDocs/metaDocsManager';
+import { linkTypeGraph } from '../metaDocs/metaLinker';
+import type { MetaBlock } from '../metaDocs/metaLoader';
 
 function makeCommand(name: string, syntax: string, short: string): MetaCommand {
     const cmd = new MetaCommand();
@@ -505,5 +508,241 @@ describe('tag completion', () => {
         };
         const labels = completeTag(docs, ctx, 0).map(i => i.label).sort();
         expect(labels).toEqual(['player', 'playertag']);
+    });
+
+    // The fixtures above deliberately never run linkTypeGraph, so every MetaTag in them
+    // has a null baseType/returnType and every trace comes back empty — which is exactly
+    // the fallback path, and is why the assertions above are unchanged by tracing. The
+    // narrowing suite below builds its own LINKED fixture; see its header.
+    it('falls back to the full flat part list against an unlinked fixture, so tracing changes nothing here', () => {
+        const docs = tagDocs();
+        const text = '  - narrate <player.';
+        const traced = provideCompletions(docs, createEmptyExtraData(), text, text.length, 0);
+        const untraced = provideCompletions(docs, createEmptyExtraData(), text, text.length, 0, false);
+        expect(traced.map(i => i.label)).toEqual([...docs.tagParts]);
+        expect(traced.map(i => i.label)).toEqual(untraced.map(i => i.label));
+    });
+});
+
+/**
+ * Task 4 (Phase 2B-5): narrowing tag-part completion to the traced return type.
+ *
+ * These fixtures MUST go through `linkTypeGraph` — `traceTag` reads baseType /
+ * returnType / subTags / extendedBy, all of which only that pass populates. The
+ * older `tagDocs()` fixtures above skip linking on purpose; they exercise the
+ * fallback branch and must keep doing so.
+ *
+ * The type graph is:
+ *     ObjectTag <- ElementTag <- {PlayerTag, MapTag}
+ *     ObjectTag <- {ListTag, QueueTag, ScriptTag}
+ *     FlaggableObject (rootless), implemented by PlayerTag
+ */
+function narrowType(name: string, base: string, extra: string[] = []): MetaBlock {
+    return { objectType: 'objecttype', url: 'src#L1', data: [`@name ${name}`, `@prefix ${name.toLowerCase()}`, `@base ${base}`, '@format x', '@description x', ...extra, '@end_meta'] };
+}
+
+function narrowTag(attribute: string, returns: string, description: string): MetaBlock {
+    return { objectType: 'tag', url: 'src#L1', data: [`@attribute ${attribute}`, `@returns ${returns}`, `@description ${description}`, '@end_meta'] };
+}
+
+function narrowingDocs(): MetaDocs {
+    const docs = buildMetaDocs([
+        narrowType('ObjectTag', 'none'),
+        narrowType('ElementTag', 'ObjectTag'),
+        narrowType('PlayerTag', 'ElementTag', ['@implements FlaggableObject']),
+        narrowType('MapTag', 'ElementTag'),
+        narrowType('ListTag', 'ObjectTag'),
+        narrowType('FlaggableObject', 'none'),
+        narrowType('QueueTag', 'ObjectTag'),
+        narrowType('ScriptTag', 'ObjectTag'),
+        // Dotless base tags: beforeDot is 'Base', so they own no parts and are never
+        // narrowed candidates themselves. '<script>' is the 2B-4 namespace collision.
+        narrowTag('<player>', 'PlayerTag', 'Returns the linked player.'),
+        narrowTag('<queue>', 'QueueTag', 'Returns the current queue.'),
+        narrowTag('<script>', 'ScriptTag', 'Returns the current script container.'),
+        // A two-part complex base tag, i.e. docs.tags holds the key 'mybase.sub'. This
+        // is the fixture stand-in for real meta's '<server.flag[...]>'.
+        narrowTag('<mybase.sub>', 'PlayerTag', 'A complex base tag.'),
+        // Type-owned tags.
+        narrowTag('<PlayerTag.name>', 'ElementTag', 'The player name.'),
+        narrowTag('<PlayerTag.groups>', 'ListTag', 'The player groups.'),
+        narrowTag('<PlayerTag.foo.bar>', 'ListTag', 'A two-part subtag.'),
+        narrowTag('<ElementTag.to_uppercase>', 'ElementTag', 'Uppercased.'),
+        narrowTag('<ListTag.size>', 'ElementTag', 'The list size.'),
+        narrowTag('<MapTag.keys>', 'ListTag', 'The map keys.'),
+        narrowTag('<FlaggableObject.flag[<name>]>', 'ObjectTag', 'A flag value.'),
+        narrowTag('<ObjectTag.as[<type>]>', 'ObjectTag', 'A type cast.'),
+        narrowTag('<QueueTag.script>', 'ScriptTag', 'The script the queue is running.')
+    ]);
+    linkTypeGraph(docs);
+    return docs;
+}
+
+// Hand-derived from the fixture above, not read off the implementation.
+// tagParts collects every dot-separated bit after each tag's base:
+//   name, groups, foo, bar, to_uppercase, size, keys, flag, as, sub, script.
+const ALL_PARTS = ['name', 'groups', 'foo', 'bar', 'to_uppercase', 'size', 'keys', 'flag', 'as', 'sub', 'script'];
+
+function labelsAt(docs: MetaDocs, text: string, trace?: boolean): string[] {
+    return provideCompletions(docs, createEmptyExtraData(), text, text.length, 0, trace).map(i => i.label).sort();
+}
+
+describe('tag completion narrowed by the traced return type', () => {
+    it('builds the linked fixture the narrowing expectations assume', () => {
+        const docs = narrowingDocs();
+        expect([...docs.tagParts].sort()).toEqual([...ALL_PARTS].sort());
+        expect(docs.objectTypes.size).toBe(8);
+        expect(docs.tags.get('playertag.name')!.baseType).toBe(docs.objectTypes.get('playertag'));
+        expect(docs.tags.get('player')!.returnType).toBe(docs.objectTypes.get('playertag'));
+    });
+
+    it('offers only the parts reachable from PlayerTag, not a part that exists solely on an unrelated type', () => {
+        // traceTag('player') -> GetFullComplexSetFrom({PlayerTag})
+        //   = {PlayerTag, ElementTag (base), ObjectTag (base + the unconditional add),
+        //      FlaggableObject (implements)}.
+        // Candidates are the tags whose baseType is in that set:
+        //   PlayerTag.name -> 'name', PlayerTag.groups -> 'groups',
+        //   PlayerTag.foo.bar -> 'foo.bar', ElementTag.to_uppercase -> 'to_uppercase',
+        //   FlaggableObject.flag -> 'flag', ObjectTag.as -> 'as'.
+        // ListTag.size and MapTag.keys are NOT reachable, and 'sub'/'script' belong to
+        // bases/types that are not in the set either.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player.'))
+            .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
+        expect(labelsAt(docs, '  - narrate <player.')).not.toContain('size');
+        expect(labelsAt(docs, '  - narrate <player.')).not.toContain('keys');
+    });
+
+    it('offers the full flat part list when tracing is switched off', () => {
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player.', false)).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <player.', false)).toEqual([...docs.tagParts].sort());
+    });
+
+    it('still filters the narrowed set by the typed prefix', () => {
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player.na')).toEqual(['name']);
+        expect(labelsAt(docs, '  - narrate <player.f')).toEqual(['flag', 'foo.bar']);
+    });
+
+    it('leaves the textEdit range at lastComponentStart -> cursor, exactly as the untraced branch does', () => {
+        // '  - narrate <player.' is 20 characters (indices 0..19); '<' is index 12, the
+        // dot is index 19, so the (empty) component after it starts at 20 = the cursor.
+        const docs = narrowingDocs();
+        const text = '  - narrate <player.';
+        expect(text.length).toBe(20);
+        const items = provideCompletions(docs, createEmptyExtraData(), text, text.length, 0);
+        expect(items.length).toBeGreaterThan(0);
+        for (const item of items) {
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 20 }, end: { line: 0, character: 20 } },
+                newText: item.label
+            });
+            expect(item.kind).toBe(CompletionItemKind.Property);
+        }
+        // '  - narrate <player.na' is 22 characters; 'na' starts at 20.
+        const typed = '  - narrate <player.na';
+        expect(typed.length).toBe(22);
+        for (const item of provideCompletions(docs, createEmptyExtraData(), typed, typed.length, 0)) {
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 20 }, end: { line: 0, character: 22 } },
+                newText: item.label
+            });
+        }
+    });
+
+    it('carries each narrowed item\'s OWN documentation, fixing the 2B-4 <queue.>/<script> collision', () => {
+        // traceTag('queue') -> {QueueTag, ObjectTag}, so the candidates are
+        // QueueTag.script -> 'script' and ObjectTag.as -> 'as'.
+        const docs = narrowingDocs();
+        const items = provideCompletions(docs, createEmptyExtraData(), '  - narrate <queue.', '  - narrate <queue.'.length, 0);
+        expect(items.map(i => i.label).sort()).toEqual(['as', 'script']);
+        const script = items.find(i => i.label === 'script')!;
+        const scriptDoc = String((script.documentation as { value: string }).value);
+        expect(scriptDoc).toContain('QueueTag.script');
+        expect(scriptDoc).toContain('The script the queue is running.');
+        // The dotless base tag '<script>' shares the part's name and is what the 2B-4
+        // exact-lookup would have attached here; it must not be what we show.
+        expect(scriptDoc).not.toContain('Returns the current script container.');
+        expect(String((items.find(i => i.label === 'as')!.documentation as { value: string }).value))
+            .toContain('ObjectTag.as');
+    });
+
+    // ---- The empty-trace fallback. An empty possibleSubTypes means "fall back to the
+    // full flat part list", never "offer nothing". Both cases below are real, not
+    // contrived: the first mirrors live meta's '<server.flag[x].', the second any part
+    // swallowed by a multi-part subtag match.
+    it('falls back to the FULL flat part list when a complex base tag consumed every part', () => {
+        // 'mybase.sub' is a docs.tags key, so TagTracer.cs:69-76 consumes parts 0 and 1
+        // and resumes at index 2, which is past the end; only part 0 gets a sub-type set
+        // (:110), and the consumer reads the LAST part's — which stays empty.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <mybase.sub.')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <mybase.sub.'))
+            .toEqual(labelsAt(docs, '  - narrate <mybase.sub.', false));
+    });
+
+    it('falls back to the FULL flat part list when a two-part subtag swallowed the final part', () => {
+        // 'player.foo.bar' matches PlayerTag.foo.bar (length 2) at index 1, so the loop
+        // records sub-types at index 1 and jumps to index 3. Part 2 - the last - has none.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player.foo.bar.')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <player.foo.bar.'))
+            .toEqual(labelsAt(docs, '  - narrate <player.foo.bar.', false));
+    });
+
+    it('falls back to the FULL flat part list when a base tag was given a parameter it does not allow', () => {
+        // TagTracer.cs:90-94 returns before :110 runs, so not even part 0 gets a set.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player[bob].')).toEqual([...ALL_PARTS].sort());
+    });
+
+    it('never offers fewer items than the untraced list would, for any input whose trace is empty', () => {
+        // The guarantee in one assertion: an empty trace must not be read as "no
+        // candidates". Regression pin for the whole fallback branch.
+        const docs = narrowingDocs();
+        for (const text of ['  - narrate <mybase.sub.', '  - narrate <player.foo.bar.', '  - narrate <player[bob].']) {
+            expect(labelsAt(docs, text).length).toBe(labelsAt(docs, text, false).length);
+            expect(labelsAt(docs, text).length).toBe(ALL_PARTS.length);
+        }
+    });
+
+    // ---- Cases where the brief's stated expectation and the ported C# semantics
+    // disagree. See the Task 4 report; these pin what the port actually does, derived by
+    // hand from TagTracer's behaviour, and both were cross-checked against tagTracer.test.ts.
+    it('does not narrow away another type\'s parts after a flag, because a flag returns ObjectTag', () => {
+        // The user-facing guarantee: a flag holding an object of some other type must not
+        // have that type's tags filtered out. traceTag('player.flag[x]') hits
+        // TagTracer.cs:126-129 (returns ObjectTag) -> every object type is possible.
+        //
+        // NOTE: the trace is NOT empty here, so this goes through the NARROWED branch,
+        // and the count therefore does not equal the untraced count: labels are whole
+        // afterDotCleaned paths ('foo.bar'), not single part bits, and dotless base tags
+        // (no baseType) never participate. What matters, and what is asserted, is that
+        // nothing is filtered away by type.
+        const docs = narrowingDocs();
+        const afterFlag = labelsAt(docs, '  - narrate <player.flag[x].');
+        expect(afterFlag).toEqual(['as', 'flag', 'foo.bar', 'groups', 'keys', 'name', 'script', 'size', 'to_uppercase']);
+        // 'size' (ListTag) and 'keys' (MapTag) are unreachable from PlayerTag but ARE
+        // offered here - that is the flag/definition escape hatch working.
+        expect(afterFlag).toContain('size');
+        expect(afterFlag).toContain('keys');
+        expect(labelsAt(docs, '  - narrate <player.')).not.toContain('size');
+    });
+
+    it('narrows an unknown base to ObjectTag\'s own tags rather than the full flat list', () => {
+        // GetFullComplexSetFrom({}) is {ObjectTag}, not {} (TagTracer.cs:248 adds
+        // ObjectTag unconditionally), so the trace of an unknown root is non-empty and
+        // the narrowed branch runs. Pinned by tagTracer.test.ts's
+        // "yields exactly {ObjectTag} for a single-part unknown root".
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <nosuchbase.')).toEqual(['as']);
+        expect(labelsAt(docs, '  - narrate <nosuchbase.', false)).toEqual([...ALL_PARTS].sort());
+    });
+
+    it('leaves base completion (componentCount 0) untouched by tracing', () => {
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <pla')).toEqual(labelsAt(docs, '  - narrate <pla', false));
+        expect(labelsAt(docs, '  - narrate <pla')).toEqual(['player', 'playertag']);
     });
 });
