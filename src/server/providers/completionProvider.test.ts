@@ -560,6 +560,9 @@ function narrowingDocs(): MetaDocs {
         narrowTag('<player>', 'PlayerTag', 'Returns the linked player.'),
         narrowTag('<queue>', 'QueueTag', 'Returns the current queue.'),
         narrowTag('<script>', 'ScriptTag', 'Returns the current script container.'),
+        // Returns ObjectTag, so tracing it declines to narrow and yields EVERY object
+        // type - the all-types case the deliberate deviation below falls back on.
+        narrowTag('<definition[<name>]>', 'ObjectTag', 'A definition value.'),
         // A two-part complex base tag, i.e. docs.tags holds the key 'mybase.sub'. This
         // is the fixture stand-in for real meta's '<server.flag[...]>'.
         narrowTag('<mybase.sub>', 'PlayerTag', 'A complex base tag.'),
@@ -697,37 +700,64 @@ describe('tag completion narrowed by the traced return type', () => {
         expect(labelsAt(docs, '  - narrate <player[bob].')).toEqual([...ALL_PARTS].sort());
     });
 
-    it('never offers fewer items than the untraced list would, for any input whose trace is empty', () => {
-        // The guarantee in one assertion: an empty trace must not be read as "no
-        // candidates". Regression pin for the whole fallback branch.
+    it('never offers fewer items than the untraced list would, for any input the tracer cannot narrow', () => {
+        // The guarantee in one assertion: a trace that cannot narrow - because it is empty,
+        // or because it yielded every object type - must not be read as "no candidates".
+        // Regression pin for the whole fallback branch.
         const docs = narrowingDocs();
-        for (const text of ['  - narrate <mybase.sub.', '  - narrate <player.foo.bar.', '  - narrate <player[bob].']) {
-            expect(labelsAt(docs, text).length).toBe(labelsAt(docs, text, false).length);
+        for (const text of ['  - narrate <mybase.sub.', '  - narrate <player.foo.bar.', '  - narrate <player[bob].',
+                            '  - narrate <player.flag[x].', '  - narrate <[mydef].']) {
+            expect(labelsAt(docs, text)).toEqual(labelsAt(docs, text, false));
             expect(labelsAt(docs, text).length).toBe(ALL_PARTS.length);
         }
     });
 
-    // ---- Cases where the brief's stated expectation and the ported C# semantics
-    // disagree. See the Task 4 report; these pin what the port actually does, derived by
-    // hand from TagTracer's behaviour, and both were cross-checked against tagTracer.test.ts.
-    it('does not narrow away another type\'s parts after a flag, because a flag returns ObjectTag', () => {
-        // The user-facing guarantee: a flag holding an object of some other type must not
-        // have that type's tags filtered out. traceTag('player.flag[x]') hits
-        // TagTracer.cs:126-129 (returns ObjectTag) -> every object type is possible.
-        //
-        // NOTE: the trace is NOT empty here, so this goes through the NARROWED branch,
-        // and the count therefore does not equal the untraced count: labels are whole
-        // afterDotCleaned paths ('foo.bar'), not single part bits, and dotless base tags
-        // (no baseType) never participate. What matters, and what is asserted, is that
-        // nothing is filtered away by type.
+    it('leaves the genuinely-narrowing cases untouched by the all-types fallback', () => {
+        // Regression pin: the deviation must only catch the informationless all-types set.
         const docs = narrowingDocs();
-        const afterFlag = labelsAt(docs, '  - narrate <player.flag[x].');
-        expect(afterFlag).toEqual(['as', 'flag', 'foo.bar', 'groups', 'keys', 'name', 'script', 'size', 'to_uppercase']);
-        // 'size' (ListTag) and 'keys' (MapTag) are unreachable from PlayerTag but ARE
-        // offered here - that is the flag/definition escape hatch working.
-        expect(afterFlag).toContain('size');
-        expect(afterFlag).toContain('keys');
-        expect(labelsAt(docs, '  - narrate <player.')).not.toContain('size');
+        expect(labelsAt(docs, '  - narrate <player.'))
+            .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
+        expect(labelsAt(docs, '  - narrate <queue.')).toEqual(['as', 'script']);
+        expect(labelsAt(docs, '  - narrate <player.na')).toEqual(['name']);
+        expect(labelsAt(docs, '  - narrate <nosuchbase.')).toEqual(['as']);
+    });
+
+    // ---- DELIBERATE DEVIATION from TextDocumentService.cs:531-533: a traced set holding
+    // EVERY object type carries no information, so it is treated as "the tracer does not
+    // know" and falls back to the flat list rather than being narrowed to itself. See the
+    // matching comment in completionProvider.ts for the full rationale and cost figures.
+    // This is what makes flags and definitions genuinely unnarrowed, which is the property
+    // asked for at the outset - not merely "not narrowed to a WRONG subset".
+    it('falls back to the FULL flat part list after a flag, whose ObjectTag return means every type is possible', () => {
+        // traceTag('player.flag[x]') hits TagTracer.cs:126-129 (returns ObjectTag), so
+        // possibleSubTypes is every object type - informationless, hence the fallback.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <player.flag[x].')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <player.flag[x].'))
+            .toEqual(labelsAt(docs, '  - narrate <player.flag[x].', false));
+    });
+
+    it('falls back to the FULL flat part list for a definition, for the same reason', () => {
+        // '<[mydef].' - an empty root means 'definition' (TagTracer.cs:40-43), which
+        // returns ObjectTag. Definitions are the most common construct in Denizen script,
+        // so this is the case the deviation exists for.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <[mydef].')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <[mydef].'))
+            .toEqual(labelsAt(docs, '  - narrate <[mydef].', false));
+        // Nothing is filtered away by type: 'size' (ListTag) and 'keys' (MapTag) are both
+        // unreachable from PlayerTag, yet both are offered here - the escape hatch working.
+        expect(labelsAt(docs, '  - narrate <[mydef].')).toContain('size');
+        expect(labelsAt(docs, '  - narrate <[mydef].')).toContain('keys');
+        expect(labelsAt(docs, '  - narrate <player.')).not.toContain('keys');
+    });
+
+    it('gates on the traced set matching docs.objectTypes.size, not on a hardcoded count', () => {
+        // Guards against the gate being written against a literal. The fixture has 8
+        // object types where live meta has 72; both must take the same branch.
+        const docs = narrowingDocs();
+        expect(docs.objectTypes.size).toBe(8);
+        expect(labelsAt(docs, '  - narrate <[mydef].').length).toBe(ALL_PARTS.length);
     });
 
     it('narrows an unknown base to ObjectTag\'s own tags rather than the full flat list', () => {

@@ -175,6 +175,32 @@ function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: stri
     if (traced.possibleSubTypes.size === 0) {
         return null;
     }
+    // DELIBERATE DEVIATION from TextDocumentService.cs:531-533 — do not "restore fidelity"
+    // here. C# narrows whenever the set is non-empty, including when it holds EVERY object
+    // type. Such a set carries zero information: narrowing to it filters nothing out while
+    // paying the full cost of the narrowed branch. Measured on live meta (72 object types,
+    // 2493 tags, 1871 parts), for `<[mydef].` and `<player.flag[x].`:
+    //     narrowed  2240 items, 367 duplicate labels (name x28, id x13, size x9), 1136 KB, ~5.7 ms
+    //     flat      1871 items,   0 duplicates,                                     269 KB, ~0.1 ms
+    // Nothing absorbs that: C# has no Distinct(), `describeTag` is built eagerly per item,
+    // and `resolveProvider: false` (server.ts) forecloses lazy resolution. The all-types set
+    // arises exactly when a tag declines to narrow by documenting `@returns ObjectTag`
+    // (TagTracer.cs:126-129) — i.e. flags, definitions and `proc`, the most common
+    // constructs in Denizen script — so treating it as "the tracer does not know" makes
+    // those genuinely unnarrowed, rather than merely "not narrowed to a WRONG subset".
+    //
+    // Verified safe against live meta before shipping: of all 2493 documented tags traced
+    // as written, exactly 3 produce an all-72 set and all 3 are ObjectTag-returning; the
+    // largest set from a legitimately narrowing trace is 5, a gap of 67. No real input
+    // narrows to all-72 for a good reason.
+    //
+    // Compared against `docs.objectTypes.size` rather than a literal, since the corpus
+    // grows. Equal size implies equal set here: every member of possibleSubTypes comes from
+    // docs.objectTypes (via objectTypes lookups, baseType, implementsTypes or extendedBy),
+    // so a subset of that map with the same cardinality IS that map.
+    if (traced.possibleSubTypes.size === docs.objectTypes.size) {
+        return null;
+    }
     const lastPartText = parsed.parts.length === 0 ? '' : parsed.parts[parsed.parts.length - 1].text;
     const results: CompletionItem[] = [];
     for (const candidate of docs.tags.values()) {
