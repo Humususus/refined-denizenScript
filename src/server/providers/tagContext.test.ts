@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findTagAtCursor } from './tagContext';
+import { findTagAtCursor, findTagParamAtCursor } from './tagContext';
 
 describe('findTagAtCursor', () => {
     // The most common real keystroke in this feature: the user has just typed '<' and
@@ -151,5 +151,110 @@ describe('findTagAtCursor', () => {
         expect(ctx.componentCount).toBe(0);
         expect(ctx.lastComponent).toBe('serv');
         expect(ctx.lastComponentStart).toBe(14);
+    });
+});
+
+describe('findTagParamAtCursor', () => {
+    // "<player[": pass 1 (TextDocumentService.cs:453-470) finds the only '<' at index 0
+    // unclosed, so tagSoFar = "player[" (length 7) and tagStart = argStart(0) + 1 = 1.
+    // Forward scan (TextDocumentService.cs:474-501/504-521 base-form branch): no dot is
+    // ever seen, so componentCount stays 0 (partIndex 0); '[' at tagSoFar index 6 opens
+    // an unclosed bracket, so tagName = tagSoFar.substring(0, 6) = "player", and
+    // paramSoFar = tagSoFar.substring(6 + 1) = "" (nothing after it).
+    // paramStart = tagStart(1) + 7 = 8.
+    it('locates an empty parameter right after the opening bracket', () => {
+        const ctx = findTagParamAtCursor('<player[', 0)!;
+        expect(ctx).not.toBeNull();
+        expect(ctx.tagName).toBe('player');
+        expect(ctx.partIndex).toBe(0);
+        expect(ctx.paramSoFar).toBe('');
+        expect(ctx.paramStart).toBe(8);
+    });
+
+    // "<player[bo": same as above but two more characters after '[' (indices 7-8 = "bo"),
+    // so paramSoFar = tagSoFar.substring(7) = "bo". paramStart is unchanged at
+    // tagStart(1) + 7 = 8, since the bracket itself did not move.
+    it('reports partial text typed inside the bracket', () => {
+        const ctx = findTagParamAtCursor('<player[bo', 0)!;
+        expect(ctx.tagName).toBe('player');
+        expect(ctx.partIndex).toBe(0);
+        expect(ctx.paramSoFar).toBe('bo');
+        expect(ctx.paramStart).toBe(8);
+    });
+
+    // "<player.gamemode_at[": tagSoFar = "player.gamemode_at[" (length 19: "player" is 6
+    // chars, "." 1 char at index 6, "gamemode_at" 11 chars at indices 7-17, "[" at index
+    // 18). The dot at index 6 is top-level (no brackets/tags open yet), so
+    // componentCount becomes 1 (partIndex 1) and the bracket tracker resets its
+    // "first bracket since last dot" pointer; the '[' at index 18 is then the first (and
+    // only) bracket seen since that dot, so tagName = tagSoFar.substring(0, 18) =
+    // "player.gamemode_at". Nothing follows '[', so paramSoFar = "" and
+    // paramStart = tagStart(1) + 19 = 20.
+    it('reports the tag name through a top-level dot for a part-form parameter', () => {
+        const ctx = findTagParamAtCursor('<player.gamemode_at[', 0)!;
+        expect(ctx.tagName).toBe('player.gamemode_at');
+        expect(ctx.partIndex).toBe(1);
+        expect(ctx.paramSoFar).toBe('');
+        expect(ctx.paramStart).toBe(20);
+    });
+
+    // "<player.flag[home].expiration": the '[' after "flag" opens and then closes before
+    // the cursor ("[home]"), so by the time the scan reaches the end of the string the
+    // bracket tracker is empty again — the cursor sits after the closed bracket, in
+    // ".expiration", not inside any '[...]'. TextDocumentService.cs:512-515 returns an
+    // empty completion list in exactly this situation (fullTag.Contains(']')); this
+    // locator reports it as "no parameter here" via null.
+    it('returns null when the cursor is past a closed bracket', () => {
+        expect(findTagParamAtCursor('<player.flag[home].expiration', 0)).toBeNull();
+    });
+
+    // "<player.gamemode_at[<player.location": pass 1 scans backward from the end and
+    // finds the INNER '<' (at index 20) unclosed before ever reaching the outer '<' (at
+    // index 0) — there is no '>' anywhere to close it, so unclosedGreaterThans is still 0
+    // when the scan reaches index 20. That makes tagSoFar = "player.location" (the inner
+    // tag's own text), which contains no '[' at all. This is the case the brief calls
+    // out: a naive `lastIndexOf('[')` over the whole string would find the outer
+    // tag's '[' at index 19 and wrongly report a parameter context here; the real
+    // innermost unclosed construct is the nested tag, so this must be null.
+    it('returns null when the innermost unclosed construct is a nested tag, not a parameter', () => {
+        expect(findTagParamAtCursor('<player.gamemode_at[<player.location', 0)).toBeNull();
+    });
+
+    // "<player[a][b": tagSoFar = "player[a][b" (indices: p0 l1 a2 y3 e4 r5 [6 a7 ]8 [9
+    // b10). componentCount stays 0 (no dot at all), so partIndex is 0. The first bracket
+    // "[a]" opens at index 6 and closes at index 8 (tracker empty again), then a second
+    // bracket opens at index 9 and stays open through the cursor. tagName uses the FIRST
+    // bracket seen since the last dot reset (index 6, unaffected by the first bracket
+    // having since closed): tagSoFar.substring(0, 6) = "player". paramSoFar uses the
+    // currently-OPEN bracket (index 9): tagSoFar.substring(10) = "b".
+    // paramStart = tagStart(1) + 10 = 11.
+    it('tracks a second bracket group on the same part independently of the first', () => {
+        const ctx = findTagParamAtCursor('<player[a][b', 0)!;
+        expect(ctx.tagName).toBe('player');
+        expect(ctx.partIndex).toBe(0);
+        expect(ctx.paramSoFar).toBe('b');
+        expect(ctx.paramStart).toBe(11);
+    });
+
+    // "narrate <player[" with argStart 8: pass 1 finds '<' at index 8 within argThusFar
+    // (the "narrate " prefix is 8 characters), so tagSoFar = "player[" (same text as the
+    // first test) but tagStart = argStart(8) + 9 = 17 this time — 16 more than the
+    // argStart(0) case, matching the 8-column argStart plus the 8-column "narrate " shift
+    // inside argThusFar. paramStart = tagStart(17) + 7 = 24 (also 16 more than the
+    // argStart(0) case's paramStart of 8), confirming the offset is threaded through.
+    it('accounts for argStart when the argument text has a prefix before the tag', () => {
+        const ctx = findTagParamAtCursor('narrate <player[', 8)!;
+        expect(ctx.tagName).toBe('player');
+        expect(ctx.partIndex).toBe(0);
+        expect(ctx.paramSoFar).toBe('');
+        expect(ctx.paramStart).toBe(24);
+    });
+
+    it('returns null for plain text with no tag at all', () => {
+        expect(findTagParamAtCursor('plain', 0)).toBeNull();
+    });
+
+    it('returns null when a tag has started but no bracket has opened yet', () => {
+        expect(findTagParamAtCursor('<player.', 0)).toBeNull();
     });
 });
