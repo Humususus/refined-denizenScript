@@ -168,6 +168,64 @@ Promise.all([
         }
     }
 
+    // 5b. The {ObjectTag} SENTINEL rule and, far more importantly, the conjunction that
+    // bounds it. GetFullComplexSetFrom({}) is {ObjectTag} (TagTracer.cs:248 adds it
+    // unconditionally), so "the trace reached nothing" arrives as a set of size 1 that
+    // neither the empty check nor the more-than-half gate can see. '<context.' and
+    // '<entry[x].' land there via TagTracer.cs:44-47 + :147, and used to be narrowed to
+    // ObjectTag's 15 utility tags — none of which is ever a context name.
+    //
+    // BUT every pseudo-object base reaches the SAME sentinel: '<server.', '<util.', and
+    // the third-party plugin namespaces. They are kept narrowed only by the
+    // `beforeDot === lastPartText` clause, and NO FIXTURE could have caught them
+    // regressing before this phase — the addon namespaces exist only in live meta. That
+    // is what the addon sweep below is for: it is checked against whatever addon bases
+    // the corpus actually documents at run time, so a source being added or dropped
+    // upstream cannot turn it into a false failure, while a rule that stopped honouring
+    // name matches fails it for every base at once.
+    const flatCount = playerUntraced.length;
+    for (const sentinel of ['  - narrate <context.', '  - narrate <entry[save].', '  - narrate <nosuchbase.']) {
+        const t = provideCompletions(docs, extra, sentinel, sentinel.length, 0);
+        const u = provideCompletions(docs, extra, sentinel, sentinel.length, 0, false);
+        failures += check(`${sentinel.trim()} falls back to the full flat part list ({ObjectTag} sentinel, no name match)`,
+            t.length === u.length && t.length === flatCount
+                && t.map(i => i.label).sort().join(',') === u.map(i => i.label).sort().join(','),
+            `${t.length} traced vs ${u.length} untraced (flat is ${flatCount})`);
+    }
+    const contextLocText = '  - narrate <context.loc';
+    const contextLoc = provideCompletions(docs, extra, contextLocText, contextLocText.length, 0);
+    failures += check('<context.loc offers real parts again (it matched NOTHING before the sentinel rule)',
+        contextLoc.length > 0 && contextLoc.some(i => i.label === 'location') && contextLoc.every(i => i.label.startsWith('loc')),
+        `${contextLoc.length} item(s): ${contextLoc.map(i => i.label).join(', ')}`);
+
+    // The addon-namespace half of the conjunction. Every base here traces to the same
+    // {ObjectTag} sentinel as '<context.' above; the ONLY difference is that a documented
+    // tag's beforeDot is literally the base's name.
+    const namespaceBases = ['server', 'util', 'paper', 'bungee', 'luckperms', 'towny', 'mythicmobs',
+        'essentials', 'factions', 'griefprevention', 'quests', 'viaversion', 'playerpoints',
+        'crackshot', 'skyblock', 'tern', 'schematic', 'yaml'];
+    const documentedNamespaces = namespaceBases.filter(b => [...docs.tags.values()].some(t => t.beforeDot === b && t.afterDotCleaned.length > 0));
+    const brokenNamespaces = [];
+    const namespaceCounts = [];
+    for (const base of documentedNamespaces) {
+        const text = `  - narrate <${base}.`;
+        const t = provideCompletions(docs, extra, text, text.length, 0);
+        namespaceCounts.push(`${base}=${t.length}`);
+        if (t.length === 0 || t.length >= flatCount) {
+            brokenNamespaces.push(`${base} (${t.length})`);
+        }
+    }
+    failures += check('at least 10 of the named addon/pseudo-object namespaces are documented in this corpus',
+        documentedNamespaces.length >= 10, `${documentedNamespaces.length} of ${namespaceBases.length}: ${documentedNamespaces.join(', ')}`);
+    failures += check('EVERY documented addon/pseudo-object namespace still NARROWS (the beforeDot clause is intact)',
+        brokenNamespaces.length === 0,
+        brokenNamespaces.length === 0 ? namespaceCounts.join(', ') : `FELL BACK TO FLAT: ${brokenNamespaces.join(', ')}`);
+    const serverText = '  - narrate <server.';
+    const serverTraced = provideCompletions(docs, extra, serverText, serverText.length, 0);
+    failures += check('<server. is still narrowed to a plausible count (observed 147) and contains a real server part',
+        serverTraced.length >= 50 && serverTraced.length < flatCount && serverTraced.some(i => i.label === 'has_whitelist'),
+        `${serverTraced.length} of ${flatCount}`);
+
     // 6. Regression: every non-tag-part-completion assertion from verify-phase2b4.js
     // still holds with tracing at its default (on). Tracing only ever changes the
     // completeTagNarrowed branch (componentCount > 0), so command-name completion,

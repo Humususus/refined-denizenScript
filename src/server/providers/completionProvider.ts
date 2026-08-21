@@ -148,6 +148,12 @@ export function completeKeyLineValues(extra: ExtraData, ctx: LineCursorContext, 
  * Treating those as "no candidates" would make them offer nothing at all — strictly
  * worse than the unnarrowed behaviour this replaces.
  *
+ * Two FURTHER null-returning cases are deliberate deviations from the C#, both applying
+ * that same "informationless set means the tracer does not know" reading to a set that is
+ * non-empty but says nothing: a set covering more than half the object types, and the
+ * exactly-{ObjectTag} sentinel. Each is justified in full at its own gate in the body;
+ * the second is enforced AFTER the candidate loop because it depends on the loop's result.
+ *
  * The text traced is everything before the last top-level dot (TextDocumentService.cs:
  * 523-527), derived from the cursor context rather than re-scanned: `lastComponentStart
  * - tagStart` is the offset just past that dot within `tagSoFar`, so one less drops the
@@ -177,8 +183,19 @@ function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: stri
     }
     // DELIBERATE DEVIATION from TextDocumentService.cs:531-533 — do not "restore fidelity"
     // here. THE C# HAS NO SUCH GATE: it narrows whenever the set is non-empty, however
-    // large. This port declines to narrow once the traced set covers more than HALF the
-    // known object types.
+    // large. ONE rule with three cases, all resting on the same argument — an
+    // INFORMATIONLESS traced set must be read as "the tracer does not know", so control
+    // falls through to the flat list, never as "here are your only candidates":
+    //
+    //   CASE 1 (above, C#-faithful): the set is EMPTY — tracing never reached the last part.
+    //   CASE 2 (immediately below):  the set covers MORE THAN HALF the known object types.
+    //   CASE 3 (after the loop):     the set is EXACTLY {ObjectTag} — the tracer's
+    //                                "I reached nothing" sentinel — and no candidate
+    //                                matched by NAME. See the block at the gate itself.
+    //
+    // Cases 2 and 3 are the deviations. The rest of this comment justifies case 2; case 3
+    // is justified where it is enforced, because it cannot be decided until the candidate
+    // loop has run.
     //
     // WHY a near-total set carries no information. Narrowing to it filters almost nothing
     // out, yet the narrowed branch still pays its full price, and nothing absorbs that
@@ -225,15 +242,31 @@ function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: stri
     }
     const lastPartText = parsed.parts.length === 0 ? '' : parsed.parts[parsed.parts.length - 1].text;
     const results: CompletionItem[] = [];
+    /** Did anything qualify via the NAME clause (`beforeDot === lastPartText`)? Case 3 reads this. */
+    let nameMatched = false;
     for (const candidate of docs.tags.values()) {
         const byType = candidate.baseType !== null && traced.possibleSubTypes.has(candidate.baseType);
-        if (!byType && candidate.beforeDot !== lastPartText) {
+        const byName = candidate.beforeDot === lastPartText;
+        if (!byType && !byName) {
             continue;
         }
         // Same deliberate divergence from C# as MetaTag.addTo's tagParts population: a
         // dotless tag has an empty afterDotCleaned, and an empty candidate would match
         // every prefix and insert nothing. C#'s Select would emit it; this drops it.
-        if (candidate.afterDotCleaned.length === 0 || !candidate.afterDotCleaned.startsWith(prefix)) {
+        if (candidate.afterDotCleaned.length === 0) {
+            continue;
+        }
+        // Recorded HERE — after the empty-label drop, before the typed-prefix filter — so
+        // case 3 below asks "is this a real namespace in the corpus?" and not "does what
+        // the user has typed so far happen to hit one of its tags?". Deciding it after the
+        // prefix filter would make `<server.` narrow and `<server.zzz` silently revert to
+        // the whole flat list: narrowing would flicker on and off between keystrokes on
+        // one and the same base. Pinned by completionProvider.test.ts's "decides the
+        // addon-namespace case on the corpus, not on what the user has typed so far".
+        if (byName) {
+            nameMatched = true;
+        }
+        if (!candidate.afterDotCleaned.startsWith(prefix)) {
             continue;
         }
         const textEdit: TextEdit = { range, newText: candidate.afterDotCleaned };
@@ -246,6 +279,57 @@ function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: stri
             // no need for that branch's `componentCount === 0` gate.
             documentation: describeTag(candidate)
         });
+    }
+    // CASE 3 of the deviation opened above. `getFullComplexSetFrom` adds ObjectTag
+    // unconditionally (TagTracer.cs:248), so `getFullComplexSetFrom({})` is {ObjectTag},
+    // not {} — a set of size 1 that is literally the tracer's "I reached nothing"
+    // sentinel, and which neither case 1 (size 0) nor case 2 (over half of 72) can see.
+    // Reaching it is not exotic: TagTracer.cs:110 computes exactly that whenever part 0
+    // resolved to no documented tag, which covers
+    //   - `<context.` and `<entry[x].`, routed at TagTracer.cs:44-47 into
+    //     `traceTagParts(allTypes, 2)`, which returns at :147 for a one-part tag — the
+    //     single most common construct in Denizen event scripts;
+    //   - any unresolved base (`<nosuchbase.`), which falls through :106-109 to :110.
+    // A set of {ObjectTag} narrows to ObjectTag's 15 own utility tags (advanced_matches,
+    // as, exists, if_null, object_type, prefix, proc...), none of which is ever a context
+    // name — so `<context.loc` matched NOTHING where the flat list had offered `location`.
+    // Informationless by exactly the argument case 2 rests on, and strictly worse: 15
+    // wrong items instead of many right ones.
+    //
+    // THE CONJUNCTION IS LOAD-BEARING, NOT BELT-AND-BRACES. Every pseudo-object base
+    // reaches this same sentinel — `<server.`, `<util.`, and the third-party plugin
+    // namespaces `<paper.`, `<bungee.`, `<luckperms.`, `<towny.`, `<mythicmobs.`,
+    // `<essentials.`, `<factions.`, `<griefprevention.`, `<quests.`, `<viaversion.`,
+    // `<playerpoints.`, `<crackshot.`, `<skyblock.`, `<tern.`, `<schematic.`, `<yaml.`,
+    // 84 tag bases in all on live meta. They have no object type behind them, so the ONLY
+    // thing that distinguishes them from `<context.` is that some documented tag's
+    // `beforeDot` is literally their name. Measured on live meta (2493 tags, 72 types):
+    //
+    //   input          traced set     name matches   result
+    //   <context.      {ObjectTag}    0              flat 1871  (was 15)
+    //   <entry[x].     {ObjectTag}    0              flat 1871  (was 15)
+    //   <nosuchbase.   {ObjectTag}    0              flat 1871  (was 15)
+    //   <server.       {ObjectTag}    132            narrowed 147 (unchanged)
+    //   <util.         {ObjectTag}    61             narrowed  76 (unchanged)
+    //   <luckperms.    {ObjectTag}    3              narrowed  18 (unchanged)
+    //   <paper.        {ObjectTag}    1              narrowed  16 (unchanged)
+    //
+    // Dropping `!nameMatched` deletes tag completion for all 84 at a stroke. Pinned by
+    // completionProvider.test.ts's "keeps narrowing an addon-namespace base".
+    //
+    // WHY THIS GATE IS AFTER THE LOOP while the other two are before it: the name-match
+    // count is not knowable until the candidates have been walked, and walking them twice
+    // to keep the three gates adjacent would double the per-keystroke cost of the hot
+    // path. `results` is simply discarded on the fallback.
+    //
+    // The explicit null/undefined check is not dead code: `docs.objectTagType` is null for
+    // meta that documents no ObjectTag at all (see tagTracer.ts deviation 3, which keeps
+    // the null out of the set). Without it this would be `has(null)`, always false — the
+    // same outcome, but by accident rather than by statement.
+    if (!nameMatched && traced.possibleSubTypes.size === 1
+        && docs.objectTagType !== null && docs.objectTagType !== undefined
+        && traced.possibleSubTypes.has(docs.objectTagType)) {
+        return null;
     }
     return results;
 }

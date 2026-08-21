@@ -577,7 +577,18 @@ function narrowingDocs(): MetaDocs {
         narrowTag('<MapTag.keys>', 'ListTag', 'The map keys.'),
         narrowTag('<FlaggableObject.flag[<name>]>', 'ObjectTag', 'A flag value.'),
         narrowTag('<ObjectTag.as[<type>]>', 'ObjectTag', 'A type cast.'),
-        narrowTag('<QueueTag.script>', 'ScriptTag', 'The script the queue is running.')
+        narrowTag('<QueueTag.script>', 'ScriptTag', 'The script the queue is running.'),
+        // THE ADDON-NAMESPACE SHAPE, which had no fixture before and which the
+        // {ObjectTag}-sentinel fallback must not break. 'myaddon' is not an object type
+        // and there is no dotless '<myaddon>' tag, so tracing it reaches nothing and
+        // yields the {ObjectTag} sentinel exactly as '<nosuchbase.>' does - the ONLY
+        // thing that tells the two apart is that a documented tag's `beforeDot` is
+        // literally 'myaddon'. Live meta has 84 bases of this shape (server, util,
+        // paper, bungee, luckperms, towny, mythicmobs, essentials, factions,
+        // griefprevention, quests, viaversion, playerpoints, crackshot, skyblock, tern,
+        // schematic, yaml ...); breaking them would silently delete completion for every
+        // third-party plugin namespace.
+        narrowTag('<myaddon.status>', 'ElementTag', 'An addon namespace tag.')
     ]);
     linkTypeGraph(docs);
     return docs;
@@ -585,8 +596,8 @@ function narrowingDocs(): MetaDocs {
 
 // Hand-derived from the fixture above, not read off the implementation.
 // tagParts collects every dot-separated bit after each tag's base:
-//   name, groups, foo, bar, to_uppercase, size, keys, flag, as, sub, script.
-const ALL_PARTS = ['name', 'groups', 'foo', 'bar', 'to_uppercase', 'size', 'keys', 'flag', 'as', 'sub', 'script'];
+//   name, groups, foo, bar, to_uppercase, size, keys, flag, as, sub, script, status.
+const ALL_PARTS = ['name', 'groups', 'foo', 'bar', 'to_uppercase', 'size', 'keys', 'flag', 'as', 'sub', 'script', 'status'];
 
 function labelsAt(docs: MetaDocs, text: string, trace?: boolean): string[] {
     return provideCompletions(docs, createEmptyExtraData(), text, text.length, 0, trace).map(i => i.label).sort();
@@ -708,7 +719,8 @@ describe('tag completion narrowed by the traced return type', () => {
         // Regression pin for the whole fallback branch.
         const docs = narrowingDocs();
         for (const text of ['  - narrate <mybase.sub.', '  - narrate <player.foo.bar.', '  - narrate <player[bob].',
-                            '  - narrate <player.flag[x].', '  - narrate <[mydef].', '  - narrate <player.name.']) {
+                            '  - narrate <player.flag[x].', '  - narrate <[mydef].', '  - narrate <player.name.',
+                            '  - narrate <context.', '  - narrate <entry[save].', '  - narrate <nosuchbase.']) {
             expect(labelsAt(docs, text)).toEqual(labelsAt(docs, text, false));
             expect(labelsAt(docs, text).length).toBe(ALL_PARTS.length);
         }
@@ -721,7 +733,9 @@ describe('tag completion narrowed by the traced return type', () => {
             .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
         expect(labelsAt(docs, '  - narrate <queue.')).toEqual(['as', 'script']);
         expect(labelsAt(docs, '  - narrate <player.na')).toEqual(['name']);
-        expect(labelsAt(docs, '  - narrate <nosuchbase.')).toEqual(['as']);
+        // The addon-namespace shape: {ObjectTag} sentinel, but a documented tag's
+        // beforeDot is 'myaddon', so it keeps its narrowed list.
+        expect(labelsAt(docs, '  - narrate <myaddon.')).toEqual(['as', 'status']);
     });
 
     // ---- DELIBERATE DEVIATION from TextDocumentService.cs:531-533: a traced set holding
@@ -783,7 +797,10 @@ describe('tag completion narrowed by the traced return type', () => {
         const sized = (t: string) => traceTag(docs, parseTag(t, () => { /* ignore */ })).possibleSubTypes.size;
         expect(sized('player')).toBe(4);          // exactly half -> NARROWS (boundary)
         expect(sized('queue')).toBe(2);           // well under   -> narrows
-        expect(sized('nosuchbase')).toBe(1);      // just ObjectTag -> narrows
+        expect(sized('nosuchbase')).toBe(1);      // just ObjectTag -> under the cut, so the
+                                                  // half gate lets it through; the SENTINEL
+                                                  // rule below is what makes it fall back
+        expect(sized('myaddon')).toBe(1);         // the same size 1, kept narrow by the name match
         expect(sized('player.name')).toBe(5);     // over half    -> falls back
         expect(sized('player.flag[x]')).toBe(8);  // all types    -> falls back
         expect(half).toBe(4);
@@ -792,14 +809,77 @@ describe('tag completion narrowed by the traced return type', () => {
             .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
     });
 
-    it('narrows an unknown base to ObjectTag\'s own tags rather than the full flat list', () => {
-        // GetFullComplexSetFrom({}) is {ObjectTag}, not {} (TagTracer.cs:248 adds
-        // ObjectTag unconditionally), so the trace of an unknown root is non-empty and
-        // the narrowed branch runs. Pinned by tagTracer.test.ts's
-        // "yields exactly {ObjectTag} for a single-part unknown root".
+    // ---- THIRD CASE of the same deliberate deviation: the {ObjectTag} sentinel.
+    // GetFullComplexSetFrom({}) is {ObjectTag}, not {} (TagTracer.cs:248 adds ObjectTag
+    // unconditionally), so "the trace reached nothing" arrives as a set of size 1 that
+    // neither the empty check nor the over-half gate can see. See the matching comment
+    // in completionProvider.ts. The conjunction with "no beforeDot match" is what keeps
+    // the addon-namespace bases narrowed; the two tests after these pin that half.
+    it('falls back to the FULL flat part list for <context.>, the tracer\'s reached-nothing sentinel', () => {
+        // TagTracer.cs:44-47 routes 'context' into TraceTagParts(allTypes, 2), which
+        // returns immediately at :147 because a one-part tag has nothing at index 2; :110
+        // then computes GetFullComplexSetFrom({}) = {ObjectTag}. Before this rule that
+        // narrowed <context.> to ObjectTag's own utility tags - none of which is ever a
+        // context name - and made <context.na> match nothing at all.
         const docs = narrowingDocs();
-        expect(labelsAt(docs, '  - narrate <nosuchbase.')).toEqual(['as']);
-        expect(labelsAt(docs, '  - narrate <nosuchbase.', false)).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <context.')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <context.'))
+            .toEqual(labelsAt(docs, '  - narrate <context.', false));
+        // The regression that started this: a typed prefix must find real parts again.
+        expect(labelsAt(docs, '  - narrate <context.na')).toEqual(['name']);
+    });
+
+    it('falls back to the FULL flat part list for <entry[x].>, which reaches the same sentinel', () => {
+        // 'entry' takes the same TagTracer.cs:44-47 branch as 'context'.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <entry[save].')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <entry[save].'))
+            .toEqual(labelsAt(docs, '  - narrate <entry[save].', false));
+    });
+
+    it('falls back to the FULL flat part list for an unknown base, which is the same sentinel', () => {
+        // '<nosuchbase.>' resolves to no tag and no object type, so TagTracer.cs:106-109
+        // falls through to :110 with an empty PossibleTags[0] - byte-identical to what
+        // <context.> produces. Nothing distinguishes them, so nothing should: an
+        // unresolved base means "the tracer knows nothing", not "offer 15 utility tags".
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <nosuchbase.')).toEqual([...ALL_PARTS].sort());
+        expect(labelsAt(docs, '  - narrate <nosuchbase.'))
+            .toEqual(labelsAt(docs, '  - narrate <nosuchbase.', false));
+    });
+
+    // ---- The OTHER half of the conjunction, which no fixture covered before: an addon
+    // namespace hits the exact same {ObjectTag} sentinel, and is saved ONLY by the
+    // `beforeDot === lastPartText` clause. On live meta this shape carries 84 tag bases
+    // (server 132 name-matches, util 61, yaml 10, schematic 9, luckperms/bungee/skyblock
+    // 3, towny/mythicmobs/essentials/viaversion 2, paper/factions/griefprevention/quests/
+    // playerpoints/crackshot/tern 1 ...). If the sentinel rule ever drops the conjunction,
+    // every third-party plugin namespace loses its completion at once - this test is the
+    // only thing that says so.
+    it('keeps narrowing an addon-namespace base, whose trace is the SAME {ObjectTag} sentinel', () => {
+        const docs = narrowingDocs();
+        // Same traced set as <nosuchbase.> above, to the identity of the set's contents.
+        const sized = (t: string) => traceTag(docs, parseTag(t, () => { /* ignore */ })).possibleSubTypes;
+        expect([...sized('myaddon')].map(t => t.typeName)).toEqual(['ObjectTag']);
+        expect([...sized('nosuchbase')].map(t => t.typeName)).toEqual(['ObjectTag']);
+        // Yet it must NOT fall back: 'myaddon' is a documented tag's beforeDot.
+        expect(labelsAt(docs, '  - narrate <myaddon.')).toEqual(['as', 'status']);
+        expect(labelsAt(docs, '  - narrate <myaddon.').length).toBeLessThan(ALL_PARTS.length);
+        expect(labelsAt(docs, '  - narrate <myaddon.st')).toEqual(['status']);
+    });
+
+    it('decides the addon-namespace case on the corpus, not on what the user has typed so far', () => {
+        // The name-match count is taken before the typed-prefix filter, so narrowing
+        // cannot flip to the flat list mid-word: '<myaddon.zzz' has zero prefix-surviving
+        // candidates but 'myaddon' is still a real namespace, so it stays narrowed (and
+        // therefore empty) rather than silently reverting to all 12 flat parts. A rule
+        // that counted matches after the prefix filter would return the whole flat list
+        // filtered by 'zzz' here - which happens to be empty too, so only a prefix that
+        // DOES hit flat parts can tell them apart: 'na' is 'name' in the flat set and
+        // nothing in myaddon's.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <myaddon.na')).toEqual([]);
+        expect(labelsAt(docs, '  - narrate <myaddon.na', false)).toEqual(['name']);
     });
 
     it('leaves base completion (componentCount 0) untouched by tracing', () => {

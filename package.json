@@ -317,7 +317,7 @@
                 "denizenscript.server.tagTracing": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Narrow tag completions to the tags valid for the traced return type of the preceding tag part, instead of offering every tag part that exists. Turn this off to always see the full list — useful when a tag's real runtime type differs from its documented one, such as a flag or definition holding an object of another type. Only affects the TypeScript engine."
+                    "description": "Narrow tag completions to the tags valid for the traced return type of the preceding tag part, instead of offering every tag part that exists. Turn this off to always see the full list — useful when a tag's real runtime type differs from its documented one, such as a flag or definition holding an object of another type. Only affects the TypeScript engine, and is read once when the server starts, so changing it requires a window reload to take effect."
                 },
                 "refinedDenizenscript.update.githubRepo": {
                     "type": "string",
