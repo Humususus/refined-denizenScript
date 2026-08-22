@@ -77,14 +77,14 @@ describe('normaliseDocParam', () => {
 describe('completeTagParam: slash options (CommandTabCompletions.cs:174-200)', () => {
     it('offers every option when nothing is typed, bolding the selected one (:187)', () => {
         expect(complete('true/false', '')).toEqual([
-            { label: 'true', detail: '**true** / false' },
-            { label: 'false', detail: 'true / **false**' }
+            { label: 'true', detail: '**true** / false', kind: 'property' },
+            { label: 'false', detail: 'true / **false**', kind: 'property' }
         ]);
     });
 
     it('filters options by what has been typed (:185)', () => {
         expect(complete('true/false', 't')).toEqual([
-            { label: 'true', detail: '**true** / false' }
+            { label: 'true', detail: '**true** / false', kind: 'property' }
         ]);
     });
 
@@ -101,15 +101,15 @@ describe('completeTagParam: slash options (CommandTabCompletions.cs:174-200)', (
 
     it('expands the <entity> option into the entity enum (:190-193)', () => {
         expect(complete('<entity>/here', '')).toEqual([
-            { label: 'zombie', detail: '**Entity Type**: zombie' },
-            { label: 'here', detail: '<entity> / **here**' }
+            { label: 'zombie', detail: '**Entity Type**: zombie', kind: 'enum' },
+            { label: 'here', detail: '<entity> / **here**', kind: 'property' }
         ]);
     });
 
     it('expands the <material> option into the material enum (:194-197)', () => {
         expect(complete('<material>/here', 'st')).toEqual([
-            { label: 'stone', detail: '**Material**: stone' },
-            { label: 'stick', detail: '**Material**: stick' }
+            { label: 'stone', detail: '**Material**: stone', kind: 'enum' },
+            { label: 'stick', detail: '**Material**: stick', kind: 'enum' }
         ]);
     });
 
@@ -125,8 +125,8 @@ describe('completeTagParam: slash options (CommandTabCompletions.cs:174-200)', (
 describe('completeTagParam: ByTag table (CommandTabCompletions.cs:80-95, :141-144)', () => {
     it('completes <material> from the material enum, filtered by the typed prefix', () => {
         expect(complete('<material>', 'st')).toEqual([
-            { label: 'stone', detail: '**Material**: stone' },
-            { label: 'stick', detail: '**Material**: stick' }
+            { label: 'stone', detail: '**Material**: stone', kind: 'enum' },
+            { label: 'stick', detail: '**Material**: stick', kind: 'enum' }
         ]);
         expect(labels(complete('<material>', 'sto'))).toEqual(['stone']);
     });
@@ -147,9 +147,9 @@ describe('completeTagParam: ByTag table (CommandTabCompletions.cs:80-95, :141-14
     });
 
     it('labels the enum in the detail, per CompleteEnum (:206)', () => {
-        expect(complete('<biome>', '')).toEqual([{ label: 'plains', detail: '**Biome**: plains' }]);
+        expect(complete('<biome>', '')).toEqual([{ label: 'plains', detail: '**Biome**: plains', kind: 'enum' }]);
         // :245 uses "Enchantment Key", not "Enchantment".
-        expect(complete('<enchantment>', '')).toEqual([{ label: 'sharpness', detail: '**Enchantment Key**: sharpness' }]);
+        expect(complete('<enchantment>', '')).toEqual([{ label: 'sharpness', detail: '**Enchantment Key**: sharpness', kind: 'enum' }]);
     });
 
     it('registers exactly the servable ByTag specs', () => {
@@ -186,7 +186,7 @@ describe('completeTagParam: mechanism-backed ByTag specs', () => {
 
     it('describes a mechanism candidate by its object and name (:368)', () => {
         expect(complete('<property-name>', 'max')).toEqual([
-            { label: 'max_health', detail: '**EntityTag Mechanism**: max_health' }
+            { label: 'max_health', detail: '**EntityTag Mechanism**: max_health', kind: 'property' }
         ]);
     });
 
@@ -217,8 +217,8 @@ describe('completeTagParam: mechanism-backed ByTag specs', () => {
 describe('completeTagParam: ;-separated key/value pairs (CommandTabCompletions.cs:145-173)', () => {
     it('offers every documented key when nothing is typed (:162-170)', () => {
         expect(complete('a=<x>;b=<y>', '')).toEqual([
-            { label: 'a', detail: '**a**=`<x>`' },
-            { label: 'b', detail: '**b**=`<y>`' }
+            { label: 'a', detail: '**a**=`<x>`', kind: 'property' },
+            { label: 'b', detail: '**b**=`<y>`', kind: 'property' }
         ]);
     });
 
@@ -232,8 +232,8 @@ describe('completeTagParam: ;-separated key/value pairs (CommandTabCompletions.c
 
     it('recurses into the matched key\'s value spec (:152-159)', () => {
         expect(complete('size=true/false;name=<x>', 'size=')).toEqual([
-            { label: 'true', detail: 'size=**true** / false' },
-            { label: 'false', detail: 'size=true / **false**' }
+            { label: 'true', detail: 'size=**true** / false', kind: 'property' },
+            { label: 'false', detail: 'size=true / **false**', kind: 'property' }
         ]);
     });
 
@@ -263,5 +263,36 @@ describe('completeTagParam: unknown specs', () => {
     it('returns an empty array rather than throwing', () => {
         expect(complete('<some_unknown_thing>', '')).toEqual([]);
         expect(complete('', '')).toEqual([]);
+    });
+});
+
+// The `kind` discriminator exists so the caller can pick the RIGHT CompletionItemKind
+// per source, which the label/detail pair alone cannot express. C# picks it at each
+// construction site and the three sites do not agree:
+//   CompleteEnum (:206)          -> CompletionItemKind.Enum
+//   SuggestMechanisms (:211)     -> CompletionItemKind.Property
+//   CompleteForTagPiece (:134)   -> CompletionItemKind.Property
+// This module stays free of `vscode-languageserver` imports (its compiled output must
+// keep having zero require() calls), so the discriminator is a plain string union and
+// the mapping to a real CompletionItemKind lives in completionProvider.ts.
+describe('completeTagParam: candidate kind discriminator', () => {
+    it('marks enum-sourced candidates "enum" (CompleteEnum, :206)', () => {
+        expect(complete('<material>', 'sto').map(c => c.kind)).toEqual(['enum']);
+        expect(complete('<biome>', '').map(c => c.kind)).toEqual(['enum']);
+        // The two inline enum expansions inside the '/' branch (:190-197) go through the
+        // same CompleteEnum, so they are "enum" even though their siblings are not.
+        expect(complete('<entity>/here', '').map(c => c.kind)).toEqual(['enum', 'property']);
+    });
+
+    it('marks mechanism-sourced candidates "property" (SuggestMechanisms, :211)', () => {
+        expect(complete('<property-name>', 'ma').map(c => c.kind)).toEqual(['property', 'property']);
+        expect(complete('<mechanism>=<value>', 'ma').map(c => c.kind)).toEqual(['property', 'property']);
+        expect(complete('<property-map>', 'ma').map(c => c.kind)).toEqual(['property', 'property']);
+    });
+
+    it('marks option and key candidates "property" (CompleteForTagPiece, :134)', () => {
+        expect(complete('true/false', '').map(c => c.kind)).toEqual(['property', 'property']);
+        expect(complete('a=<x>;b=<y>', '').map(c => c.kind)).toEqual(['property', 'property']);
+        expect(complete('size=true/false;name=<x>', 'size=').map(c => c.kind)).toEqual(['property', 'property']);
     });
 });

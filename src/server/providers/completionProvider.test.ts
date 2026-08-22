@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { CompletionItemKind } from 'vscode-languageserver';
 import { provideCompletions, completeCommandNames, completeCommandArguments, completeTag } from './completionProvider';
-import { MetaCommand, MetaTag, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_TAG } from '../metaDocs/metaTypes';
+import { MetaCommand, MetaTag, MetaMechanism, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_TAG } from '../metaDocs/metaTypes';
 import { buildExtraData, parseFlatFds, createEmptyExtraData } from '../metaDocs/extraData';
-import { TagCursorContext } from './tagContext';
+import { TagCursorContext, findTagAtCursor } from './tagContext';
 import { buildMetaDocs } from '../metaDocs/metaDocsManager';
 import { linkTypeGraph } from '../metaDocs/metaLinker';
 import type { MetaBlock } from '../metaDocs/metaLoader';
@@ -886,5 +886,315 @@ describe('tag completion narrowed by the traced return type', () => {
         const docs = narrowingDocs();
         expect(labelsAt(docs, '  - narrate <pla')).toEqual(labelsAt(docs, '  - narrate <pla', false));
         expect(labelsAt(docs, '  - narrate <pla')).toEqual(['player', 'playertag']);
+    });
+});
+
+/**
+ * Phase 2B-6 Task 3: completion for the text INSIDE a tag's square brackets.
+ *
+ * Ports the two C# branches that serve a still-open '[':
+ *   - the base form, `<material[...`  (TextDocumentService.cs:504-521)
+ *   - the part form, `<player.gamemode_at[...` (TextDocumentService.cs:538-554)
+ *
+ * The fixture must go through `linkTypeGraph`: the branch reads `MetaTag.parsedFormat`
+ * and `MetaTag.allowsParam`, and the part form additionally runs the tracer, all of
+ * which only that pass populates. It is a FIXTURE, not a transcript of live meta —
+ * each tag's documented parameter is chosen to reach one specific branch of
+ * `completeTagParam`, which is what these tests are about.
+ */
+const PARAM_EXTRA = buildExtraData(parseFlatFds([
+    'blocks:', '- STONE', '- STONE_BRICKS',
+    'items:', '- STICK',
+    'statistics:', '- JUMP',
+    ''
+].join('\n')));
+
+function paramMech(object: string, name: string): MetaMechanism {
+    const m = new MetaMechanism();
+    m.mechObject = object;
+    m.mechName = name;
+    m.fullName = `${object}.${name}`;
+    return m;
+}
+
+function paramDocs(): MetaDocs {
+    const docs = buildMetaDocs([
+        narrowType('ObjectTag', 'none'),
+        narrowType('ElementTag', 'ObjectTag'),
+        narrowType('PlayerTag', 'ElementTag', ['@implements FlaggableObject']),
+        narrowType('FlaggableObject', 'none'),
+        narrowType('ItemTag', 'ObjectTag'),
+        narrowType('MaterialTag', 'ObjectTag'),
+        // Dotless bases, so the tracer can resolve '<player.' and '<item.'.
+        narrowTag('<player>', 'PlayerTag', 'The linked player.'),
+        narrowTag('<item>', 'ItemTag', 'The linked item.'),
+        // BASE form: a dotless base tag that itself takes a parameter, so its parameter
+        // lives on parsedFormat.parts[0] (TextDocumentService.cs:519).
+        narrowTag('<material[<material>]>', 'MaterialTag', 'A material by name.'),
+        // PART form, registered ByTag spec -> real candidates.
+        narrowTag('<PlayerTag.gamemode_at[<material>]>', 'ElementTag', 'A gamemode.'),
+        // PART form, NO documented parameter at all -> must yield nothing, not throw.
+        narrowTag('<PlayerTag.name>', 'ElementTag', 'The player name.'),
+        // PART form, documented parameter that no completer serves -> nothing. This is
+        // also the flag case; see the client-owns-flags test below.
+        narrowTag('<FlaggableObject.flag[<name>]>', 'ObjectTag', 'A flag value.'),
+        // PART form, the ';'-separated mechanism-set spec — the shape whose typed text
+        // is only PARTLY consumed by a candidate.
+        narrowTag('<ItemTag.with[<mechanism>=<value>;...]>', 'ItemTag', 'A modified item.'),
+        // A two-part BASE tag (docs.tags key 'util.random_decimal_in_range'), whose
+        // documented parameter '<#.#>' matches no completer branch.
+        narrowTag('<util.random_decimal_in_range[<#.#>]>', 'ElementTag', 'A random decimal.')
+    ]);
+    linkTypeGraph(docs);
+    // Mechanisms are keyed by cleanName ('itemtag.max_health'), i.e. by OBJECT plus name —
+    // there is no by-name index, which is why the caller cannot look a candidate back up.
+    for (const m of [paramMech('ItemTag', 'max_health'), paramMech('ItemTag', 'material'), paramMech('ItemTag', 'quantity')]) {
+        docs.mechanisms.set(m.fullName.toLowerCase(), m);
+    }
+    return docs;
+}
+
+function paramItems(docs: MetaDocs, text: string) {
+    return provideCompletions(docs, PARAM_EXTRA, text, text.length, 0);
+}
+
+describe('tag parameter completion', () => {
+    it('builds the linked fixture the expectations below assume', () => {
+        const docs = paramDocs();
+        expect([...PARAM_EXTRA.materials]).toEqual(['stone', 'stone_bricks', 'stick']);
+        // parsedFormat/allowsParam are what the branch reads; without linkTypeGraph both
+        // are null/false and every expectation below would pass vacuously.
+        const gamemodeAt = docs.tags.get('playertag.gamemode_at')!;
+        expect(gamemodeAt.allowsParam).toBe(true);
+        expect(gamemodeAt.parsedFormat!.parts.map(p => p.parameter)).toEqual([null, '<material>']);
+        const material = docs.tags.get('material')!;
+        expect(material.allowsParam).toBe(true);
+        expect(material.parsedFormat!.parts.map(p => p.parameter)).toEqual(['<material>']);
+        expect(docs.tags.get('playertag.name')!.allowsParam).toBe(false);
+        expect(docs.tags.get('itemtag.with')!.parsedFormat!.parts[1].parameter).toBe('<mechanism>=<value>;...');
+        expect(docs.tags.get('util.random_decimal_in_range')!.parsedFormat!.parts[1].parameter).toBe('<#.#>');
+    });
+
+    // WHY THE PARAMETER BRANCH MUST RUN BEFORE findTagAtCursor. A cursor inside '[...]'
+    // is also inside a tag, so the existing locator claims it — and everything it can
+    // offer is filtered by `lastComponent`, which necessarily still carries the '['
+    // (a still-open top-level bracket can only have opened after the last counted
+    // top-level dot). No entry in tagBases/tagParts contains '[' (cleanTag strips
+    // bracketed parameters), so the pre-existing branch can only ever return [] here.
+    it('is unreachable behind findTagAtCursor, which offers nothing for a cursor inside brackets', () => {
+        const docs = paramDocs();
+        const tagCtx = findTagAtCursor('<player.gamemode_at[', 12);
+        expect(tagCtx).not.toBeNull();
+        expect(tagCtx!.lastComponent).toBe('gamemode_at[');
+        expect(completeTag(docs, tagCtx!, 0)).toEqual([]);
+        expect(completeTag(docs, tagCtx!, 0, false)).toEqual([]);
+    });
+
+    it('offers the documented parameter\'s values for a tag part (the part form, :538-554)', () => {
+        // '  - narrate <player.gamemode_at[': '  - narrate ' is 12 characters (indices
+        // 0-11), '<' is index 12, so 'player.gamemode_at[' occupies indices 13-31 —
+        // p13 l14 a15 y16 e17 r18 .19 g20 a21 m22 e23 m24 o25 d26 e27 _28 a29 t30 [31.
+        // The string is 32 characters long, so the cursor sits at character 32, which is
+        // also paramStart (just past the '[') with nothing typed yet.
+        const docs = paramDocs();
+        const text = '  - narrate <player.gamemode_at[';
+        expect(text.length).toBe(32);
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['stone', 'stone_bricks', 'stick']);
+        for (const item of items) {
+            // CompleteEnum builds Enum items (CommandTabCompletions.cs:206), not Property.
+            expect(item.kind).toBe(CompletionItemKind.Enum);
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 32 }, end: { line: 0, character: 32 } },
+                newText: item.label
+            });
+        }
+        expect(String((items[0].documentation as { value: string }).value)).toBe('**Material**: stone');
+    });
+
+    it('replaces exactly the text typed inside the brackets, paramStart to cursor', () => {
+        // '  - narrate <player.gamemode_at[sto' extends the 32-character string above with
+        // 'sto' at indices 32-34, so it is 35 characters long and the cursor is at 35.
+        // paramStart is unchanged at 32, so the replaced range is exactly 'sto'.
+        const docs = paramDocs();
+        const text = '  - narrate <player.gamemode_at[sto';
+        expect(text.length).toBe(35);
+        expect(text.substring(32, 35)).toBe('sto');
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['stone', 'stone_bricks']);
+        for (const item of items) {
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 32 }, end: { line: 0, character: 35 } },
+                newText: item.label
+            });
+        }
+    });
+
+    it('puts the range on the given line in a multi-line document', () => {
+        // A leading '\n' moves the identical line to line 1; the character offsets within
+        // the line are unchanged.
+        const docs = paramDocs();
+        const text = '\n  - narrate <player.gamemode_at[sto';
+        const items = provideCompletions(docs, PARAM_EXTRA, text, text.length, 1);
+        expect(items.length).toBeGreaterThan(0);
+        for (const item of items) {
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 1, character: 32 }, end: { line: 1, character: 35 } },
+                newText: item.label
+            });
+        }
+    });
+
+    it('serves a base tag\'s own parameter from parsedFormat.parts[0] (the base form, :504-521)', () => {
+        // '  - narrate <material[': '<' is index 12, 'material' occupies indices 13-20 and
+        // '[' is index 21, so the string is 22 characters long and paramStart is 22.
+        // componentCount is 0 here — this is the branch C# reaches at :516-520, which
+        // looks the base up EXACTLY in docs.tags and reads parts[0], not the tracer.
+        const docs = paramDocs();
+        const text = '  - narrate <material[';
+        expect(text.length).toBe(22);
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['stone', 'stone_bricks', 'stick']);
+        for (const item of items) {
+            expect(item.kind).toBe(CompletionItemKind.Enum);
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 22 }, end: { line: 0, character: 22 } },
+                newText: item.label
+            });
+        }
+    });
+
+    // THE CLIENT OWNS FLAGS. `getFlagCompletionKind` (src/extension.ts:897) completes
+    // flags from the client's own workspace index, and the shared middleware returns []
+    // for exactly those contexts (src/extension.ts:59-64), so the server is never asked.
+    // Porting C#'s CompleteFlag special case (TextDocumentService.cs:542-545) would be
+    // dead code that additionally needs Phase 2D's WorkspaceTracker. This test exists so
+    // that nobody later "fixes" the gap: the server must yield NOTHING here.
+    it('yields nothing for <player.flag[ — flags are the client\'s job, not the server\'s', () => {
+        const docs = paramDocs();
+        // '  - narrate <player.flag[': '<' is index 12, 'player.flag[' occupies 13-24, so
+        // the string is 25 characters long.
+        const text = '  - narrate <player.flag[';
+        expect(text.length).toBe(25);
+        // The tag itself IS resolved — this is not an accident of the fixture failing to
+        // find it. Its documented parameter '<name>' simply has no registered completer.
+        expect(docs.tags.get('flaggableobject.flag')!.allowsParam).toBe(true);
+        expect(paramItems(docs, text)).toEqual([]);
+        expect(paramItems(docs, '  - narrate <player.flag[my_')).toEqual([]);
+    });
+
+    it('yields nothing, rather than throwing, for a tag part with no documented parameter', () => {
+        const docs = paramDocs();
+        expect(paramItems(docs, '  - narrate <player.name[')).toEqual([]);
+        expect(paramItems(docs, '  - narrate <player.name[x')).toEqual([]);
+    });
+
+    it('yields nothing for a documented parameter no completer serves (<util.random_decimal_in_range[)', () => {
+        // Derived, not observed: '<#.#>' normalises to itself (no brackets to strip and no
+        // '|...'), is not a ByTag key, contains no ';' and no '/', so CompleteGenericTagParam
+        // falls off its last branch and returns an empty list (:201).
+        const docs = paramDocs();
+        expect(paramItems(docs, '  - narrate <util.random_decimal_in_range[')).toEqual([]);
+        expect(paramItems(docs, '  - narrate <util.random_decimal_in_range[0.')).toEqual([]);
+    });
+
+    it('yields nothing for an unknown tag rather than throwing', () => {
+        const docs = paramDocs();
+        expect(paramItems(docs, '  - narrate <nosuchbase[')).toEqual([]);
+        expect(paramItems(docs, '  - narrate <player.nosuchpart[')).toEqual([]);
+    });
+
+    // Mechanism candidates are Property, not Enum (SuggestMechanisms, :211), and their
+    // documentation comes from the candidate's own `detail`, which already names the
+    // owning object type. Re-rendering through describeMech is impossible here without
+    // guessing: docs.mechanisms is keyed by object-plus-name, two object types may
+    // document the same mechanism name, and the candidate label carries a '=' suffix.
+    it('marks mechanism candidates Property and documents them from the candidate itself', () => {
+        const docs = paramDocs();
+        // '  - narrate <item.with[': '<' is index 12, 'item.with[' occupies 13-22, so the
+        // string is 23 characters long and paramStart is 23.
+        const text = '  - narrate <item.with[';
+        expect(text.length).toBe(23);
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['max_health=', 'material=', 'quantity=']);
+        for (const item of items) {
+            expect(item.kind).toBe(CompletionItemKind.Property);
+        }
+        expect(String((items[0].documentation as { value: string }).value))
+            .toBe('**ItemTag Mechanism**: max_health');
+        // Not the full DescribeMech rendering — one documentation source, never both.
+        expect(String((items[0].documentation as { value: string }).value)).not.toContain('###');
+    });
+
+    // DELIBERATE DEVIATION from the task brief's "textEdit from paramStart to the cursor":
+    // for a ';'-separated spec, a candidate extends only the text after the last ';', so a
+    // range spanning ALL of paramSoFar would delete the pairs the user already typed —
+    // accepting 'max_health=' below would turn '[display_name=hi;ma' into '[max_health='.
+    // The range therefore covers the longest suffix of paramSoFar that the candidate label
+    // extends, which IS paramStart-to-cursor for every spec that consumes the whole typed
+    // text (every case above). See the matching comment in completionProvider.ts.
+    it('replaces only the segment a candidate actually extends, not earlier ;-separated pairs', () => {
+        // '  - narrate <item.with[display_name=hi;ma': paramStart is 23 (see above), and
+        // 'display_name=hi;ma' occupies indices 23-40 —
+        // d23 i24 s25 p26 l27 a28 y29 _30 n31 a32 m33 e34 =35 h36 i37 ;38 m39 a40.
+        // The string is 41 characters long, so the cursor is at 41 and the 'ma' being
+        // completed starts at 39.
+        const docs = paramDocs();
+        const text = '  - narrate <item.with[display_name=hi;ma';
+        expect(text.length).toBe(41);
+        expect(text.substring(39, 41)).toBe('ma');
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['max_health=', 'material=']);
+        for (const item of items) {
+            expect(item.textEdit).toEqual({
+                range: { start: { line: 0, character: 39 }, end: { line: 0, character: 41 } },
+                newText: item.label
+            });
+        }
+    });
+
+    // ---- The branch must fire ONLY inside a still-open bracket.
+    it('does not fire once the bracket is closed, leaving tag-part completion in charge', () => {
+        const docs = paramDocs();
+        // '  - narrate <player.gamemode_at[stone].': the bracket is closed, so this is
+        // ordinary part completion after a dot — no material may leak in.
+        const labels = paramItems(docs, '  - narrate <player.gamemode_at[stone].').map(i => i.label);
+        expect(labels).not.toContain('stone');
+        expect(labels).not.toContain('stone_bricks');
+    });
+
+    it('does not fire when the cursor is in a tag part rather than a parameter', () => {
+        // '  - narrate <player.gamemode_a': '<' is index 12, the dot is index 19, so the
+        // component being typed starts at 20 and the string is 30 characters long.
+        const docs = paramDocs();
+        const text = '  - narrate <player.gamemode_a';
+        expect(text.length).toBe(30);
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['gamemode_at']);
+        expect(items[0].kind).toBe(CompletionItemKind.Property);
+        expect(items[0].textEdit).toEqual({
+            range: { start: { line: 0, character: 20 }, end: { line: 0, character: 30 } },
+            newText: 'gamemode_at'
+        });
+    });
+
+    it('leaves base and part completion outside brackets exactly as they were', () => {
+        // The 2B-4/2B-5 fixtures, unchanged, through the same entry point: adding the
+        // parameter branch ahead of findTagAtCursor must not perturb inputs that never
+        // reach it.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  - narrate <pla')).toEqual(['player', 'playertag']);
+        expect(labelsAt(docs, '  - narrate <player.'))
+            .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
+        expect(labelsAt(docs, '  - narrate <player.flag[x].')).toEqual([...ALL_PARTS].sort());
+    });
+
+    it('does not fire outside a tag at all, so command-argument completion still runs', () => {
+        const docs = paramDocs();
+        makeCommand('money', 'money [give/take/set] (quantity:<#.#>) (players:<player>|...)', 'Adjusts money.').addTo(docs);
+        const labels = provideCompletions(docs, PARAM_EXTRA, '  - money pla', '  - money pla'.length, 0).map(i => i.label);
+        expect(labels).toContain('players:');
+        expect(labels).not.toContain('player');
+        expect(labels).not.toContain('stone');
     });
 });

@@ -19,6 +19,20 @@ import { ExtraData } from '../metaDocs/extraData';
 import { EnumCompleter } from './argumentCompleters';
 
 /**
+ * Which C# construction site a candidate came from, and therefore which
+ * `CompletionItemKind` the caller should give it. C# picks the kind per site and the
+ * sites do not agree: `CompleteEnum` builds `CompletionItemKind.Enum` (:206) while
+ * `SuggestMechanisms` (:211) and `CompleteForTagPiece` (:134) both build
+ * `CompletionItemKind.Property`.
+ *
+ * A plain string union rather than the real enum, deliberately: this module imports
+ * nothing from `vscode-languageserver` (see the file header) and its compiled output
+ * must keep having zero `require()` calls. Mapping these two names onto the LSP enum
+ * is the caller's job — `completionProvider.ts` does it.
+ */
+export type ParamCandidateKind = 'enum' | 'property';
+
+/**
  * One suggested value for a tag parameter.
  *
  * `label` is the text to insert. `detail` is a short markdown line describing the
@@ -28,8 +42,11 @@ import { EnumCompleter } from './argumentCompleters';
  * candidates. C#'s own `detail` field is always just the label again (see the
  * `CompletionItem` constructions at :134, :206, :211), so mirroring that would carry
  * no information; this carries the descriptive text instead.
+ *
+ * `kind` records which of those three sites built the candidate; see
+ * `ParamCandidateKind`.
  */
-export interface ParamCandidate { label: string; detail: string; }
+export interface ParamCandidate { label: string; detail: string; kind: ParamCandidateKind; }
 
 /**
  * A registered handler for one exact documented parameter spec — the port of
@@ -65,7 +82,7 @@ function completeEnum(values: Set<string>, label: string | null, typed: string):
             // documentation entirely for a null key; an empty detail is this port's
             // equivalent. No ByTag registration actually passes null, but EnumCompleter
             // allows it, so the case is handled rather than assumed away.
-            results.push({ label: value, detail: label === null ? '' : `**${label}**: ${value}` });
+            results.push({ label: value, detail: label === null ? '' : `**${label}**: ${value}`, kind: 'enum' });
         }
     }
     return results;
@@ -90,7 +107,8 @@ function suggestMechanisms(docs: MetaDocs, typed: string, suffix: string): Param
         if (mechanism.mechName.startsWith(typed)) {
             results.push({
                 label: mechanism.mechName + suffix,
-                detail: `**${mechanism.mechObject} Mechanism**: ${mechanism.mechName}`
+                detail: `**${mechanism.mechObject} Mechanism**: ${mechanism.mechName}`,
+                kind: 'property'
             });
         }
     }
@@ -229,7 +247,7 @@ function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefi
                 const key = before(docPair, '=');
                 const value = after(docPair, '=');
                 if (!givenKeys.has(key) && key.startsWith(lastArg)) {
-                    results.push({ label: key, detail: `**${key}**=\`${value}\`` });
+                    results.push({ label: key, detail: `**${key}**=\`${value}\``, kind: 'property' });
                 }
             }
             return results;
@@ -249,7 +267,7 @@ function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefi
                 if (option.startsWith(typed)) {
                     // :187 — the whole option list, with the candidate bolded, behind the
                     // recursion prefix so a nested list reads as e.g. 'size=**true** / false'.
-                    results.push({ label: option, detail: prefix + parts.map(p => p === option ? `**${p}**` : p).join(' / ') });
+                    results.push({ label: option, detail: prefix + parts.map(p => p === option ? `**${p}**` : p).join(' / '), kind: 'property' });
                 }
             }
             else if (option === '<entity>') {
