@@ -15,6 +15,7 @@ const tagContext_1 = require("./tagContext");
 const argumentCompleters_1 = require("./argumentCompleters");
 const tagHelper_1 = require("./tagHelper");
 const tagTracer_1 = require("./tagTracer");
+const tagParamCompleters_1 = require("./tagParamCompleters");
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 function completeCommandNames(docs, partial) {
     const results = [];
@@ -424,6 +425,169 @@ function completeTag(docs, tag, line, trace = true) {
 }
 exports.completeTag = completeTag;
 /**
+ * `ParamCandidateKind` -> the real LSP kind. `tagParamCompleters.ts` cannot name
+ * `CompletionItemKind` itself without importing `vscode-languageserver`, which it must
+ * not (its compiled output has zero `require()` calls, and that is checked), so the
+ * mapping lives here. The two entries are the two kinds C# actually uses across the
+ * three candidate construction sites: `CompleteEnum` builds Enum items
+ * (CommandTabCompletions.cs:206) while `SuggestMechanisms` (:211) and
+ * `CompleteForTagPiece` (:134) both build Property items.
+ */
+const PARAM_CANDIDATE_KINDS = {
+    enum: vscode_languageserver_1.CompletionItemKind.Enum,
+    property: vscode_languageserver_1.CompletionItemKind.Property
+};
+/**
+ * The documented parameter spec for the bracket the cursor is inside, plus the tag it
+ * belongs to — or null when nothing documents that bracket.
+ *
+ * Two branches, exactly as C# has two:
+ *
+ *   BASE FORM (`<material[...`, no top-level dot before the bracket) —
+ *   TextDocumentService.cs:516-520. The base name is looked up EXACTLY in `docs.tags`
+ *   and the parameter read off `parsedFormat.parts[0]`.
+ *
+ *   PART FORM (`<player.gamemode_at[...`, at least one dot) —
+ *   TextDocumentService.cs:546-553. An exact `docs.tags` lookup is NOT usable here and
+ *   is not a shortcut worth trying: `docs.tags` is keyed by the tag's CLEAN name, which
+ *   starts with the owning object type (`playertag.gamemode_at`), whereas the text on
+ *   the line starts with whatever base the user wrote (`player.gamemode_at`). The two
+ *   coincide only by accident. C# therefore re-parses the tag with an empty parameter
+ *   appended, traces it, and takes the last part's matched tags — which is what the
+ *   tracer's `possibleTags` map exists to provide. `parseTag` lowercases, and every
+ *   caller path has already lowercased the line (lineContext.ts:55), so appending `[]`
+ *   to `tagName` reproduces C#'s `fullTag.BeforeLast('[').Trim() + "[]"`.
+ *
+ * `ctx.partIndex` selects the branch and is NOT used to index `parsedFormat.parts`:
+ * that index counts parts of the tag the USER typed, while `parsedFormat` describes a
+ * possibly different documented tag (`<PlayerTag.gamemode_at[...]>` has its own part 0,
+ * `playertag`, which the user never wrote). The indices actually read — `parts[0]` for
+ * the base form and the last part for the part form, both mirroring the C# — are
+ * bounds-checked anyway: a malformed `@attribute` can leave `parsedFormat` with fewer
+ * parts than expected (metaLinker.ts:101-107 guards the same way), and an uncaught
+ * throw here would kill the whole completion request rather than one candidate list.
+ */
+function findDocumentedTagParam(docs, ctx) {
+    let tag;
+    let partIndex;
+    if (ctx.partIndex === 0) {
+        // TextDocumentService.cs:516-517.
+        tag = docs.tags.get(ctx.tagName);
+        partIndex = 0;
+    }
+    else {
+        // TextDocumentService.cs:546-550.
+        const parsed = (0, tagHelper_1.parseTag)(`${ctx.tagName}[]`, () => { });
+        const traced = (0, tagTracer_1.traceTag)(docs, parsed);
+        const matched = traced.possibleTags.get(parsed.parts.length - 1);
+        // `FirstOrDefault(t => t.AllowsParam)` (:550). `possibleTags` accumulates every
+        // documented tag that matched the part, including ones that take no parameter.
+        tag = matched === undefined ? undefined : matched.find(candidate => candidate.allowsParam);
+        partIndex = -1;
+    }
+    // :517's `&& actualBase.AllowsParam`; the part form has already filtered on it.
+    if (tag === undefined || !tag.allowsParam || tag.parsedFormat === null) {
+        return null;
+    }
+    const parts = tag.parsedFormat.parts;
+    // -1 means "the last part", C#'s `Parts[^1]` (:551, :553).
+    const part = parts[partIndex === -1 ? parts.length - 1 : partIndex];
+    // :551's `Parameter is not null`, plus the bounds check the C# does without.
+    if (part === undefined || part.parameter === null) {
+        return null;
+    }
+    return { tag, docParam: part.parameter };
+}
+/**
+ * How much of `typed` the candidate `label` is extending, as a character count taken
+ * back from the cursor.
+ *
+ * `completeTagParam` filters every candidate with `X.startsWith(segment)` where
+ * `segment` is a SUFFIX of the typed text, but which suffix depends on the branch that
+ * fired, and only that module knows: the whole of it for an enum or option spec, the
+ * text after the last `;` for a mechanism set or a `;`-pair key, the text after that
+ * segment's `=` when the value spec is recursed into. Replacing all of `typed`
+ * regardless would delete work the user has already done — accepting `max_health=` for
+ * `<item.with[display_name=hi;ma` would leave `<item.with[max_health=`, silently
+ * dropping `display_name=hi`.
+ *
+ * So the segment is recovered instead of assumed: it is the longest suffix of `typed`
+ * that `label` starts with. That is exact rather than heuristic for the sources that
+ * can contain a separator ambiguity — mechanism names and enum values contain neither
+ * `;` nor `=`, so no suffix reaching across one of those boundaries can be a prefix of
+ * such a label, and the longest match is therefore the branch's own segment. For every
+ * spec that consumes the whole typed text (which is all of them without a `;` or `=`)
+ * this returns `typed.length`, i.e. exactly paramStart-to-cursor.
+ */
+function matchedSuffixLength(typed, label) {
+    for (let length = typed.length; length > 0; length--) {
+        if (label.startsWith(typed.substring(typed.length - length))) {
+            return length;
+        }
+    }
+    return 0;
+}
+/**
+ * Completions for the text inside a tag's `[...]`, as located by `findTagParamAtCursor`.
+ * Ports the two `CompleteGenericTagParam` call sites (TextDocumentService.cs:519 and
+ * :553) and the item construction their results feed (CommandTabCompletions.cs:134,
+ * :206, :211).
+ *
+ * Returns null — not an empty array — when nothing documents this bracket, so the
+ * caller can fall through to the tag branch. An empty array means "this bracket IS
+ * documented and the answer is genuinely nothing", which is what `<player.flag[` gives:
+ * its documented `<name>` matches no registered completer.
+ *
+ * THE FLAG SPECIAL CASE IS DELIBERATELY NOT PORTED. C# intercepts `flag`, `has_flag`,
+ * `flag_expiration` and `flag_map` here (TextDocumentService.cs:542-545) and answers
+ * from `CompleteFlag`. In this extension the CLIENT owns flag completion: it indexes
+ * the workspace itself (`getFlagCompletionKind`, src/extension.ts:897) and the shared
+ * middleware returns [] for exactly those contexts without ever asking the server
+ * (src/extension.ts:59-64). Porting it would be unreachable code that additionally
+ * needs Phase 2D's WorkspaceTracker. Pinned by completionProvider.test.ts's
+ * "yields nothing for <player.flag[".
+ *
+ * DOCUMENTATION COMES FROM THE CANDIDATE, NEVER FROM RE-RENDERING. `describe.ts`
+ * exports `describeMech`, and C#'s `SuggestMechanisms` does call `DescribeMech` (:211),
+ * but a candidate cannot be looked back up here: `docs.mechanisms` is keyed by object
+ * AND name (`itemtag.max_health`, MetaTypes' `MetaMechanism.addTo`), there is no
+ * by-name index, and `suggestMechanisms` deliberately emits one candidate per object
+ * type that documents a shared name. A name-only scan would attach one object type's
+ * description to another's item — confidently wrong documentation, which this file
+ * already refuses to synthesise once (see `completeTag`'s note on part documentation).
+ * The candidate's own `detail` already names the right object type, so it is the single
+ * source used. An empty `detail` means "suppress documentation entirely", mirroring
+ * `CompleteEnum`'s `key == null ? null : ...` (:206); no `ByTag` registration reaches
+ * it today, but `completeEnum` can produce it.
+ */
+function completeTagParameter(docs, extra, ctx, line) {
+    const documented = findDocumentedTagParam(docs, ctx);
+    if (documented === null) {
+        return null;
+    }
+    const candidates = (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag);
+    const cursor = ctx.paramStart + ctx.paramSoFar.length;
+    const results = [];
+    for (const candidate of candidates) {
+        const replaced = matchedSuffixLength(ctx.paramSoFar, candidate.label);
+        const range = {
+            start: { line, character: cursor - replaced },
+            end: { line, character: cursor }
+        };
+        const textEdit = { range, newText: candidate.label };
+        const item = {
+            label: candidate.label,
+            kind: PARAM_CANDIDATE_KINDS[candidate.kind],
+            textEdit
+        };
+        if (candidate.detail.length > 0) {
+            item.documentation = { kind: vscode_languageserver_1.MarkupKind.Markdown, value: candidate.detail };
+        }
+        results.push(item);
+    }
+    return results;
+}
+/**
  * Entry point: what should be offered at `offset` on `line` within `text`.
  *
  * `trace` is the `denizenscript.server.tagTracing` setting, read in server.ts. It only
@@ -449,6 +613,32 @@ function provideCompletions(docs, extra, text, offset, line, trace = true) {
     // '<...' text and the branch below is guaranteed to return nothing anyway — running
     // it would waste work to reconfirm an emptiness this branch already knows. Tag
     // completion is the only branch that can offer anything useful here.
+    // BEFORE findTagAtCursor, and that ordering is load-bearing. A cursor inside a
+    // tag's `[...]` is also inside the tag, so `findTagAtCursor` matches it too and —
+    // returning unconditionally below — would claim it first. What it would offer is
+    // nothing: it filters candidates by `lastComponent`, which in this situation always
+    // still carries the '[' (a top-level bracket can only remain open at the cursor if
+    // it opened after the last counted top-level dot, since tagContext's scan stops
+    // counting dots while a bracket is open), and no entry in `tagBases`/`tagParts`
+    // contains a '[' because `cleanTag` strips bracketed parameters before either set is
+    // built. So for every input this branch serves, the branch below returned [] — the
+    // ordering takes nothing away, it fills a hole. Pinned by completionProvider.test.ts's
+    // "is unreachable behind findTagAtCursor".
+    //
+    // C# resolves the same conflict the same way round: :504 asks whether the base
+    // contains a '[' before offering bases, and :529 asks whether the component contains
+    // a '[' before offering parts. The bracket question is decided first on both paths.
+    const paramCtx = (0, tagContext_1.findTagParamAtCursor)(ctx.argThusFar, ctx.argStart);
+    if (paramCtx !== null) {
+        const paramResults = completeTagParameter(docs, extra, paramCtx, line);
+        // Null means nothing documents this bracket (unknown tag, or one that takes no
+        // parameter). Fall through rather than returning []: the tag branch below is then
+        // free to answer, and does — with [], for the reason above — so this deliberately
+        // keeps the pre-existing behaviour byte-for-byte for every unserved input.
+        if (paramResults !== null) {
+            return paramResults;
+        }
+    }
     const tagCtx = (0, tagContext_1.findTagAtCursor)(ctx.argThusFar, ctx.argStart);
     if (tagCtx !== null) {
         return completeTag(docs, tagCtx, line, trace);
