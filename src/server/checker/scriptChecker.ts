@@ -3,7 +3,13 @@
 // It builds on the pure warning model in ./scriptWarnings.
 
 import { WarningCollector } from './scriptWarnings';
-import { basicLineFormatCheck, checkForBraces, checkForOldDefs, checkForTabs } from './lineChecks';
+import {
+    basicLineFormatCheck,
+    checkForBraces,
+    checkForColorCodes,
+    checkForOldDefs,
+    checkForTabs
+} from './lineChecks';
 
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
@@ -82,6 +88,13 @@ export class ScriptChecker extends WarningCollector {
         this.clearCommentsFromLines();
         // ScriptChecker.cs:2027-2030, in this exact order.
         basicLineFormatCheck(this);
+        // Not in the C# Run() -- this scan is inline in BasicLineFormatCheck there
+        // (ScriptChecker.cs:356-360) and was split out to fix two defects; see the DELIBERATE
+        // DEVIATION note in ./lineChecks. It runs immediately after the check it came from, so
+        // that its warnings keep the position they used to have in `minorWarnings` relative to
+        // `stray_space_eol` on the same line, and so the split stays obvious to a reader
+        // diffing this method against the C#.
+        checkForColorCodes(this);
         checkForTabs(this);
         checkForBraces(this);
         checkForOldDefs(this);

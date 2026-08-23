@@ -3,11 +3,14 @@ import { ScriptChecker } from './scriptChecker';
 import {
     basicLineFormatCheck,
     checkForBraces,
+    checkForColorCodes,
     checkForOldDefs,
     checkForTabs,
     countPreSpaces
 } from './lineChecks';
-import { ScriptWarning } from './scriptWarnings';
+// `import type`: ScriptWarning is an interface, used only in type position by the helpers
+// below, and matches the type-only import lineChecks.ts uses for ScriptChecker.
+import type { ScriptWarning } from './scriptWarnings';
 
 /**
  * Every expectation in this file was hand-derived from
@@ -20,6 +23,10 @@ import { ScriptWarning } from './scriptWarnings';
  *   - Run (call order)      :2021-2036
  * Character indices are counted by hand off the literal source strings, never read back out
  * of the implementation.
+ *
+ * ONE describe block -- `checkForColorCodes` -- asserts behaviour that deliberately DIFFERS
+ * from the C#, by user ruling during review. It is labelled as such, with both defects spelled
+ * out. Every other expectation in this file is the C#'s behaviour, warts included.
  */
 
 /** Compact shape for asserting on a warning without repeating the long message strings. */
@@ -36,6 +43,10 @@ function shapes(list: ScriptWarning[]): { line: number; key: string; start: numb
 // ---------------------------------------------------------------------------
 describe('countPreSpaces (ScriptChecker.cs:1395-1406)', () => {
     it('counts leading spaces up to the first non-space character', () => {
+        // Mutant caught: a count that does not stop at the first non-space (returns 4 for
+        // "   x"), or an off-by-one that returns the INDEX of the first non-space rather than
+        // the count of spaces before it -- the "x" case pins that, since 0 spaces and index 0
+        // only agree when the answer is 0.
         expect(countPreSpaces('   x')).toBe(3);
         expect(countPreSpaces('x')).toBe(0);
     });
@@ -83,6 +94,9 @@ describe('checkForTabs (ScriptChecker.cs:365-379)', () => {
     it('produces nothing for a tab-free document', () => {
         const checker = new ScriptChecker('- foo\n- bar');
         checkForTabs(checker);
+        // Mutant caught: a per-line test that matches whitespace generally (/\s/, or trimming
+        // and comparing lengths) rather than the literal tab character -- these two lines both
+        // contain spaces, so such a mutant would warn on line 0.
         expect(checker.warnings).toEqual([]);
     });
 
@@ -171,6 +185,9 @@ describe('checkForOldDefs (ScriptChecker.cs:403-419)', () => {
     it('leaves modern <[defname]> syntax alone', () => {
         const checker = new ScriptChecker('- narrate <[a]>');
         checkForOldDefs(checker);
+        // Mutant caught: loosening the needle from the literal "<def[" to something that also
+        // matches modern definition tags -- e.g. testing for "<[" or for "def" alone. This is
+        // the false-positive direction, and it would fire on correct, modern script.
         expect(checker.warnings).toEqual([]);
     });
 
@@ -244,54 +261,121 @@ describe('basicLineFormatCheck: stray_space_eol (ScriptChecker.cs:318-330)', () 
 });
 
 // ---------------------------------------------------------------------------
-// BasicLineFormatCheck -- color_code_misformat (ScriptChecker.cs:356-360)
+// checkForColorCodes -- DELIBERATE DEVIATION from ScriptChecker.cs:356-360.
+//
+// In the C# this scan is the tail of the BasicLineFormatCheck loop body: it reads `line`
+// (bound once at :317) but reports against `i` (which the skip `while` at :334-350 may have
+// advanced). That produced two defects, both confirmed against the faithful port before this
+// change and both fixed here by a user ruling during review:
+//   1. a symbol on a command line followed by continuations was reported on the WRONG line;
+//   2. a symbol on a CONSUMED continuation line was never reported at all.
+// The warning itself -- key, list, message, (index, index + 2) range -- is unchanged.
 // ---------------------------------------------------------------------------
-describe('basicLineFormatCheck: color_code_misformat (ScriptChecker.cs:356-360)', () => {
+describe('checkForColorCodes (deviation from ScriptChecker.cs:356-360)', () => {
     it('reports at the section symbol index with a two-character span', () => {
         // "- narrate §c": 0'-' 1' ' 2'n' 3'a' 4'r' 5'r' 6'a' 7't' 8'e' 9' ' 10'§' 11'c'.
-        // :359 -> start = 10, end = 10 + 2 = 12 (which is past the end of the 12-char line;
-        // that is what the C# writes, and clamping is the publisher's job, not this check's).
+        // start = 10, end = 10 + 2 = 12 (past the end of the 12-char line; that is what the C#
+        // writes, and clamping is the publisher's job, not this check's).
         const checker = new ScriptChecker('- narrate §c');
-        basicLineFormatCheck(checker);
+        checkForColorCodes(checker);
         // Mutant caught: end = sectionSymbol + 1 (a "one character wide" reading).
         expect(shapes(checker.minorWarnings)).toEqual([
             { line: 0, key: 'color_code_misformat', start: 10, end: 12 }
         ]);
         expect(checker.warnings).toEqual([]);
+        expect(checker.errors).toEqual([]);
     });
 
-    it('runs outside the if/else-if chain, so it fires alongside stray_space_eol on one line', () => {
-        // "§x " length 3: ends with ' ' -> stray_space_eol, scan from 2(' ') to 1('x'),
-        //   start = 1, end = Max(1, 2) = 2.
-        // Then, unconditionally, the section-symbol check: start = 0, end = 2.
-        const checker = new ScriptChecker('§x ');
-        basicLineFormatCheck(checker);
-        // Mutant caught: folding the section-symbol check into the else-if chain (:356 sits
-        // AFTER the chain closes, at the same nesting level as the `if`). Under that mutant
-        // only stray_space_eol would survive.
+    it('reports the symbol on ITS OWN line and column when the line is a command line '
+        + 'followed by continuations (defect 1: was reported on the wrong line)', () => {
+        //   lines[0] = "- narrate §c" -> '§' at 10
+        //   lines[1] = "    extra"    -> consumed by basicLineFormatCheck's skip run
+        // Corrected expectation: line 0, start 10. The pre-fix code reported line 1 col 10,
+        // where line 1 is "    extra" -- 9 characters, no section symbol anywhere in it.
+        const checker = new ScriptChecker('- narrate §c\n    extra');
+        checkForColorCodes(checker);
+        // Mutant caught: reverting to the C# shape, i.e. folding this scan back into
+        // basicLineFormatCheck's loop so it reads a `line` captured before the skip run --
+        // the warning would move to line 1.
         expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 0, key: 'stray_space_eol', start: 1, end: 2 },
+            { line: 0, key: 'color_code_misformat', start: 10, end: 12 }
+        ]);
+    });
+
+    it('reports a symbol on a CONSUMED continuation line (defect 2: was never reported)', () => {
+        //   lines[0] = "- narrate hi" -> no symbol
+        //   lines[1] = "    §c": 0' ' 1' ' 2' ' 3' ' 4'§' 5'c' -> '§' at 4, so start = 4, end = 6.
+        // Line 1 is swallowed by the skip run (4 pre-spaces > 0, not a dash), so the pre-fix
+        // code never rebound `line` to it and reported NOTHING. Verified empirically against
+        // the faithful port: minorWarnings was [].
+        const checker = new ScriptChecker('- narrate hi\n    §c');
+        checkForColorCodes(checker);
+        // Mutant caught: any implementation that scans only the lines the outer
+        // basicLineFormatCheck loop visits (i.e. that skips consumed continuation lines) --
+        // this is the exact defect the deviation exists to fix, so it is the one that must not
+        // silently come back.
+        expect(shapes(checker.minorWarnings)).toEqual([
+            { line: 1, key: 'color_code_misformat', start: 4, end: 6 }
+        ]);
+    });
+
+    it('reports once per offending line, with no break after the first', () => {
+        //   lines[0] = "§a" -> 0; lines[1] = "b"; lines[2] = " §c" -> 1.
+        const checker = new ScriptChecker('§a\nb\n §c');
+        checkForColorCodes(checker);
+        // Mutant caught: adding a `break` by false analogy with checkForTabs/Braces/OldDefs,
+        // which DO report once per document. This check does not -- it inherited
+        // BasicLineFormatCheck's per-line behaviour.
+        expect(shapes(checker.minorWarnings)).toEqual([
+            { line: 0, key: 'color_code_misformat', start: 0, end: 2 },
+            { line: 2, key: 'color_code_misformat', start: 1, end: 3 }
+        ]);
+    });
+
+    it('reports only the FIRST symbol on a line (dedup is per (line, key))', () => {
+        //   "§a§b": symbols at 0 and 2; indexOf finds 0, and WarningCollector.warn dedups the
+        //   second on (line, key) even if a mutant tried to emit it.
+        const checker = new ScriptChecker('§a§b');
+        checkForColorCodes(checker);
+        // Mutant caught: using lastIndexOf instead of indexOf -- start would be 2, not 0.
+        expect(shapes(checker.minorWarnings)).toEqual([
             { line: 0, key: 'color_code_misformat', start: 0, end: 2 }
         ]);
     });
 
-    it('reports at the POST-skip line index while reading the PRE-skip line text (C# quirk)', () => {
-        // ScriptChecker.cs:317 binds `line` once at the top of the loop body, but :356-359
-        // runs after the continuation `while` at :334-350 has already advanced `i`. So the
-        // character index comes from the dash line while the reported line number is the last
-        // continuation line. Ported as written.
-        //   lines[0] = "- narrate §c"  -> '§' at 10
-        //   lines[1] = "    extra"          -> 4 pre-spaces > 0, not "- " -> i becomes 1
-        const checker = new ScriptChecker('- narrate §c\n    extra');
+    it('short-circuits on fullOriginalScript, not on the line array', () => {
+        const checker = new ScriptChecker('- narrate §c');
+        checker.fullOriginalScript = '- narrate c';
+        checkForColorCodes(checker);
+        // Mutant caught: dropping the whole-document guard. The guard is why hoisting this into
+        // its own pass did not add a per-keystroke full-document scan to clean files.
+        expect(checker.minorWarnings).toEqual([]);
+    });
+
+    it('is NOT emitted by basicLineFormatCheck any more (the scan was hoisted out)', () => {
+        const checker = new ScriptChecker('- narrate §c');
         basicLineFormatCheck(checker);
-        // Mutant caught (a): failing to advance the shared loop index -- the warning would land
-        //   on line 0 AND line 1 would additionally raise useless_invalid_line.
-        // Mutant caught (b): re-reading lines[i] for the section check instead of the captured
-        //   `line` -- lines[1] has no section symbol, so nothing at all would be reported.
-        expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 1, key: 'color_code_misformat', start: 10, end: 12 }
-        ]);
+        // Mutant caught: leaving the original inline scan in place while ALSO adding the new
+        // pass -- run() would then emit the warning twice, once on the right line and once on
+        // the wrong one. Per-list dedup on (line, key) would not merge them, because the whole
+        // point of defect 1 is that the two land on DIFFERENT lines.
+        expect(checker.minorWarnings).toEqual([]);
         expect(checker.warnings).toEqual([]);
+    });
+
+    it('fires alongside stray_space_eol on one line, in that order, via run()', () => {
+        // "§x " length 3: basicLineFormatCheck sees it end with ' ' -> stray_space_eol, scan
+        //   from 2(' ') to 1('x'): start = 1, end = Max(1, 2) = 2.
+        // checkForColorCodes then adds the symbol warning: start = 0, end = 2.
+        const checker = new ScriptChecker('§x ');
+        checker.run();
+        // Mutant caught: ordering checkForColorCodes BEFORE basicLineFormatCheck in run(), which
+        // would swap these two entries. Both land on minorWarnings at the same line with
+        // different keys, so insertion order is the only thing that distinguishes them.
+        expect(shapes(checker.minorWarnings)).toEqual([
+            { line: 0, key: 'stray_space_eol', start: 1, end: 2 },
+            { line: 0, key: 'color_code_misformat', start: 0, end: 2 }
+        ]);
     });
 });
 
@@ -458,7 +542,7 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
         expect(shapes(tabWarnings)).toEqual([{ line: 1, key: 'raw_tab_symbol', start: 5, end: 5 }]);
     });
 
-    it('runs all four checks, in the C# order', () => {
+    it('runs all five checks, in the C# order', () => {
         // lines[0] = "- narrate <def[a]> "  (19 chars, trailing space)
         //   :318 stray_space_eol -> scan from 18(' ') breaks at 17('>'); start 17, end Max(17,18)=18.
         //   "<def[" first/last occurrence both at 10.
@@ -467,26 +551,48 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
         //   start = "\tbar".indexOf('b') = 1, end = 4 - 1 = 3; tab at index 0 (first and last).
         const checker = new ScriptChecker('- narrate <def[a]> \non foo: {\n\tbar');
         checker.run();
-        // Mutant caught: reordering the four calls at :2027-2030. The `warnings` list preserves
+        // Mutant caught: reordering the calls at :2027-2030. The `warnings` list preserves
         // insertion order, so BasicLineFormatCheck's useless_invalid_line must precede
         // CheckForTabs' raw_tab_symbol, which must precede CheckForOldDefs' old_defs.
+        //
+        // LIMITATION, stated rather than papered over: this assertion CANNOT order
+        // checkForBraces against its neighbours, because brace_syntax is the only key that
+        // lands on `errors` -- swapping checkForBraces with checkForTabs or checkForOldDefs
+        // leaves every list below byte-identical. The relative order of the four C# checks has
+        // no observable effect anyway (they touch disjoint keys and never dedup against each
+        // other); the order that DOES matter is theirs against clearCommentsFromLines, which
+        // the two neighbouring tests pin for tabs and for braces respectively.
         expect(shapes(checker.warnings)).toEqual([
             { line: 2, key: 'useless_invalid_line', start: 1, end: 3 },
             { line: 2, key: 'raw_tab_symbol', start: 0, end: 0 },
             { line: 0, key: 'old_defs', start: 10, end: 10 }
         ]);
-        // Mutant caught: dropping any one of the four calls from run().
+        // Mutant caught: dropping any one of the five calls from run().
         expect(shapes(checker.errors)).toEqual([{ line: 1, key: 'brace_syntax', start: 8, end: 8 }]);
         expect(shapes(checker.minorWarnings)).toEqual([
             { line: 0, key: 'stray_space_eol', start: 17, end: 18 }
         ]);
     });
 
+    it('clears comments before checkForBraces, so a comment ending in "{" is not an error', () => {
+        // This is the ordering assertion the "all five checks" test above cannot make: it pins
+        // checkForBraces against clearCommentsFromLines, which is the only ordering constraint
+        // on it that has an observable effect.
+        //   lines[0] = "# a comment {" -> blanked by clearCommentsFromLines, so no line ends
+        //   with a brace by the time checkForBraces runs. The whole-document guard still passes,
+        //   because fullOriginalScript is never blanked.
+        const checker = new ScriptChecker('# a comment {\n- foo');
+        checker.run();
+        // Mutant caught: hoisting checkForBraces above clearCommentsFromLines in run() -- line 0
+        // would raise brace_syntax at start 12, end 12, a red error on a comment.
+        expect(checker.errors).toEqual([]);
+    });
+
     it('honours ##ignorewarning for a line check, since comments are cleared first', () => {
         const checker = new ScriptChecker('##ignorewarning raw_tab_symbol\n- foo\tbar');
         checker.run();
         // Mutant caught: bypassing WarningCollector.warn (e.g. pushing straight onto the list)
-        // in any of the four checks -- the ignore directive would stop working.
+        // in any of the five checks -- the ignore directive would stop working.
         expect(checker.warnings.filter((w) => w.warningUniqueKey === 'raw_tab_symbol')).toEqual([]);
         expect(checker.ignoredWarnings).toBe(1);
     });

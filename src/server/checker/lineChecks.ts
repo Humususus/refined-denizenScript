@@ -9,6 +9,12 @@
 // below look like bugs (see the NOTE comments). They are ported verbatim so the TS and C#
 // checkers stay diffable and produce identical diagnostics; "fixing" one here would silently
 // diverge the two implementations.
+//
+// There is exactly ONE intentional exception to that rule: `checkForColorCodes`, which is a
+// fifth function with no C# counterpart, split out of `BasicLineFormatCheck` to repair two
+// defects in the section-symbol check. It is labelled DELIBERATE DEVIATION at its definition
+// and is the only place where this port knowingly disagrees with the C#. Anything else that
+// differs is a bug in this file.
 
 // `import type` (not a plain import) is load-bearing: scriptChecker.ts imports this module for
 // real, so a value import here would close a require() cycle at runtime. ScriptChecker is only
@@ -62,7 +68,8 @@ function lastIndexOfAny(line: string, chars: string[]): number {
 
 /**
  * Checks the basic format of every line of the script, to locate stray text or useless lines.
- * Ported from ScriptChecker.cs:312-362.
+ * Ported from ScriptChecker.cs:312-362, EXCEPT the section-symbol check at :356-360, which now
+ * lives in `checkForColorCodes` (see the DELIBERATE DEVIATION note there).
  *
  * Unlike the other three checks in this file, this one has no `break`: it walks the whole
  * document and can report many times.
@@ -77,10 +84,11 @@ export function basicLineFormatCheck(checker: ScriptChecker): void {
     const cleanedLines = checker.cleanedLines;
     // ScriptChecker.cs:315
     for (let i = 0; i < lines.length; i++) {
-        // ScriptChecker.cs:317. NOTE: `line` is bound ONCE here, before the continuation `while`
-        // below may advance `i`. The section-symbol check at the bottom of this body then uses
-        // the (stale) `line` text together with the (advanced) `i` line number. See the note
-        // there; this is C# behaviour, ported as written.
+        // ScriptChecker.cs:317. `line` is bound ONCE here, before the continuation `while` below
+        // may advance `i`, so after a skip run `line` and `lines[i]` refer to different lines.
+        // That is harmless for the three branches below (they all run before the skip), but it
+        // is what broke the section-symbol check; see the DELIBERATE DEVIATION note on
+        // `checkForColorCodes`.
         const line = lines[i];
         if (line.endsWith(' ')) {
             // ScriptChecker.cs:318-330. NOTE the range: the warning STARTS at the last
@@ -150,15 +158,58 @@ export function basicLineFormatCheck(checker: ScriptChecker): void {
                 lines[i].length - 1
             );
         }
-        // ScriptChecker.cs:356-360. NOTE: this sits AFTER the if/else-if chain closes, at the
-        // same nesting level as the `if`, so it runs for every line including ones that already
-        // produced a warning above. It reads the `line` captured at :317 but reports against
-        // the possibly-advanced `i` -- so a command line containing a section symbol that is
-        // followed by continuation lines is reported at the LAST continuation line's number,
-        // with the character index taken from the command line. That is a genuine C# oddity,
-        // preserved here rather than corrected.
-        const sectionSymbol = line.indexOf(SECTION_SYMBOL);
+        // The section-symbol check that ScriptChecker.cs runs here (:356-360) has been moved out
+        // of this loop into `checkForColorCodes` below. See the DELIBERATE DEVIATION note there.
+    }
+}
+
+/**
+ * Checks for the section symbol being misused for color codes, and warns.
+ *
+ * ---------------------------------------------------------------------------
+ * DELIBERATE DEVIATION FROM ScriptChecker.cs -- NOT a porting mistake.
+ * ---------------------------------------------------------------------------
+ * In the C#, this check is not a function at all: it is the tail of the
+ * `BasicLineFormatCheck` loop body (ScriptChecker.cs:356-360). It reads `line`, which is bound
+ * once at the top of that body (:317), but reports against `i`, which the continuation-skip
+ * `while` (:334-350) may have advanced in between. That mismatch causes two distinct defects:
+ *
+ *   1. WRONG LINE. A command line containing the symbol that is followed by continuation lines
+ *      is reported at the LAST continuation line's number, with the character index taken from
+ *      the command line. For `"- narrate §c"` + `"    extra"`, the C# reports line 1 col 10 --
+ *      but line 1 is `"    extra"`, which is 9 characters long and contains no section symbol.
+ *   2. NEVER REPORTED. A symbol on a line that the skip run CONSUMES is missed entirely,
+ *      because `line` is never rebound to it. For `"- narrate hi"` + `"    §c"`, the C# reports
+ *      nothing at all. This is the more serious of the two: a real misuse goes undiagnosed.
+ *
+ * Both were verified against the faithful port before this change. Fixing them was a USER
+ * RULING during review of Phase 2C-1 Task 3, taken knowingly in preference to bug-for-bug
+ * fidelity, on the grounds that a diagnostic pointing at the wrong line is worse than no
+ * diagnostic, and a missed one defeats the check's purpose.
+ *
+ * Hoisting the scan into its own pass over `lines` fixes both halves at once -- each line is
+ * scanned as itself, so the line number and the column always agree -- and is easier to reason
+ * about than threading a captured line number through the skip loop. The whole-document guard
+ * keeps the keystroke cost where it was.
+ *
+ * Everything OBSERVABLE about an individual warning is unchanged from the C#: same key, same
+ * `minorWarnings` list, same message, same `(index, index + 2)` range. Only the line it is
+ * attached to differs, and only in the two cases above.
+ */
+export function checkForColorCodes(checker: ScriptChecker): void {
+    // Cheap whole-document guard, in the style of the three checks below (e.g. :367, :386,
+    // :405). The C# has no equivalent because this scan was inline in a loop that runs anyway;
+    // adding one keeps a clean document as cheap as it was before the hoist.
+    if (!checker.fullOriginalScript.includes(SECTION_SYMBOL)) {
+        return;
+    }
+    // No `break`: like the rest of BasicLineFormatCheck, and unlike the tabs/braces/old-defs
+    // checks, this reports once per offending line rather than once per document.
+    for (let i = 0; i < checker.lines.length; i++) {
+        // ScriptChecker.cs:356 -- but reading lines[i], the line actually being reported on.
+        const sectionSymbol = checker.lines[i].indexOf(SECTION_SYMBOL);
         if (sectionSymbol !== -1) {
+            // ScriptChecker.cs:357-360, range unchanged.
             checker.warn(
                 checker.minorWarnings,
                 i,
