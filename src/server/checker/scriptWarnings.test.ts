@@ -58,6 +58,24 @@ describe('WarningCollector.warn', () => {
         expect(collector.ignoredWarnings).toBe(3);
     });
 
+    it('checks the ignore list before the dedup scan, not after', () => {
+        // This is only observable when the target list already holds a matching (line, key)
+        // entry at the time the now-ignored key is warned again. If the dedup scan ran first
+        // (ScriptChecker.cs:162-168 before :157-161), it would find that entry and return
+        // before ever consulting ignoredWarningTypes, so ignoredWarnings would stay 0 instead
+        // of incrementing.
+        const collector = new WarningCollector();
+        collector.warn(collector.warnings, 5, 'later.ignored', 'first message', 0, 1);
+        expect(collector.warnings).toHaveLength(1);
+
+        collector.ignoredWarningTypes.add('later.ignored');
+        collector.warn(collector.warnings, 5, 'later.ignored', 'second message', 2, 3);
+
+        expect(collector.ignoredWarnings).toBe(1);
+        expect(collector.warnings).toHaveLength(1);
+        expect(collector.warnings[0].customMessageForm).toBe('first message');
+    });
+
     it('dedups per-list: the same line+key in errors and warnings yields one in each', () => {
         const collector = new WarningCollector();
         collector.warn(collector.errors, 4, 'shared.key', 'error msg', 0, 1);
