@@ -64,6 +64,22 @@ function findInnermostUnclosedTag(argThusFar, argStart) {
  * clean tag name even when a later bracket group is the one still open (e.g.
  * "player[a][b": the clean name is "player", using the first bracket, while the still-open
  * bracket used for the parameter itself is the second).
+ *
+ * THAT LAST CASE IS A DELIBERATE DIVERGENCE FROM THE C#, and the better behaviour.
+ * TextDocumentService.cs:512 bails out of the whole base-form branch — `return new
+ * CompletionList([])` — the moment the tag text contains ANY ']', which it checks before
+ * splitting the base off at :516. So C# offers nothing at all for "<player[a][b", purely
+ * because an earlier bracket group happens to have closed. Tracking the bracket groups
+ * properly costs nothing here (the forward scan already has to balance them to count
+ * top-level dots) and answers the question the user is actually asking, so this port
+ * serves the still-open bracket instead of discarding the input.
+ *
+ * Recorded as a divergence rather than a bug on either side: "<player[a][b" is not valid
+ * Denizen — a tag base takes at most one parameter — so no correct script reaches it, and
+ * C#'s early bail is a reasonable way to spend nothing on malformed input. The extra
+ * candidates offered here are harmless (they are exactly what the second bracket's
+ * documented parameter allows), and no behaviour that matters depends on which side is
+ * copied. Measured in this phase's review: 159 items where C# gives 0.
  */
 function scanTagComponents(tagSoFar) {
     let componentCount = 0;

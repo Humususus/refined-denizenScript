@@ -428,14 +428,16 @@ exports.completeTag = completeTag;
  * `ParamCandidateKind` -> the real LSP kind. `tagParamCompleters.ts` cannot name
  * `CompletionItemKind` itself without importing `vscode-languageserver`, which it must
  * not (its compiled output has zero `require()` calls, and that is checked), so the
- * mapping lives here. The two entries are the two kinds C# actually uses across the
- * three candidate construction sites: `CompleteEnum` builds Enum items
- * (CommandTabCompletions.cs:206) while `SuggestMechanisms` (:211) and
- * `CompleteForTagPiece` (:134) both build Property items.
+ * mapping lives here. Three construction sites collapse onto the two kinds C# actually
+ * uses: `CompleteEnum` builds Enum items (CommandTabCompletions.cs:206) while
+ * `SuggestMechanisms` (:211) and `CompleteForTagPiece` (:134) both build Property items.
+ * The sites stay distinct on the way here anyway, because they do NOT agree on
+ * documentation — see `tagPieceDocumentation`.
  */
 const PARAM_CANDIDATE_KINDS = {
     enum: vscode_languageserver_1.CompletionItemKind.Enum,
-    property: vscode_languageserver_1.CompletionItemKind.Property
+    mechanism: vscode_languageserver_1.CompletionItemKind.Property,
+    tagPiece: vscode_languageserver_1.CompletionItemKind.Property
 };
 /**
  * The documented parameter spec for the bracket the cursor is inside, plus the tag it
@@ -528,6 +530,38 @@ function matchedSuffixLength(typed, label) {
     return 0;
 }
 /**
+ * `CompleteForTagPiece`'s documentation envelope (CommandTabCompletions.cs:131-135).
+ *
+ * C# :133 is one interpolated string:
+ *
+ *     $"### Tag {DescriptionClean(tag.Name.BeforeLast('[') + "[...]>")}\n{LinkMeta(tag)}
+ *       \n\n**Input option**: {inputData}\n\n{ObligatoryText(tag)}"
+ *
+ * and it is assembled here from `describe.ts`'s existing helpers rather than re-spelled:
+ * `descriptionClean`, `linkMeta` and `obligatoryText` are the direct ports of the three
+ * C# functions this line calls, already used by `describeTag` for the same tag object.
+ * The result is deliberately shaped like `describeTag`'s output — same `### Tag` heading,
+ * same meta link, same obligatory tail — with the `Returns:`/description body swapped for
+ * the "input option" line, exactly as C# does.
+ *
+ * The heading shows the tag's own name with its parameter elided: `BeforeLast('[')`
+ * cuts at the LAST '[', so `<ViveCraftPlayerTag.position[head/left/right]>` becomes
+ * `<ViveCraftPlayerTag.position[...]>`. FreneticExtensions' `BeforeLast` returns the
+ * whole string when the character is absent, which the `lastIndexOf` guard below
+ * reproduces — unreachable on this path (a tag reaching it always has a documented
+ * parameter, hence a '[') but the C# is total here and so is this.
+ *
+ * Only `tagPiece` candidates get this. `CompleteEnum` (:206) and `SuggestMechanisms`
+ * (:211) build their own documentation from their own sites and never see the envelope;
+ * wrapping them would invent a C# construction that does not exist.
+ */
+function tagPieceDocumentation(tag, inputData) {
+    const bracket = tag.name.lastIndexOf('[');
+    const elided = (bracket === -1 ? tag.name : tag.name.substring(0, bracket)) + '[...]>';
+    return `### Tag ${(0, describe_1.descriptionClean)(elided)}\n${(0, describe_1.linkMeta)(tag)}\n\n`
+        + `**Input option**: ${inputData}\n\n${(0, describe_1.obligatoryText)(tag)}`;
+}
+/**
  * Completions for the text inside a tag's `[...]`, as located by `findTagParamAtCursor`.
  * Ports the two `CompleteGenericTagParam` call sites (TextDocumentService.cs:519 and
  * :553) and the item construction their results feed (CommandTabCompletions.cs:134,
@@ -547,10 +581,17 @@ function matchedSuffixLength(typed, label) {
  * needs Phase 2D's WorkspaceTracker. Pinned by completionProvider.test.ts's
  * "yields nothing for <player.flag[".
  *
- * DOCUMENTATION COMES FROM THE CANDIDATE, NEVER FROM RE-RENDERING. `describe.ts`
- * exports `describeMech`, and C#'s `SuggestMechanisms` does call `DescribeMech` (:211),
- * but a candidate cannot be looked back up here: `docs.mechanisms` is keyed by object
- * AND name (`itemtag.max_health`, MetaTypes' `MetaMechanism.addTo`), there is no
+ * DOCUMENTATION IS PER CONSTRUCTION SITE, because C# picks it per construction site.
+ * `tagPiece` candidates (`CompleteForTagPiece`, :131-135) are wrapped in the tag
+ * envelope — see `tagPieceDocumentation`; the tag it needs is `documented.tag`, the same
+ * object C# passes. `enum` candidates keep the bare `**{key}**: {value}` that
+ * `CompleteEnum` (:206) emits, unwrapped, because that IS the whole of C#'s markup there.
+ * `mechanism` candidates keep their `detail` for the reason below.
+ *
+ * MECHANISM DOCUMENTATION COMES FROM THE CANDIDATE, NEVER FROM RE-RENDERING.
+ * `describe.ts` exports `describeMech`, and C#'s `SuggestMechanisms` does call
+ * `DescribeMech` (:211), but a candidate cannot be looked back up here:
+ * `docs.mechanisms` is keyed by object AND name (`itemtag.max_health`, MetaTypes' `MetaMechanism.addTo`), there is no
  * by-name index, and `suggestMechanisms` deliberately emits one candidate per object
  * type that documents a shared name. A name-only scan would attach one object type's
  * description to another's item — confidently wrong documentation, which this file
@@ -581,7 +622,12 @@ function completeTagParameter(docs, extra, ctx, line) {
             textEdit
         };
         if (candidate.detail.length > 0) {
-            item.documentation = { kind: vscode_languageserver_1.MarkupKind.Markdown, value: candidate.detail };
+            item.documentation = {
+                kind: vscode_languageserver_1.MarkupKind.Markdown,
+                value: candidate.kind === 'tagPiece'
+                    ? tagPieceDocumentation(documented.tag, candidate.detail)
+                    : candidate.detail
+            };
         }
         results.push(item);
     }
@@ -590,8 +636,17 @@ function completeTagParameter(docs, extra, ctx, line) {
 /**
  * Entry point: what should be offered at `offset` on `line` within `text`.
  *
- * `trace` is the `denizenscript.server.tagTracing` setting, read in server.ts. It only
- * reaches `completeTag`; every other branch is unaffected by it.
+ * `trace` is the `denizenscript.server.tagTracing` setting, read in server.ts. It is
+ * forwarded to `completeTag` and to nothing else: it governs whether tag-PART completion
+ * narrows its candidate list by the traced return type, and that is the only place the
+ * user's answer is honoured.
+ *
+ * It is NOT a global "may the tracer run" switch, and the parameter branch shows why:
+ * `findDocumentedTagParam` calls `traceTag` unconditionally (see its PART FORM note),
+ * because there tracing is how the documented tag is RESOLVED at all — turning it off
+ * would not widen the results, it would delete them. Same for `completeKeyLineValues`
+ * and the command branches, which never resolve a tag in the first place. So the setting
+ * changes exactly one behaviour, while the tracer itself may still run regardless.
  */
 function provideCompletions(docs, extra, text, offset, line, trace = true) {
     const ctx = (0, cursorContext_1.parseCursorContext)(text, offset);
@@ -613,7 +668,12 @@ function provideCompletions(docs, extra, text, offset, line, trace = true) {
     // '<...' text and the branch below is guaranteed to return nothing anyway — running
     // it would waste work to reconfirm an emptiness this branch already knows. Tag
     // completion is the only branch that can offer anything useful here.
-    // BEFORE findTagAtCursor, and that ordering is load-bearing. A cursor inside a
+    //
+    // ("the branch below" above means the argument-name/enum branch at the end of this
+    // function — the one both tag branches jump over. The separate note below is about
+    // the tag-PART branch immediately following, which is a different "below".)
+    // SECOND ORDERING QUESTION, unrelated to the first: the parameter branch runs BEFORE
+    // findTagAtCursor, and that ordering is load-bearing. A cursor inside a
     // tag's `[...]` is also inside the tag, so `findTagAtCursor` matches it too and —
     // returning unconditionally below — would claim it first. What it would offer is
     // nothing: it filters candidates by `lastComponent`, which in this situation always
@@ -621,8 +681,9 @@ function provideCompletions(docs, extra, text, offset, line, trace = true) {
     // it opened after the last counted top-level dot, since tagContext's scan stops
     // counting dots while a bracket is open), and no entry in `tagBases`/`tagParts`
     // contains a '[' because `cleanTag` strips bracketed parameters before either set is
-    // built. So for every input this branch serves, the branch below returned [] — the
-    // ordering takes nothing away, it fills a hole. Pinned by completionProvider.test.ts's
+    // built. So for every input the parameter branch serves, the tag-part branch returned
+    // [] — the ordering takes nothing away, it fills a hole. Verified across 65,241 real
+    // inputs in this phase's final review, not just argued. Pinned by completionProvider.test.ts's
     // "is unreachable behind findTagAtCursor".
     //
     // C# resolves the same conflict the same way round: :504 asks whether the base
@@ -632,7 +693,7 @@ function provideCompletions(docs, extra, text, offset, line, trace = true) {
     if (paramCtx !== null) {
         const paramResults = completeTagParameter(docs, extra, paramCtx, line);
         // Null means nothing documents this bracket (unknown tag, or one that takes no
-        // parameter). Fall through rather than returning []: the tag branch below is then
+        // parameter). Fall through rather than returning []: the tag-part branch is then
         // free to answer, and does — with [], for the reason above — so this deliberately
         // keeps the pre-existing behaviour byte-for-byte for every unserved input.
         if (paramResults !== null) {

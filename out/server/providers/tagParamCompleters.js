@@ -65,7 +65,7 @@ function suggestMechanisms(docs, typed, suffix) {
             results.push({
                 label: mechanism.mechName + suffix,
                 detail: `**${mechanism.mechObject} Mechanism**: ${mechanism.mechName}`,
-                kind: 'property'
+                kind: 'mechanism'
             });
         }
     }
@@ -97,11 +97,14 @@ function registerEnum(map, spec, completer) {
 function buildTagParamCompleters() {
     const map = new Map();
     // --- ExtraData-backed entries (CommandTabCompletions.cs:82-90) ---
-    // The C# handlers for <item>, <entity_type>, <enchantment> and <inventory> each
-    // concatenate CompleteEnum with SuggestScriptByType (:241-270), so those four also
-    // suggest matching workspace script containers. Only the enum half is ported here;
-    // the script half needs WorkspaceTracker and arrives with Phase 2D, at which point
-    // these entries gain a second source rather than being replaced.
+    // The C# handlers for <item>, <entity_type> and <enchantment> each concatenate
+    // CompleteEnum with SuggestScriptByType (:241-270), so those three also suggest
+    // matching workspace script containers. Only the enum half is ported here; the script
+    // half needs WorkspaceTracker and arrives with Phase 2D, at which point these entries
+    // gain another source rather than being replaced. <item> gains TWO: SuggestItem
+    // (:261-267) concatenates the item enum with SuggestScriptByType for BOTH the "item"
+    // and "book" script types. (C#'s <inventory> handler has the same enum+script shape
+    // but is not registered here at all -- see "Deliberately not registered" below.)
     registerEnum(map, '<material>', { prefix: '', label: 'Material', values: d => d.materials });
     registerEnum(map, '<item>', { prefix: '', label: 'Item', values: d => d.items });
     registerEnum(map, '<statistic>', { prefix: '', label: 'Statistic', values: d => d.statistics });
@@ -198,7 +201,7 @@ function completeParam(docs, extra, docParam, prefix, typed, tag) {
                 const key = before(docPair, '=');
                 const value = after(docPair, '=');
                 if (!givenKeys.has(key) && key.startsWith(lastArg)) {
-                    results.push({ label: key, detail: `**${key}**=\`${value}\``, kind: 'property' });
+                    results.push({ label: key, detail: `**${key}**=\`${value}\``, kind: 'tagPiece' });
                 }
             }
             return results;
@@ -218,7 +221,7 @@ function completeParam(docs, extra, docParam, prefix, typed, tag) {
                 if (option.startsWith(typed)) {
                     // :187 — the whole option list, with the candidate bolded, behind the
                     // recursion prefix so a nested list reads as e.g. 'size=**true** / false'.
-                    results.push({ label: option, detail: prefix + parts.map(p => p === option ? `**${p}**` : p).join(' / '), kind: 'property' });
+                    results.push({ label: option, detail: prefix + parts.map(p => p === option ? `**${p}**` : p).join(' / '), kind: 'tagPiece' });
                 }
             }
             else if (option === '<entity>') {
