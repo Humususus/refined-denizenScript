@@ -1484,6 +1484,45 @@ function getDialogInputKeys(document: vscode.TextDocument, position: vscode.Posi
     return isDialog ? keys : new Set<string>();
 }
 
+/**
+ * Skeletons for every script container type, keyed by the `type:` value.
+ *
+ * The type list and each skeleton's key set come from `ScriptChecker.KnownScriptTypes`
+ * (SharpDenizenTools/ScriptAnalysis/ScriptChecker.cs:22-42), which is the C# server's own
+ * authority on what a container may contain. Each skeleton carries that type's `RequiredKeys`
+ * and nothing else — a container you have to delete lines out of is worse than one you add to.
+ * A key listed in `ScriptKeys` is emitted as a command list (`key:` then `- `), one in
+ * `ListKeys` as a value list, and one in `ValueKeys` as a scalar.
+ *
+ * Types whose `RequiredKeys` is empty (custom, data, map, enchantment) get just the name and
+ * `type:` line, which is genuinely all Denizen requires of them.
+ *
+ * Placeholders are deliberately latin identifier-ish text: these are names in code, not display
+ * strings. The `dialog` entry is the exception and keeps its original Russian body text, since
+ * a dialog's strings really are shown to players.
+ */
+const CONTAINER_SNIPPETS: { type: string, detail: string, body: string }[] = [
+    // --- Denizen Core ---
+    { type: "task", detail: "Denizen task container", body: "  type: task\n  script:\n  - ${2:narrate \"hello\"}" },
+    { type: "procedure", detail: "Denizen procedure container", body: "  type: procedure\n  script:\n  - ${2:determine 1}" },
+    { type: "world", detail: "Denizen world container", body: "  type: world\n  events:\n    on ${2:player joins}:\n    - ${3:narrate \"hello\"}" },
+    { type: "custom", detail: "Denizen custom container", body: "  type: custom" },
+    { type: "data", detail: "Denizen data container", body: "  type: data" },
+    // --- Denizen-Bukkit ---
+    { type: "assignment", detail: "Denizen assignment container", body: "  type: assignment\n  actions:\n    on ${2:assignment}:\n    - ${3:narrate \"hello\"}" },
+    { type: "book", detail: "Denizen book container", body: "  type: book\n  title: ${2:My Book}\n  author: ${3:Author}\n  text:\n  - ${4:Page one.}" },
+    { type: "command", detail: "Denizen command container", body: "  type: command\n  name: ${2:mycommand}\n  description: ${3:My command.}\n  usage: /${2:mycommand}\n  script:\n  - ${4:narrate \"hello\"}" },
+    { type: "economy", detail: "Denizen economy container", body: "  type: economy\n  priority: ${2:10}\n  name single: ${3:Coin}\n  name plural: ${4:Coins}\n  digits: ${5:2}\n  format: ${6:<[amount]> <[name]>}\n  balance: ${7:<player.flag[money]>}\n  has: ${8:<player.flag[money].is_more_than[<[amount]>]>}\n  withdraw:\n  - ${9:flag player money:-:<[amount]>}\n  deposit:\n  - ${10:flag player money:+:<[amount]>}" },
+    { type: "entity", detail: "Denizen entity container", body: "  type: entity\n  entity_type: ${2:zombie}" },
+    { type: "format", detail: "Denizen format container", body: "  type: format\n  format: ${2:<[text]>}" },
+    { type: "interact", detail: "Denizen interact container", body: "  type: interact\n  steps:\n    ${2:1}:\n      ${3:click trigger}:\n        script:\n        - ${4:narrate \"hello\"}" },
+    { type: "inventory", detail: "Denizen inventory container", body: "  type: inventory\n  inventory: ${2:chest}" },
+    { type: "item", detail: "Denizen item container", body: "  type: item\n  material: ${2:stone}" },
+    { type: "map", detail: "Denizen map container", body: "  type: map" },
+    { type: "enchantment", detail: "Denizen enchantment container", body: "  type: enchantment" },
+    { type: "dialog", detail: "Denizen dialog container", body: "  type: dialog\n  base:\n    type: multi\n    title: <gray>${2:Добро пожаловать!}\n    columns: 1\n  bodies:\n    header:\n      type: message\n      message: <gray>${3:Введите отображаемое имя}\n  inputs:\n    1:\n      type: text\n      label: ${4:Имя}\n      key: ${5:display_name}\n  buttons:\n    1:\n      label: ${6:Подтвердить}\n      script:\n      - define name <context.${5:display_name}>\n      - narrate <[name]>" }
+];
+
 function getContainerSnippetCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
     const match = /^(\s*)([A-Za-z_]*)$/i.exec(linePrefix);
@@ -1491,8 +1530,10 @@ function getContainerSnippetCompletions(document: vscode.TextDocument, position:
         return [];
     }
     const range = getCompletionRange(document, position, match[2].length);
-    const dialogSnippet = "${1:my_dialog}:\n  type: dialog\n  base:\n    type: multi\n    title: <gray>${2:Добро пожаловать!}\n    columns: 1\n  bodies:\n    header:\n      type: message\n      message: <gray>${3:Введите отображаемое имя}\n  inputs:\n    1:\n      type: text\n      label: ${4:Имя}\n      key: ${5:display_name}\n  buttons:\n    1:\n      label: ${6:Подтвердить}\n      script:\n      - define name <context.${5:display_name}>\n      - narrate <[name]>";
-    return [makeSnippetCompletion("dialog", "Denizen dialog container", dialogSnippet, range)];
+    // ${1} is the container's own name, so accepting the snippet drops the cursor on the name
+    // first and tabs onward through the body.
+    return CONTAINER_SNIPPETS.map(entry =>
+        makeSnippetCompletion(entry.type, entry.detail, `\${1:my_${entry.type}}:\n${entry.body}`, range));
 }
 
 function getDenizenMEventCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
