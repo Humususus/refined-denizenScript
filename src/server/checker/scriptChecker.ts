@@ -3,13 +3,14 @@
 // It builds on the pure warning model in ./scriptWarnings.
 
 import { WarningCollector } from './scriptWarnings';
+import { basicLineFormatCheck, checkForBraces, checkForOldDefs, checkForTabs } from './lineChecks';
 
 /**
- * Checks a script's validity. Ported from ScriptChecker.cs. This task only ports line
- * preparation (the constructor, ScriptChecker.cs:137-146) and comment stripping
- * (ClearCommentsFromLines, ScriptChecker.cs:183-215). Everything else on the C# class
- * (CheckYAML, LoadInjects, container checks, the four line checks, etc.) is out of scope
- * here and lands in later tasks of this phase.
+ * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
+ * preparation (the constructor, ScriptChecker.cs:137-146), comment stripping
+ * (ClearCommentsFromLines, ScriptChecker.cs:183-215) and the four line-level checks (see
+ * ./lineChecks, ScriptChecker.cs:313-419). The rest of the C# class (CheckYAML, LoadInjects,
+ * the container checks, statistic infos) is still out of scope and lands in later tasks.
  *
  * `ScriptChecker` extends `WarningCollector` (rather than composing it) so that `errors`,
  * `warnings`, `minorWarnings`, `infos`, `ignoredWarnings`, `ignoredWarningTypes` and `warn(...)`
@@ -60,6 +61,30 @@ export class ScriptChecker extends WarningCollector {
         this.lines = script.split('\n');
         // ScriptChecker.cs:145
         this.cleanedLines = this.lines.map((s) => s.trim().toLowerCase());
+    }
+
+    /**
+     * Runs the full script check. Ported from ScriptChecker.cs:2020-2036.
+     *
+     * Only the steps that have actually been ported are called. The C# `Run()` additionally
+     * does `Meta = MetaDocs.CurrentMeta` (:2023), `CheckYAML()` (:2025), `LoadInjects()` (:2026),
+     * `GatherActualContainers()`/`ConvertContainers()`/`CheckAllContainers()` (:2031-2033),
+     * `MergeData()` (:2034) and `CollectStatisticInfos()` (:2035); those land in later tasks and
+     * will slot into the gaps below, keeping this method's relative order intact.
+     *
+     * Order matters and is not arbitrary: `clearCommentsFromLines` blanks comment lines in
+     * BOTH `lines` and `cleanedLines` first, so the four line checks never report against text
+     * inside a comment, and `##ignorewarning` directives are registered before any warning can
+     * be raised.
+     */
+    run(): void {
+        // ScriptChecker.cs:2024
+        this.clearCommentsFromLines();
+        // ScriptChecker.cs:2027-2030, in this exact order.
+        basicLineFormatCheck(this);
+        checkForTabs(this);
+        checkForBraces(this);
+        checkForOldDefs(this);
     }
 
     /**

@@ -1,0 +1,266 @@
+// The four line-level checks, ported from SharpDenizenTools' ScriptChecker.cs:313-419.
+// This module must stay dependency-free: no `vscode-languageserver` import, no I/O.
+//
+// Each check takes the `ScriptChecker` as its first argument rather than living on the class,
+// so that the class stays a data carrier and each check can be unit-tested in isolation. The
+// C# call order is reproduced by `ScriptChecker.run()` (ScriptChecker.cs:2027-2030).
+//
+// Porting rule for this file: the C# is the specification, warts included. Several behaviours
+// below look like bugs (see the NOTE comments). They are ported verbatim so the TS and C#
+// checkers stay diffable and produce identical diagnostics; "fixing" one here would silently
+// diverge the two implementations.
+
+// `import type` (not a plain import) is load-bearing: scriptChecker.ts imports this module for
+// real, so a value import here would close a require() cycle at runtime. ScriptChecker is only
+// ever used in type position below, so the type-only form erases it from the emitted JS.
+import type { ScriptChecker } from './scriptChecker';
+
+/** The section symbol (U+00A7), misused for Minecraft color codes. (ScriptChecker.cs:356) */
+const SECTION_SYMBOL = '§';
+
+/** ScriptChecker.cs:381 (`BracesChars`). */
+const BRACE_CHARS = ['{', '}'];
+
+/**
+ * Counts the number of spaces in front of a line.
+ * Ported from ScriptChecker.cs:1395-1406.
+ *
+ * NOTE: only the literal space character counts. A tab is a non-space and terminates the
+ * count immediately, which is why callers that care about tab-indented scripts pre-expand
+ * tabs themselves (see `basicLineFormatCheck`).
+ */
+export function countPreSpaces(line: string): number {
+    // ScriptChecker.cs:1397-1405
+    let spaces: number;
+    for (spaces = 0; spaces < line.length; spaces++) {
+        if (line[spaces] !== ' ') {
+            break;
+        }
+    }
+    return spaces;
+}
+
+/** C#'s `string.IndexOfAny(char[])`: the lowest index at which any of `chars` occurs, else -1. */
+function indexOfAny(line: string, chars: string[]): number {
+    for (let i = 0; i < line.length; i++) {
+        if (chars.includes(line[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** C#'s `string.LastIndexOfAny(char[])`: the highest index at which any of `chars` occurs, else -1. */
+function lastIndexOfAny(line: string, chars: string[]): number {
+    for (let i = line.length - 1; i >= 0; i--) {
+        if (chars.includes(line[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/**
+ * Checks the basic format of every line of the script, to locate stray text or useless lines.
+ * Ported from ScriptChecker.cs:312-362.
+ *
+ * Unlike the other three checks in this file, this one has no `break`: it walks the whole
+ * document and can report many times.
+ *
+ * The loop deliberately uses a `for` with an inner `while` over a SHARED index `i`
+ * (ScriptChecker.cs:334-350). The inner loop advances `i` past continuation lines so the outer
+ * loop never sees them. A `for...of`/`forEach` cannot express that, and would emit a spurious
+ * `useless_invalid_line` for every continuation line in every script.
+ */
+export function basicLineFormatCheck(checker: ScriptChecker): void {
+    const lines = checker.lines;
+    const cleanedLines = checker.cleanedLines;
+    // ScriptChecker.cs:315
+    for (let i = 0; i < lines.length; i++) {
+        // ScriptChecker.cs:317. NOTE: `line` is bound ONCE here, before the continuation `while`
+        // below may advance `i`. The section-symbol check at the bottom of this body then uses
+        // the (stale) `line` text together with the (advanced) `i` line number. See the note
+        // there; this is C# behaviour, ported as written.
+        const line = lines[i];
+        if (line.endsWith(' ')) {
+            // ScriptChecker.cs:318-330. NOTE the range: the warning STARTS at the last
+            // non-space character, not at the first stray space.
+            let endChar: number;
+            // ScriptChecker.cs:321-327
+            for (endChar = line.length - 1; endChar >= 0; endChar--) {
+                if (line[endChar] !== ' ') {
+                    break;
+                }
+            }
+            // ScriptChecker.cs:328: an all-space line runs the scan off the front to -1; clamp
+            // it so the range never starts before the line does.
+            endChar = Math.max(0, endChar);
+            checker.warn(
+                checker.minorWarnings,
+                i,
+                'stray_space_eol',
+                'Stray space after end of line (possible copy/paste mixup. Enable View->Render Whitespace in VS Code).',
+                endChar,
+                Math.max(endChar, line.length - 1)
+            );
+        } else if (cleanedLines[i].startsWith('- ') && !cleanedLines[i].endsWith(':')) {
+            // ScriptChecker.cs:331-351: a command line. Everything indented further than it,
+            // and not itself a command, is a continuation of it (a command's argument block)
+            // rather than a line of its own, so consume those lines here.
+            //
+            // NOTE the tab asymmetry between :333 and :336: the CURRENT line is measured raw,
+            // so a tab-indented command counts as 0 pre-spaces, while the NEXT line has its
+            // tabs expanded to four spaces before being measured. It looks like a bug -- the
+            // two sides of the `>` comparison are measured in different units -- but it is
+            // what the C# does, so it is what the TS does.
+            const spaces = countPreSpaces(line); // ScriptChecker.cs:333
+            while (i + 1 < lines.length) {
+                // ScriptChecker.cs:336
+                const line2 = lines[i + 1].replaceAll('\t', '    ');
+                // ScriptChecker.cs:337
+                const cleaned2 = cleanedLines[i + 1];
+                if (countPreSpaces(line2) > spaces && !cleaned2.startsWith('- ')) {
+                    // ScriptChecker.cs:340: THIS is the index mutation. Advancing the outer
+                    // loop's `i` is the whole point of this branch -- it is what stops the
+                    // consumed line from being judged as a standalone line further down.
+                    i++;
+                    // ScriptChecker.cs:341-344: a consumed line that ends with ':' opens a
+                    // sub-block, so stop the run here and hand the following line back to the
+                    // outer loop.
+                    if (cleaned2.endsWith(':')) {
+                        break;
+                    }
+                } else {
+                    // ScriptChecker.cs:346-349
+                    break;
+                }
+            }
+        } else if (cleanedLines[i].length > 0 && !cleanedLines[i].includes(':')) {
+            // ScriptChecker.cs:352-355.
+            // NOTE the start index: `Lines[i].IndexOf(CleanedLines[i][0])`. `cleanedLines` is
+            // lowercased (ScriptChecker.cs:145) while `lines` is not, and C#'s IndexOf(char) is
+            // ordinal, so a raw line whose first non-space character is uppercase searches for
+            // its own lowercase form, misses, and yields -1. Ported as written.
+            checker.warn(
+                checker.warnings,
+                i,
+                'useless_invalid_line',
+                'Useless/invalid line (possibly missing a `-` or a `:`, or just accidentally hit enter or paste).',
+                lines[i].indexOf(cleanedLines[i][0]),
+                lines[i].length - 1
+            );
+        }
+        // ScriptChecker.cs:356-360. NOTE: this sits AFTER the if/else-if chain closes, at the
+        // same nesting level as the `if`, so it runs for every line including ones that already
+        // produced a warning above. It reads the `line` captured at :317 but reports against
+        // the possibly-advanced `i` -- so a command line containing a section symbol that is
+        // followed by continuation lines is reported at the LAST continuation line's number,
+        // with the character index taken from the command line. That is a genuine C# oddity,
+        // preserved here rather than corrected.
+        const sectionSymbol = line.indexOf(SECTION_SYMBOL);
+        if (sectionSymbol !== -1) {
+            checker.warn(
+                checker.minorWarnings,
+                i,
+                'color_code_misformat',
+                "Don't use the section symbol for color codes, instead use tags: like <&c>, <red> or <&color[red]>.",
+                sectionSymbol,
+                sectionSymbol + 2
+            );
+        }
+    }
+}
+
+/**
+ * Checks if "\t" tabs are used (instead of spaces). If so, warning.
+ * Ported from ScriptChecker.cs:364-379.
+ *
+ * Reports ONCE per document (`break` at :376), on the warnings list.
+ */
+export function checkForTabs(checker: ScriptChecker): void {
+    // ScriptChecker.cs:367-370: cheap whole-document guard, tested against the ORIGINAL script
+    // text. This is what keeps the check free on a clean document -- i.e. on every keystroke in
+    // a healthy file -- so it must not be replaced by a scan of `lines`.
+    if (!checker.fullOriginalScript.includes('\t')) {
+        return;
+    }
+    // ScriptChecker.cs:371-378
+    for (let i = 0; i < checker.lines.length; i++) {
+        if (checker.lines[i].includes('\t')) {
+            checker.warn(
+                checker.warnings,
+                i,
+                'raw_tab_symbol',
+                'This script uses the raw tab symbol. Please switch these out for 2 or 4 spaces.',
+                checker.lines[i].indexOf('\t'),
+                checker.lines[i].lastIndexOf('\t')
+            );
+            break;
+        }
+    }
+}
+
+/**
+ * Checks if { braces } are used (instead of modern "colon:" syntax). If so, error.
+ * Ported from ScriptChecker.cs:383-400.
+ *
+ * Reports ONCE per document (`break` at :397), and onto the ERRORS list -- not `warnings` --
+ * because braced syntax is a hard incompatibility, not a style nit.
+ */
+export function checkForBraces(checker: ScriptChecker): void {
+    // ScriptChecker.cs:386-389. NOTE: the guard tests only for '{', while the per-line test
+    // below accepts either brace. A document whose only brace is a stray '}' is therefore never
+    // checked at all. Ported as written.
+    if (!checker.fullOriginalScript.includes('{')) {
+        return;
+    }
+    // ScriptChecker.cs:390-399
+    for (let i = 0; i < checker.lines.length; i++) {
+        if (checker.lines[i].endsWith('{') || checker.lines[i].endsWith('}')) {
+            // ScriptChecker.cs:394-395: the range spans the first brace of EITHER kind to the
+            // last brace of either kind, not just the trailing one.
+            const start = indexOfAny(checker.lines[i], BRACE_CHARS);
+            const end = lastIndexOfAny(checker.lines[i], BRACE_CHARS);
+            checker.warn(
+                checker.errors,
+                i,
+                'brace_syntax',
+                "This script uses outdated { braced } syntax. Please update to modern 'colon:' syntax. Refer to <https://guide.denizenscript.com/guides/troubleshooting/updates-since-videos.html#colon-syntax> for more info.",
+                start,
+                end
+            );
+            break;
+        }
+    }
+}
+
+/**
+ * Checks if &lt;def[oldDefs]&gt; are used (instead of modern "&lt;[defname]&gt;" syntax).
+ * If so, warning. Ported from ScriptChecker.cs:402-419.
+ *
+ * Reports ONCE per document (`break` at :416), on the warnings list.
+ */
+export function checkForOldDefs(checker: ScriptChecker): void {
+    // ScriptChecker.cs:405-408: whole-document guard against the original script text.
+    if (!checker.fullOriginalScript.includes('<def[')) {
+        return;
+    }
+    // ScriptChecker.cs:409-418
+    for (let i = 0; i < checker.lines.length; i++) {
+        if (checker.lines[i].includes('<def[')) {
+            // ScriptChecker.cs:413-414: both ends are the START index of an occurrence -- the
+            // end is where the LAST `<def[` begins, not where it finishes.
+            const start = checker.lines[i].indexOf('<def[');
+            const end = checker.lines[i].lastIndexOf('<def[');
+            checker.warn(
+                checker.warnings,
+                i,
+                'old_defs',
+                "This script uses <def[old-defs]>. Please update to modern '<[defname]>' syntax. Refer to <https://guide.denizenscript.com/guides/troubleshooting/updates-since-videos.html#definition-syntax> for more info.",
+                start,
+                end
+            );
+            break;
+        }
+    }
+}
