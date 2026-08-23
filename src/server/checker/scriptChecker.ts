@@ -14,7 +14,7 @@ import {
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
  * preparation (the constructor, ScriptChecker.cs:137-146), comment stripping
- * (ClearCommentsFromLines, ScriptChecker.cs:183-215) and the four line-level checks (see
+ * (ClearCommentsFromLines, ScriptChecker.cs:183-215) and the five line-level checks (see
  * ./lineChecks, ScriptChecker.cs:313-419). The rest of the C# class (CheckYAML, LoadInjects,
  * the container checks, statistic infos) is still out of scope and lands in later tasks.
  *
@@ -79,7 +79,7 @@ export class ScriptChecker extends WarningCollector {
      * will slot into the gaps below, keeping this method's relative order intact.
      *
      * Order matters and is not arbitrary: `clearCommentsFromLines` blanks comment lines in
-     * BOTH `lines` and `cleanedLines` first, so the four line checks never report against text
+     * BOTH `lines` and `cleanedLines` first, so the five line checks never report against text
      * inside a comment, and `##ignorewarning` directives are registered before any warning can
      * be raised.
      */

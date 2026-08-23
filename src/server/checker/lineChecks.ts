@@ -1,4 +1,5 @@
-// The four line-level checks, ported from SharpDenizenTools' ScriptChecker.cs:313-419.
+// The five line-level checks: four ported from SharpDenizenTools' ScriptChecker.cs:313-419,
+// plus `checkForColorCodes`, which has no C# counterpart of its own (see below).
 // This module must stay dependency-free: no `vscode-languageserver` import, no I/O.
 //
 // Each check takes the `ScriptChecker` as its first argument rather than living on the class,
@@ -71,8 +72,9 @@ function lastIndexOfAny(line: string, chars: string[]): number {
  * Ported from ScriptChecker.cs:312-362, EXCEPT the section-symbol check at :356-360, which now
  * lives in `checkForColorCodes` (see the DELIBERATE DEVIATION note there).
  *
- * Unlike the other three checks in this file, this one has no `break`: it walks the whole
- * document and can report many times.
+ * Unlike the tabs/braces/old-defs checks in this file, this one has no `break`: it walks the
+ * whole document and can report many times. (`checkForColorCodes`, the fifth check, is the
+ * other one with no `break` -- it was split out of this very loop.)
  *
  * The loop deliberately uses a `for` with an inner `while` over a SHARED index `i`
  * (ScriptChecker.cs:334-350). The inner loop advances `i` past continuation lines so the outer
