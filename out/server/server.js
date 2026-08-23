@@ -296,7 +296,19 @@ function createServer() {
             // A malformed script is an ordinary thing for a user to be holding mid-edit; a dead
             // language server is not. Swallow and log, exactly as onCompletion above does.
             // (DiagnosticProvider.cs:74-81 and :136-139 both do the same, twice over.)
-            connection.console.error(`Diagnostics failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+            //
+            // The log is itself guarded, unlike the request handlers above: those run inside a
+            // connection callback, so an exception has a caller to propagate to, whereas this
+            // one runs from a bare `setTimeout`. If the connection is already disposed then
+            // `sendDiagnostics` throws AND `console.error` throws, and that second throw escapes
+            // the timer as an unhandled exception. `onExit` below clears the pending timers, so
+            // this is the belt to that braces.
+            try {
+                connection.console.error(`Diagnostics failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+            }
+            catch (_b) {
+                // Connection gone; there is nowhere left to report to.
+            }
         }
     }
     function scheduleDiagnostics(uri) {
@@ -329,6 +341,16 @@ function createServer() {
         // unlike the paths above: clearing a URI that was never published for is a no-op,
         // whereas failing to clear one that was leaves the user staring at dead diagnostics.
         connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
+    });
+    // Shutdown leaves any debounced re-check outstanding: `onDidClose` only fires for documents
+    // the client actually closes, so a file still open when the client exits keeps its timer.
+    // Dropping them here both stops the leak and stops a late timer from running `runDiagnostics`
+    // against a disposed connection in the first place.
+    connection.onExit(() => {
+        for (const timer of pendingDiagnostics.values()) {
+            clearTimeout(timer);
+        }
+        pendingDiagnostics.clear();
     });
     documents.listen(connection);
     return connection;
