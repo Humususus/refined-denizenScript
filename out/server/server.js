@@ -1,7 +1,7 @@
 "use strict";
 /**
  * TypeScript LSP server entry point. Connects, loads meta documentation, and
- * serves command completion, hover, and signature help. Diagnostics remain future work.
+ * serves command completion, hover, signature help, and script-checker diagnostics.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -27,7 +27,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = exports.buildCapabilities = exports.combineSources = void 0;
+exports.createServer = exports.buildDiagnostics = exports.buildCapabilities = exports.combineSources = void 0;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const node_1 = require("vscode-languageserver/node");
@@ -37,7 +37,27 @@ const extraData_1 = require("./metaDocs/extraData");
 const completionProvider_1 = require("./providers/completionProvider");
 const hoverProvider_1 = require("./providers/hoverProvider");
 const signatureHelpProvider_1 = require("./providers/signatureHelpProvider");
+const scriptChecker_1 = require("./checker/scriptChecker");
 const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+/**
+ * How long a document must sit still before it is re-checked.
+ *
+ * DELIBERATE DEVIATION FROM DiagnosticProvider.cs:45-70. The C# runs a background thread that
+ * wakes every second, lints if a flag was set, and force-relints roughly every sixty wakeups
+ * whether or not anything changed. That poll loop is a workaround for its own architecture
+ * (a volatile flag plus two lock objects standing in for an event), not a design choice worth
+ * reproducing: it costs a wakeup a second forever, adds up to a second of latency to every
+ * edit, and re-lints untouched documents. `documents.onDidChangeContent` plus a per-document
+ * debounce is the idiomatic LSP shape and is strictly better on all three counts. Please do
+ * not "restore fidelity" here by adding a poll loop.
+ */
+const DIAGNOSTIC_DEBOUNCE_MS = 300;
+/**
+ * The `source` field stamped on every published diagnostic. Copied verbatim from
+ * DiagnosticProvider.cs:101/105/109 -- users filter the Problems panel by it, and the two
+ * engines are switchable at runtime, so it must read identically in both.
+ */
+const DIAGNOSTIC_SOURCE = 'Denizen Script Checker';
 /** C# refreshes this document every 15 days (ExtraData.cs:51); match that. */
 const EXTRA_DATA_TTL_MS = 15 * 24 * 60 * 60 * 1000;
 /** The loaded meta documentation, or null until the initial load resolves. */
@@ -93,6 +113,69 @@ function buildCapabilities() {
     };
 }
 exports.buildCapabilities = buildCapabilities;
+/**
+ * Converts one `ScriptWarning` into an LSP `Diagnostic`.
+ *
+ * The range is single-line and the clamp is ported from `GetRange`
+ * (DiagnosticProvider.cs:84-94). The C# gates its three `Math.Max(0, ...)` calls behind a
+ * condition whose only other job is to log the anomaly to stderr; applying them
+ * unconditionally is behaviourally identical, because when the condition is false all three
+ * values are already non-negative and `Math.max(0, x)` is the identity on them.
+ *
+ * The clamp is not theoretical. `useless_invalid_line` genuinely produces `startChar = -1`
+ * on any line whose first non-space character is uppercase: lineChecks.ts:157 passes
+ * `lines[i].indexOf(cleanedLines[i][0])`, and `cleanedLines` is lowercased while `lines` is
+ * not, so the search misses. A negative character is not a legal LSP `Position`.
+ *
+ * NOT clamped: an `endChar` past the end of the line, which `color_code_misformat` produces
+ * when the section symbol is the final character (`index + 2` vs. a length of `index + 1`,
+ * lineChecks.ts:219). The C# does not clamp it either, and the LSP spec defines a character
+ * past the line length as the line length, so it is benign. It is left alone deliberately
+ * rather than for lack of a line length to hand: `checker.lines` is not a safe source for
+ * one, because `clearCommentsFromLines` blanks every comment line to `''`
+ * (scriptChecker.ts:134-135) *after* `todo_comment` has recorded an end of that line's
+ * original length -- clamping against it would collapse every TODO diagnostic to a
+ * zero-width range at column 0, trading a benign over-long end for a real regression.
+ *
+ * Unlike the C#, this does not write the clamped values back onto the warning
+ * (DiagnosticProvider.cs:89-91 mutates `warning` in place); the warning lists stay as the
+ * checker produced them.
+ */
+function toDiagnostic(warning, severity) {
+    const line = Math.max(0, warning.line);
+    return {
+        severity,
+        range: {
+            start: { line, character: Math.max(0, warning.startChar) },
+            end: { line, character: Math.max(0, warning.endChar) }
+        },
+        source: DIAGNOSTIC_SOURCE,
+        code: warning.warningUniqueKey,
+        message: warning.customMessageForm
+    };
+}
+/**
+ * Maps a run checker's warnings onto LSP diagnostics. Ported from `PublishCheckerResults`
+ * (DiagnosticProvider.cs:96-110), minus the publishing itself.
+ *
+ * Three lists, in this fixed order, with these severities. `infos` is deliberately absent:
+ * the C# never publishes it either -- it exists to feed `CollectStatisticInfos`, and putting
+ * per-script statistics in the Problems panel would be noise.
+ *
+ * Extracted from the connection wiring below so it is unit-testable without a live
+ * connection, for the same reason `combineSources` and `buildCapabilities` are.
+ */
+function buildDiagnostics(checker) {
+    return [
+        // DiagnosticProvider.cs:99-102
+        ...checker.errors.map(w => toDiagnostic(w, node_1.DiagnosticSeverity.Error)),
+        // DiagnosticProvider.cs:103-106
+        ...checker.warnings.map(w => toDiagnostic(w, node_1.DiagnosticSeverity.Warning)),
+        // DiagnosticProvider.cs:107-110 -- Information, NOT Warning.
+        ...checker.minorWarnings.map(w => toDiagnostic(w, node_1.DiagnosticSeverity.Information))
+    ];
+}
+exports.buildDiagnostics = buildDiagnostics;
 function createServer() {
     const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
     const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
@@ -182,6 +265,70 @@ function createServer() {
             connection.console.error(`Signature help failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
             return null;
         }
+    });
+    /**
+     * The pending re-check for each open document, keyed by URI. At most one timer per
+     * document is ever outstanding: scheduling again cancels the previous one, so a burst of
+     * keystrokes costs exactly one check.
+     */
+    const pendingDiagnostics = new Map();
+    /**
+     * Runs the checker over a document and publishes the result.
+     *
+     * Re-reads the document by URI rather than closing over the `TextDocument` handed to the
+     * change event: `TextDocuments.update` may return a new instance and re-key the map
+     * (textDocuments.js, `onDidChangeTextDocument`), and a document closed during the debounce
+     * window drops out of the map entirely -- in which case bailing here is what stops a late
+     * timer from resurrecting the diagnostics that `onDidClose` just cleared.
+     */
+    function runDiagnostics(uri) {
+        var _a;
+        try {
+            const doc = documents.get(uri);
+            if (doc === undefined || !uri.endsWith('.dsc')) {
+                return;
+            }
+            const checker = new scriptChecker_1.ScriptChecker(doc.getText());
+            checker.run();
+            connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(checker) });
+        }
+        catch (err) {
+            // A malformed script is an ordinary thing for a user to be holding mid-edit; a dead
+            // language server is not. Swallow and log, exactly as onCompletion above does.
+            // (DiagnosticProvider.cs:74-81 and :136-139 both do the same, twice over.)
+            connection.console.error(`Diagnostics failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+        }
+    }
+    function scheduleDiagnostics(uri) {
+        if (!uri.endsWith('.dsc')) {
+            return;
+        }
+        const existing = pendingDiagnostics.get(uri);
+        if (existing !== undefined) {
+            clearTimeout(existing);
+        }
+        pendingDiagnostics.set(uri, setTimeout(() => {
+            pendingDiagnostics.delete(uri);
+            runDiagnostics(uri);
+        }, DIAGNOSTIC_DEBOUNCE_MS));
+    }
+    // This also covers publishing on open: TextDocuments fires onDidChangeContent from its
+    // didOpen handler as well as its didChange one (textDocuments.js, `listen`), so a separate
+    // onDidOpen registration would only schedule the same debounced run twice.
+    documents.onDidChangeContent(change => {
+        scheduleDiagnostics(change.document.uri);
+    });
+    documents.onDidClose(event => {
+        const pending = pendingDiagnostics.get(event.document.uri);
+        if (pending !== undefined) {
+            clearTimeout(pending);
+            pendingDiagnostics.delete(event.document.uri);
+        }
+        // An empty list is how LSP says "clear"; without it the Problems panel keeps showing
+        // stale entries for a file that is no longer open. Unguarded by `.dsc` on purpose,
+        // unlike the paths above: clearing a URI that was never published for is a no-op,
+        // whereas failing to clear one that was leaves the user staring at dead diagnostics.
+        connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
     });
     documents.listen(connection);
     return connection;
