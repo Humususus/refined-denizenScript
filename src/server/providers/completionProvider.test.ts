@@ -943,7 +943,15 @@ function paramDocs(): MetaDocs {
         narrowTag('<ItemTag.with[<mechanism>=<value>;...]>', 'ItemTag', 'A modified item.'),
         // A two-part BASE tag (docs.tags key 'util.random_decimal_in_range'), whose
         // documented parameter '<#.#>' matches no completer branch.
-        narrowTag('<util.random_decimal_in_range[<#.#>]>', 'ElementTag', 'A random decimal.')
+        narrowTag('<util.random_decimal_in_range[<#.#>]>', 'ElementTag', 'A random decimal.'),
+        // The two CompleteForTagPiece shapes (CommandTabCompletions.cs:131-135), which
+        // are the only candidates that get the tag documentation envelope. Modelled on
+        // the real tags the live verify script pins: '<ViveCraftPlayerTag.position[
+        // head/left/right]>' for the '/'-option branch (:187) and '<PlayerTag.
+        // worldguard_flag[flag=<flag>(;location=<at>)]>' for the ';'-pair-key branch
+        // (:168).
+        narrowTag('<PlayerTag.position[head/left/right]>', 'ElementTag', 'A tracked position.'),
+        narrowTag('<PlayerTag.region_flag[flag=<flag>(;location=<at>)]>', 'ElementTag', 'A region flag.')
     ]);
     linkTypeGraph(docs);
     // Mechanisms are keyed by cleanName ('itemtag.max_health'), i.e. by OBJECT plus name —
@@ -973,6 +981,14 @@ describe('tag parameter completion', () => {
         expect(docs.tags.get('playertag.name')!.allowsParam).toBe(false);
         expect(docs.tags.get('itemtag.with')!.parsedFormat!.parts[1].parameter).toBe('<mechanism>=<value>;...');
         expect(docs.tags.get('util.random_decimal_in_range')!.parsedFormat!.parts[1].parameter).toBe('<#.#>');
+        // The two CompleteForTagPiece shapes. Their documented parameters must survive
+        // parsing intact, or the envelope tests below would assert against nothing.
+        expect(docs.tags.get('playertag.position')!.parsedFormat!.parts[1].parameter).toBe('head/left/right');
+        expect(docs.tags.get('playertag.region_flag')!.parsedFormat!.parts[1].parameter)
+            .toBe('flag=<flag>(;location=<at>)');
+        // The envelope's heading and link are read off these two fields, so pin them.
+        expect(docs.tags.get('playertag.position')!.name).toBe('<PlayerTag.position[head/left/right]>');
+        expect(docs.tags.get('playertag.position')!.type!.webPath).toBe('Tags');
     });
 
     // WHY THE PARAMETER BRANCH MUST RUN BEFORE findTagAtCursor. A cursor inside '[...]'
@@ -1010,6 +1026,10 @@ describe('tag parameter completion', () => {
             });
         }
         expect(String((items[0].documentation as { value: string }).value)).toBe('**Material**: stone');
+        // CompleteEnum's markup is the WHOLE documentation at that site (:206) — no tag
+        // envelope, because CompleteEnum does not go through CompleteForTagPiece.
+        expect(String((items[0].documentation as { value: string }).value)).not.toContain('### Tag');
+        expect(String((items[0].documentation as { value: string }).value)).not.toContain('Input option');
     });
 
     it('replaces exactly the text typed inside the brackets, paramStart to cursor', () => {
@@ -1124,6 +1144,85 @@ describe('tag parameter completion', () => {
             .toBe('**ItemTag Mechanism**: max_health');
         // Not the full DescribeMech rendering — one documentation source, never both.
         expect(String((items[0].documentation as { value: string }).value)).not.toContain('###');
+        // And NOT CompleteForTagPiece's tag envelope either: SuggestMechanisms (:211) is a
+        // different construction site with its own documentation, so wrapping it would
+        // invent markup C# never produces here.
+        expect(String((items[0].documentation as { value: string }).value)).not.toContain('### Tag');
+        expect(String((items[0].documentation as { value: string }).value)).not.toContain('Input option');
+    });
+
+    // ---- CompleteForTagPiece's documentation envelope (CommandTabCompletions.cs:131-135).
+    // C# :133 wraps the "input option" line in a full tag description — heading with the
+    // parameter elided to '[...]>', LinkMeta, then ObligatoryText. Only the ';'-pair-key
+    // (:168) and '/'-option (:187) candidates go through CompleteForTagPiece; enum and
+    // mechanism candidates are built at their own sites and keep their own markup, which
+    // the two tests above and below pin.
+    it('wraps a /-option candidate in CompleteForTagPiece\'s full tag envelope, not the bare input option', () => {
+        // '  - narrate <player.position[': '<' is index 12, 'player.position[' occupies
+        // indices 13-28, so the string is 29 characters long and paramStart is 29.
+        const docs = paramDocs();
+        const text = '  - narrate <player.position[';
+        expect(text.length).toBe(29);
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['head', 'left', 'right']);
+        // CompleteForTagPiece builds Property items (:134), like SuggestMechanisms.
+        for (const item of items) {
+            expect(item.kind).toBe(CompletionItemKind.Property);
+        }
+        // The WHOLE string, character for character. The pieces are each load-bearing:
+        //   '### Tag <PlayerTag.position[...]>' — the heading, with the documented
+        //       parameter replaced by '[...]' (C#'s `tag.Name.BeforeLast('[') + "[...]>"`)
+        //       and then DescriptionClean-escaped, which is what turns '<'/'>' into
+        //       '&lt;'/'&gt;'.
+        //   the meta-docs link — LinkMeta(tag), the same one describeTag emits.
+        //   '**Input option**: **head** / left / right' — the bolded option list that was
+        //       previously the ENTIRE documentation.
+        //   the trailing '\n\n\n\n' — '\n\n' from the format string plus ObligatoryText's
+        //       own leading '\n\n', with no plugin/deprecation/warning text to follow it.
+        expect(String((items[0].documentation as { value: string }).value)).toBe(
+            '### Tag &lt;PlayerTag.position[...]&gt;\n'
+            + '[Meta Docs: Tags playertag.position]'
+            + '(https://meta.denizenscript.com/Docs/Tags/playertag.position)\n\n'
+            + '**Input option**: **head** / left / right\n\n\n\n'
+        );
+        // The other two options bold themselves, so the envelope is per candidate rather
+        // than rendered once and shared.
+        expect(String((items[1].documentation as { value: string }).value))
+            .toContain('**Input option**: head / **left** / right');
+        expect(String((items[2].documentation as { value: string }).value))
+            .toContain('**Input option**: head / left / **right**');
+        // Every candidate carries the same heading and link.
+        for (const item of items) {
+            const value = String((item.documentation as { value: string }).value);
+            expect(value.startsWith('### Tag &lt;PlayerTag.position[...]&gt;\n')).toBe(true);
+            expect(value).toContain('meta.denizenscript.com/Docs/Tags/playertag.position');
+        }
+    });
+
+    it('wraps a ;-pair-key candidate in the same envelope', () => {
+        // '  - narrate <player.region_flag[': '<' is index 12, 'player.region_flag['
+        // occupies indices 13-31, so the string is 32 characters long.
+        const docs = paramDocs();
+        const text = '  - narrate <player.region_flag[';
+        expect(text.length).toBe(32);
+        const items = paramItems(docs, text);
+        expect(items.map(i => i.label)).toEqual(['flag', 'location']);
+        for (const item of items) {
+            expect(item.kind).toBe(CompletionItemKind.Property);
+        }
+        // Same envelope, different "input option" body: the ';' branch's `**key**=`spec``
+        // (:168). The heading IS DescriptionClean-escaped, but the input option is NOT —
+        // C# :133 interpolates `inputData` raw and only escapes the name — so '<flag>'
+        // stays literal here while the heading's angle brackets become entities. That
+        // asymmetry is C#'s, and this asserts it rather than tidying it.
+        expect(String((items[0].documentation as { value: string }).value)).toBe(
+            '### Tag &lt;PlayerTag.region_flag[...]&gt;\n'
+            + '[Meta Docs: Tags playertag.region_flag]'
+            + '(https://meta.denizenscript.com/Docs/Tags/playertag.region_flag)\n\n'
+            + '**Input option**: **flag**=`<flag>`\n\n\n\n'
+        );
+        expect(String((items[1].documentation as { value: string }).value))
+            .toContain('**Input option**: **location**=`<at>`');
     });
 
     // DELIBERATE DEVIATION from the task brief's "textEdit from paramStart to the cursor":

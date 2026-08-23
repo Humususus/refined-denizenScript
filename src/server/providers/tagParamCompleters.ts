@@ -19,18 +19,28 @@ import { ExtraData } from '../metaDocs/extraData';
 import { EnumCompleter } from './argumentCompleters';
 
 /**
- * Which C# construction site a candidate came from, and therefore which
- * `CompletionItemKind` the caller should give it. C# picks the kind per site and the
- * sites do not agree: `CompleteEnum` builds `CompletionItemKind.Enum` (:206) while
- * `SuggestMechanisms` (:211) and `CompleteForTagPiece` (:134) both build
- * `CompletionItemKind.Property`.
+ * Which C# construction site a candidate came from. There are exactly three, and the
+ * caller needs the distinction twice over:
+ *
+ *   `enum`      — `CompleteEnum` (:206). `CompletionItemKind.Enum`, documentation is the
+ *                 bare `**{key}**: {value}` line and nothing else.
+ *   `mechanism` — `SuggestMechanisms` (:211). `CompletionItemKind.Property`, documented
+ *                 in C# by `DescribeMech`.
+ *   `tagPiece`  — `CompleteForTagPiece` (:134), i.e. the `;`-pair keys (:168) and the
+ *                 literal `/` options (:187). `CompletionItemKind.Property`, but its
+ *                 documentation is a *tag* envelope (:133) wrapped around `detail`.
+ *
+ * `mechanism` and `tagPiece` map onto the same `CompletionItemKind`, so it would be
+ * tempting to fold them into one `property` name — they were, until the envelope was
+ * rendered. They are documented completely differently, so the site has to survive the
+ * trip to the caller.
  *
  * A plain string union rather than the real enum, deliberately: this module imports
  * nothing from `vscode-languageserver` (see the file header) and its compiled output
- * must keep having zero `require()` calls. Mapping these two names onto the LSP enum
- * is the caller's job — `completionProvider.ts` does it.
+ * must keep having zero `require()` calls. Mapping these names onto the LSP enum is the
+ * caller's job — `completionProvider.ts` does it.
  */
-export type ParamCandidateKind = 'enum' | 'property';
+export type ParamCandidateKind = 'enum' | 'mechanism' | 'tagPiece';
 
 /**
  * One suggested value for a tag parameter.
@@ -44,7 +54,9 @@ export type ParamCandidateKind = 'enum' | 'property';
  * no information; this carries the descriptive text instead.
  *
  * `kind` records which of those three sites built the candidate; see
- * `ParamCandidateKind`.
+ * `ParamCandidateKind`. It is what tells the caller whether `detail` is the whole
+ * documentation (`enum`, `mechanism`) or the "input option" line to wrap in
+ * `CompleteForTagPiece`'s tag envelope (`tagPiece`).
  */
 export interface ParamCandidate { label: string; detail: string; kind: ParamCandidateKind; }
 
@@ -108,7 +120,7 @@ function suggestMechanisms(docs: MetaDocs, typed: string, suffix: string): Param
             results.push({
                 label: mechanism.mechName + suffix,
                 detail: `**${mechanism.mechObject} Mechanism**: ${mechanism.mechName}`,
-                kind: 'property'
+                kind: 'mechanism'
             });
         }
     }
@@ -144,11 +156,14 @@ function registerEnum(map: Map<string, TagParamCompleter>, spec: string, complet
 function buildTagParamCompleters(): Map<string, TagParamCompleter> {
     const map = new Map<string, TagParamCompleter>();
     // --- ExtraData-backed entries (CommandTabCompletions.cs:82-90) ---
-    // The C# handlers for <item>, <entity_type>, <enchantment> and <inventory> each
-    // concatenate CompleteEnum with SuggestScriptByType (:241-270), so those four also
-    // suggest matching workspace script containers. Only the enum half is ported here;
-    // the script half needs WorkspaceTracker and arrives with Phase 2D, at which point
-    // these entries gain a second source rather than being replaced.
+    // The C# handlers for <item>, <entity_type> and <enchantment> each concatenate
+    // CompleteEnum with SuggestScriptByType (:241-270), so those three also suggest
+    // matching workspace script containers. Only the enum half is ported here; the script
+    // half needs WorkspaceTracker and arrives with Phase 2D, at which point these entries
+    // gain another source rather than being replaced. <item> gains TWO: SuggestItem
+    // (:261-267) concatenates the item enum with SuggestScriptByType for BOTH the "item"
+    // and "book" script types. (C#'s <inventory> handler has the same enum+script shape
+    // but is not registered here at all -- see "Deliberately not registered" below.)
     registerEnum(map, '<material>', { prefix: '', label: 'Material', values: d => d.materials });
     registerEnum(map, '<item>', { prefix: '', label: 'Item', values: d => d.items });
     registerEnum(map, '<statistic>', { prefix: '', label: 'Statistic', values: d => d.statistics });
@@ -247,7 +262,7 @@ function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefi
                 const key = before(docPair, '=');
                 const value = after(docPair, '=');
                 if (!givenKeys.has(key) && key.startsWith(lastArg)) {
-                    results.push({ label: key, detail: `**${key}**=\`${value}\``, kind: 'property' });
+                    results.push({ label: key, detail: `**${key}**=\`${value}\``, kind: 'tagPiece' });
                 }
             }
             return results;
@@ -267,7 +282,7 @@ function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefi
                 if (option.startsWith(typed)) {
                     // :187 — the whole option list, with the candidate bolded, behind the
                     // recursion prefix so a nested list reads as e.g. 'size=**true** / false'.
-                    results.push({ label: option, detail: prefix + parts.map(p => p === option ? `**${p}**` : p).join(' / '), kind: 'property' });
+                    results.push({ label: option, detail: prefix + parts.map(p => p === option ? `**${p}**` : p).join(' / '), kind: 'tagPiece' });
                 }
             }
             else if (option === '<entity>') {

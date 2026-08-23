@@ -77,14 +77,14 @@ describe('normaliseDocParam', () => {
 describe('completeTagParam: slash options (CommandTabCompletions.cs:174-200)', () => {
     it('offers every option when nothing is typed, bolding the selected one (:187)', () => {
         expect(complete('true/false', '')).toEqual([
-            { label: 'true', detail: '**true** / false', kind: 'property' },
-            { label: 'false', detail: 'true / **false**', kind: 'property' }
+            { label: 'true', detail: '**true** / false', kind: 'tagPiece' },
+            { label: 'false', detail: 'true / **false**', kind: 'tagPiece' }
         ]);
     });
 
     it('filters options by what has been typed (:185)', () => {
         expect(complete('true/false', 't')).toEqual([
-            { label: 'true', detail: '**true** / false', kind: 'property' }
+            { label: 'true', detail: '**true** / false', kind: 'tagPiece' }
         ]);
     });
 
@@ -102,7 +102,7 @@ describe('completeTagParam: slash options (CommandTabCompletions.cs:174-200)', (
     it('expands the <entity> option into the entity enum (:190-193)', () => {
         expect(complete('<entity>/here', '')).toEqual([
             { label: 'zombie', detail: '**Entity Type**: zombie', kind: 'enum' },
-            { label: 'here', detail: '<entity> / **here**', kind: 'property' }
+            { label: 'here', detail: '<entity> / **here**', kind: 'tagPiece' }
         ]);
     });
 
@@ -186,7 +186,7 @@ describe('completeTagParam: mechanism-backed ByTag specs', () => {
 
     it('describes a mechanism candidate by its object and name (:368)', () => {
         expect(complete('<property-name>', 'max')).toEqual([
-            { label: 'max_health', detail: '**EntityTag Mechanism**: max_health', kind: 'property' }
+            { label: 'max_health', detail: '**EntityTag Mechanism**: max_health', kind: 'mechanism' }
         ]);
     });
 
@@ -217,8 +217,8 @@ describe('completeTagParam: mechanism-backed ByTag specs', () => {
 describe('completeTagParam: ;-separated key/value pairs (CommandTabCompletions.cs:145-173)', () => {
     it('offers every documented key when nothing is typed (:162-170)', () => {
         expect(complete('a=<x>;b=<y>', '')).toEqual([
-            { label: 'a', detail: '**a**=`<x>`', kind: 'property' },
-            { label: 'b', detail: '**b**=`<y>`', kind: 'property' }
+            { label: 'a', detail: '**a**=`<x>`', kind: 'tagPiece' },
+            { label: 'b', detail: '**b**=`<y>`', kind: 'tagPiece' }
         ]);
     });
 
@@ -232,8 +232,8 @@ describe('completeTagParam: ;-separated key/value pairs (CommandTabCompletions.c
 
     it('recurses into the matched key\'s value spec (:152-159)', () => {
         expect(complete('size=true/false;name=<x>', 'size=')).toEqual([
-            { label: 'true', detail: 'size=**true** / false', kind: 'property' },
-            { label: 'false', detail: 'size=true / **false**', kind: 'property' }
+            { label: 'true', detail: 'size=**true** / false', kind: 'tagPiece' },
+            { label: 'false', detail: 'size=true / **false**', kind: 'tagPiece' }
         ]);
     });
 
@@ -266,12 +266,13 @@ describe('completeTagParam: unknown specs', () => {
     });
 });
 
-// The `kind` discriminator exists so the caller can pick the RIGHT CompletionItemKind
-// per source, which the label/detail pair alone cannot express. C# picks it at each
-// construction site and the three sites do not agree:
-//   CompleteEnum (:206)          -> CompletionItemKind.Enum
-//   SuggestMechanisms (:211)     -> CompletionItemKind.Property
-//   CompleteForTagPiece (:134)   -> CompletionItemKind.Property
+// The `kind` discriminator names the C# CONSTRUCTION SITE, which the label/detail pair
+// alone cannot express. The caller needs it twice: to pick the right CompletionItemKind,
+// and to decide whether `detail` is the whole documentation or the "input option" line
+// to wrap in CompleteForTagPiece's tag envelope (:133).
+//   CompleteEnum (:206)          -> 'enum'      -> Enum,     detail is the whole markup
+//   SuggestMechanisms (:211)     -> 'mechanism' -> Property, detail is the whole markup
+//   CompleteForTagPiece (:134)   -> 'tagPiece'  -> Property, detail goes inside the envelope
 // This module stays free of `vscode-languageserver` imports (its compiled output must
 // keep having zero require() calls), so the discriminator is a plain string union and
 // the mapping to a real CompletionItemKind lives in completionProvider.ts.
@@ -281,18 +282,29 @@ describe('completeTagParam: candidate kind discriminator', () => {
         expect(complete('<biome>', '').map(c => c.kind)).toEqual(['enum']);
         // The two inline enum expansions inside the '/' branch (:190-197) go through the
         // same CompleteEnum, so they are "enum" even though their siblings are not.
-        expect(complete('<entity>/here', '').map(c => c.kind)).toEqual(['enum', 'property']);
+        expect(complete('<entity>/here', '').map(c => c.kind)).toEqual(['enum', 'tagPiece']);
     });
 
-    it('marks mechanism-sourced candidates "property" (SuggestMechanisms, :211)', () => {
-        expect(complete('<property-name>', 'ma').map(c => c.kind)).toEqual(['property', 'property']);
-        expect(complete('<mechanism>=<value>', 'ma').map(c => c.kind)).toEqual(['property', 'property']);
-        expect(complete('<property-map>', 'ma').map(c => c.kind)).toEqual(['property', 'property']);
+    it('marks mechanism-sourced candidates "mechanism" (SuggestMechanisms, :211)', () => {
+        expect(complete('<property-name>', 'ma').map(c => c.kind)).toEqual(['mechanism', 'mechanism']);
+        expect(complete('<mechanism>=<value>', 'ma').map(c => c.kind)).toEqual(['mechanism', 'mechanism']);
+        expect(complete('<property-map>', 'ma').map(c => c.kind)).toEqual(['mechanism', 'mechanism']);
     });
 
-    it('marks option and key candidates "property" (CompleteForTagPiece, :134)', () => {
-        expect(complete('true/false', '').map(c => c.kind)).toEqual(['property', 'property']);
-        expect(complete('a=<x>;b=<y>', '').map(c => c.kind)).toEqual(['property', 'property']);
-        expect(complete('size=true/false;name=<x>', 'size=').map(c => c.kind)).toEqual(['property', 'property']);
+    it('marks option and key candidates "tagPiece" (CompleteForTagPiece, :134)', () => {
+        expect(complete('true/false', '').map(c => c.kind)).toEqual(['tagPiece', 'tagPiece']);
+        expect(complete('a=<x>;b=<y>', '').map(c => c.kind)).toEqual(['tagPiece', 'tagPiece']);
+        expect(complete('size=true/false;name=<x>', 'size=').map(c => c.kind)).toEqual(['tagPiece', 'tagPiece']);
+    });
+
+    // The two Property-kinded sites must NOT be merged back into one name. They map onto
+    // the same CompletionItemKind but are documented completely differently: only
+    // CompleteForTagPiece's candidates get the tag envelope (:133), which is why the
+    // discriminator names the SITE rather than the LSP kind.
+    it('keeps mechanism and tagPiece distinct even though both are Property in C#', () => {
+        expect(complete('<property-name>', 'ma')[0].kind).toBe('mechanism');
+        expect(complete('true/false', '')[0].kind).toBe('tagPiece');
+        expect(complete('<property-name>', 'ma')[0].kind)
+            .not.toBe(complete('true/false', '')[0].kind);
     });
 });

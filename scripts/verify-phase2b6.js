@@ -66,6 +66,15 @@ Promise.all([
         statBareItems.length === extra.statistics.size, `${statBareItems.length} vs ${extra.statistics.size}`);
     failures += check('<player.statistic[ (bare) offers a plausible (headroom below observed 84) count',
         statBareItems.length >= 50, `${statBareItems.length}`);
+    // Cardinality alone could be satisfied by a same-size but WRONG set, so assert
+    // membership too -- the same pairing the materials check above already has. Together
+    // (same size + every label real) these force exactly extra.statistics, since a set of
+    // the right size drawn entirely from extra.statistics with no duplicates IS it.
+    failures += check('every <player.statistic[ label is a real, known statistic',
+        statBareItems.every(i => extra.statistics.has(i.label)), '(checked against extra.statistics)');
+    failures += check('<player.statistic[ labels are distinct (with the size and membership checks above, pins the set exactly)',
+        new Set(statBareItems.map(i => i.label)).size === statBareItems.length,
+        `${new Set(statBareItems.map(i => i.label)).size} distinct of ${statBareItems.length}`);
 
     // 3. The SAME ExtraData enum ('<material>'), reached through THREE different
     // documented-parameter shapes, must all agree on a typed prefix -- this is the
@@ -114,6 +123,13 @@ Promise.all([
     failures += check('<player.item_in_hand.with[qua offers exactly ["quantity="]',
         withQuaItems.length === 1 && withQuaItems[0].label === 'quantity=',
         `${withQuaItems.length} item(s): ${withQuaItems.map(i => i.label).join(', ')}`);
+    // SuggestMechanisms (:211) is its own construction site with its own documentation
+    // (DescribeMech in C#, the condensed heading here), so it must NOT pick up
+    // CompleteForTagPiece's tag envelope. Pinned next to the enum case in check 5.
+    failures += check('a mechanism candidate is NOT wrapped in the tag envelope (SuggestMechanisms, :211)',
+        withQuaItems.length === 1 && !!withQuaItems[0].documentation
+            && withQuaItems[0].documentation.value === '**ItemTag Mechanism**: quantity',
+        withQuaItems.length === 1 && withQuaItems[0].documentation ? JSON.stringify(withQuaItems[0].documentation.value) : '(missing)');
 
     // 5. A slash-option spec with plain (non-placeholder) options: real live example
     // '<ViveCraftPlayerTag.position[head/left/right]>'. With nothing typed, every
@@ -125,10 +141,49 @@ Promise.all([
     failures += check('<vivecraftplayertag.position[ (slash-spec, nothing typed) offers exactly its documented options head/left/right',
         viveItems.map(i => i.label).sort().join(',') === ['head', 'left', 'right'].sort().join(','),
         `${viveItems.length} item(s): ${viveItems.map(i => i.label).join(', ')}`);
+    // The documentation is CompleteForTagPiece's FULL envelope (CommandTabCompletions.cs:
+    // 131-135), not the bare option list. This check previously asserted the bare
+    // '**head** / left / right'; it was correct about what the port emitted and wrong
+    // about what C# emits, and the final fix wave rendered the envelope. The expectation
+    // below is STRICTLY STRONGER than the one it replaces: it still pins the bolded
+    // option list, character for character, and additionally pins the '### Tag' heading
+    // with the parameter elided to '[...]>', the LinkMeta line, and the ObligatoryText
+    // tail -- every piece C# :133 interpolates. Built from the live tag object rather
+    // than hardcoded, so it tracks a corpus refresh.
+    const viveTag = docs.tags.get('vivecraftplayertag.position');
+    failures += check('precondition: the ViveCraft position tag is present and named as the envelope check assumes',
+        !!viveTag && viveTag.name === '<ViveCraftPlayerTag.position[head/left/right]>',
+        viveTag ? `name=${viveTag.name}, plugin=${viveTag.plugin}, warnings=${viveTag.warnings.length}` : '(missing)');
+    // The expected string is written out longhand rather than re-derived from describe.ts,
+    // so it cannot agree with the implementation by construction. That is only safe while
+    // the tag has no plugin/deprecation/warning text -- ObligatoryText would otherwise add
+    // lines -- so that is asserted rather than assumed: if the corpus ever gains them this
+    // precondition fails loudly instead of the check quietly drifting.
+    failures += check('precondition: the ViveCraft position tag has no plugin/deprecation/warning text (so ObligatoryText is just its own "\\n\\n")',
+        !!viveTag && !viveTag.plugin && !viveTag.deprecated && viveTag.warnings.length === 0,
+        viveTag ? `plugin=${viveTag.plugin}, deprecated=${viveTag.deprecated}, warnings=${viveTag.warnings.length}` : '(missing)');
     const headItem = viveItems.find(i => i.label === 'head');
-    failures += check('the "head" slash-option documentation bolds the chosen option within the full option list',
-        !!headItem && !!headItem.documentation && headItem.documentation.value === '**head** / left / right',
-        headItem && headItem.documentation ? headItem.documentation.value : '(missing)');
+    const expectedHeadDoc = '### Tag &lt;ViveCraftPlayerTag.position[...]&gt;\n'
+        + '[Meta Docs: Tags vivecraftplayertag.position]'
+        + '(https://meta.denizenscript.com/Docs/Tags/vivecraftplayertag.position)\n\n'
+        + '**Input option**: **head** / left / right\n\n\n\n';
+    failures += check('the "head" slash-option documentation is CompleteForTagPiece\'s full tag envelope, with the chosen option bolded inside it',
+        !!headItem && !!headItem.documentation && headItem.documentation.value === expectedHeadDoc,
+        headItem && headItem.documentation ? JSON.stringify(headItem.documentation.value) : '(missing)');
+    // The two halves separately, so a failure above says WHICH half moved.
+    failures += check('the "head" documentation still bolds the chosen option within the full option list',
+        !!headItem && !!headItem.documentation && headItem.documentation.value.includes('**Input option**: **head** / left / right'),
+        headItem && headItem.documentation ? '(present)' : '(missing)');
+    failures += check('the "head" documentation carries the tag heading with its parameter elided to "[...]"',
+        !!headItem && !!headItem.documentation && headItem.documentation.value.startsWith('### Tag &lt;ViveCraftPlayerTag.position[...]&gt;\n'),
+        headItem && headItem.documentation ? headItem.documentation.value.split('\n')[0] : '(missing)');
+    // Enum and mechanism candidates are built at their OWN C# sites and must NOT be
+    // wrapped -- CompleteEnum (:206) and SuggestMechanisms (:211) produce their whole
+    // markup themselves. This is what stops the envelope from being applied everywhere.
+    failures += check('an ExtraData enum candidate is NOT wrapped in the tag envelope (CompleteEnum, :206)',
+        cooldownItems.length > 0 && !!cooldownItems[0].documentation
+            && cooldownItems[0].documentation.value === `**Material**: ${cooldownItems[0].label}`,
+        cooldownItems.length > 0 && cooldownItems[0].documentation ? JSON.stringify(cooldownItems[0].documentation.value) : '(missing)');
 
     // 6. THE ';'-SPEC CASE -- the most valuable check in this script. Real live tag:
     // '<PlayerTag.worldguard_flag[flag=<flag>(;location=<at>)]>'. Typing 'flag=x;lo' and
