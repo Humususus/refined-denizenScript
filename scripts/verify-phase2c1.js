@@ -6,7 +6,7 @@
  * (src/server/server.ts), which maps the checker's warning lists onto LSP `Diagnostic`s -- end
  * to end.
  *
- * The unit suite (516 tests) already pins each check's behaviour against hand-built
+ * The unit suite (519 tests) already pins each check's behaviour against hand-built
  * `ScriptChecker` instances. What it does NOT prove is the wiring: that `buildDiagnostics`
  * maps `errors`/`warnings`/`minorWarnings` onto the CORRECT LSP severities (not shuffled), that
  * `infos` never reaches a diagnostic, and that all of this still works when the server has real
@@ -165,7 +165,46 @@ Promise.all([
         sectionDiagsB.length === 1 && sectionDiagsB[0].severity === DiagnosticSeverity.Information,
         sectionDiagsB.length === 1 ? `severity=${sectionDiagsB[0].severity}` : '(missing)');
 
-    // 8. REGRESSION -- a subset of Phase 2B-6's live completion assertions, re-run here because
+    // 8. THE useless_invalid_line RANGE DEVIATION -- the SECOND user ruling in lineChecks.ts
+    // (see the DELIBERATE DEVIATION note on that branch). The C# builds the range as
+    // (Lines[i].IndexOf(CleanedLines[i][0]), Lines[i].Length - 1); both ends are defective, and
+    // this is the one place they are proven at the PUBLISHED range -- which is what the user
+    // actually sees, and which is where the first defect used to hide, because
+    // buildDiagnostics' clamp (DiagnosticProvider.cs:86-92) turned the check's -1 into a
+    // plausible-looking 0 rather than into an obvious error. A unit test on the check alone
+    // cannot show that.
+    //
+    // Case A: uppercase first character -- the exact shape the user reported. Pre-fix,
+    // "    Narrate <[x]>" published as 0-16: start 0 because 'Narrate' contains no LOWERCASE
+    // 'n' so the ordinal IndexOf returned -1 and was clamped, putting the squiggle on the
+    // four-space indent; end 16 because Length - 1 is end-exclusive-off-by-one and dropped the
+    // closing '>'. Correct: 4 (the 'N') to 17 (the 17-character line's full length).
+    const uselessCaseA = diagnose('    Narrate <[x]>');
+    const uselessDiagsA = uselessCaseA.diagnostics.filter(d => d.code === 'useless_invalid_line');
+    failures += check('"    Narrate <[x]>": useless_invalid_line spans the TEXT (4-17), not the indent (0-16)',
+        uselessDiagsA.length === 1 && uselessDiagsA[0].range.start.character === 4 && uselessDiagsA[0].range.end.character === 17,
+        uselessDiagsA.length === 1 ? `${uselessDiagsA[0].range.start.character}-${uselessDiagsA[0].range.end.character}` : `${uselessDiagsA.length} diagnostic(s)`);
+
+    // Case B: a TAB indent. Pins the choice of a first-non-whitespace search over
+    // `countPreSpaces`, which counts literal spaces only and would return 0 here -- putting the
+    // squiggle back on the indent for every tab-indented script. "\tNarrate <[x]>" is 14
+    // characters, so the correct range is 1-14.
+    const uselessCaseB = diagnose('\tNarrate <[x]>');
+    const uselessDiagsB = uselessCaseB.diagnostics.filter(d => d.code === 'useless_invalid_line');
+    failures += check('"\\tNarrate <[x]>": a TAB indent is cleared too (1-14), so countPreSpaces was not reused',
+        uselessDiagsB.length === 1 && uselessDiagsB[0].range.start.character === 1 && uselessDiagsB[0].range.end.character === 14,
+        uselessDiagsB.length === 1 ? `${uselessDiagsB[0].range.start.character}-${uselessDiagsB[0].range.end.character}` : `${uselessDiagsB.length} diagnostic(s)`);
+
+    // Case C: the check must still FIRE. Only the range moved -- a bare tag on its own line
+    // genuinely is an invalid Denizen line, so a "fix" that silenced it would be a regression.
+    // "    <[x]>" is 9 characters: 4-9.
+    const uselessCaseC = diagnose('    <[x]>');
+    const uselessDiagsC = uselessCaseC.diagnostics.filter(d => d.code === 'useless_invalid_line');
+    failures += check('"    <[x]>": useless_invalid_line still FIRES, at 4-9 -- the trigger never moved, only the range',
+        uselessDiagsC.length === 1 && uselessDiagsC[0].range.start.character === 4 && uselessDiagsC[0].range.end.character === 9,
+        uselessDiagsC.length === 1 ? `${uselessDiagsC[0].range.start.character}-${uselessDiagsC[0].range.end.character}` : `${uselessDiagsC.length} diagnostic(s)`);
+
+    // 9. REGRESSION -- a subset of Phase 2B-6's live completion assertions, re-run here because
     // this phase's diagnostics wiring landed in the same file (src/server/server.ts) as the
     // completion handler. Full detail on each of these lives in verify-phase2b6.js; re-run it
     // directly for the complete set. This is a representative sample across the shapes that

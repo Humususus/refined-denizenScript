@@ -11,11 +11,14 @@
 // checkers stay diffable and produce identical diagnostics; "fixing" one here would silently
 // diverge the two implementations.
 //
-// There is exactly ONE intentional exception to that rule: `checkForColorCodes`, which is a
-// fifth function with no C# counterpart, split out of `BasicLineFormatCheck` to repair two
-// defects in the section-symbol check. It is labelled DELIBERATE DEVIATION at its definition
-// and is the only place where this port knowingly disagrees with the C#. Anything else that
-// differs is a bug in this file.
+// There are exactly TWO intentional exceptions to that rule, each labelled DELIBERATE DEVIATION
+// at its site, each taken as a USER RULING on a user-visible defect:
+//   1. `checkForColorCodes`, a fifth function with no C# counterpart, split out of
+//      `BasicLineFormatCheck` to repair two defects in the section-symbol check.
+//   2. The RANGE of `useless_invalid_line` inside `basicLineFormatCheck`, whose start landed on
+//      the indent and whose end dropped the line's last character.
+// Those two are the only places where this port knowingly disagrees with the C#. Anything else
+// that differs is a bug in this file.
 
 // `import type` (not a plain import) is load-bearing: scriptChecker.ts imports this module for
 // real, so a value import here would close a require() cycle at runtime. ScriptChecker is only
@@ -47,6 +50,26 @@ export function countPreSpaces(line: string): number {
     return spaces;
 }
 
+/**
+ * The index of the first non-whitespace character of a line, or -1 if there is none.
+ *
+ * No C# counterpart -- it exists only to serve the `useless_invalid_line` deviation below.
+ *
+ * `\S` is used rather than `countPreSpaces` on purpose. `countPreSpaces` is a literal port of
+ * ScriptChecker.cs:1395 and counts the SPACE character only, so a tab terminates its count at 0;
+ * using it here would put the warning's start back on the indent for every tab-indented script,
+ * which is half of the very defect the deviation exists to fix.
+ *
+ * `\S` is also the exactly-right complement for this caller: `cleanedLines` is built with
+ * `String.prototype.trim()` (scriptChecker.ts:69), and JS regex `\s` matches precisely the set
+ * `trim()` strips. So under the `cleanedLines[i].length > 0` guard at the only call site, a
+ * non-empty cleaned line guarantees a non-whitespace character exists in the raw line and this
+ * cannot return -1.
+ */
+function firstNonWhitespaceIndex(line: string): number {
+    return line.search(/\S/);
+}
+
 /** C#'s `string.IndexOfAny(char[])`: the lowest index at which any of `chars` occurs, else -1. */
 function indexOfAny(line: string, chars: string[]): number {
     for (let i = 0; i < line.length; i++) {
@@ -69,8 +92,9 @@ function lastIndexOfAny(line: string, chars: string[]): number {
 
 /**
  * Checks the basic format of every line of the script, to locate stray text or useless lines.
- * Ported from ScriptChecker.cs:312-362, EXCEPT the section-symbol check at :356-360, which now
- * lives in `checkForColorCodes` (see the DELIBERATE DEVIATION note there).
+ * Ported from ScriptChecker.cs:312-362, with two DELIBERATE DEVIATIONS: the section-symbol check
+ * at :356-360 now lives in `checkForColorCodes` (see the note there), and the range of
+ * `useless_invalid_line` at :354 is corrected (see the note at that branch below).
  *
  * Unlike the tabs/braces/old-defs checks in this file, this one has no `break`: it walks the
  * whole document and can report many times. (`checkForColorCodes`, the fifth check, is the
@@ -146,18 +170,52 @@ export function basicLineFormatCheck(checker: ScriptChecker): void {
                 }
             }
         } else if (cleanedLines[i].length > 0 && !cleanedLines[i].includes(':')) {
-            // ScriptChecker.cs:352-355.
-            // NOTE the start index: `Lines[i].IndexOf(CleanedLines[i][0])`. `cleanedLines` is
-            // lowercased (ScriptChecker.cs:145) while `lines` is not, and C#'s IndexOf(char) is
-            // ordinal, so a raw line whose first non-space character is uppercase searches for
-            // its own lowercase form, misses, and yields -1. Ported as written.
+            // ScriptChecker.cs:352-355 -- the CONDITION and the warning itself are ported
+            // verbatim; only the RANGE differs. See below.
+            //
+            // -----------------------------------------------------------------
+            // DELIBERATE DEVIATION FROM ScriptChecker.cs -- NOT a porting mistake.
+            // -----------------------------------------------------------------
+            // The C# builds the range as
+            //     (Lines[i].IndexOf(CleanedLines[i][0]), Lines[i].Length - 1)
+            // (ScriptChecker.cs:354). Both ends are defective, and both were reproduced against
+            // the faithful port before this change:
+            //
+            //   1. THE START LANDS ON THE INDENT. `CleanedLines` is trimmed AND lowercased
+            //      (ScriptChecker.cs:145) while `Lines` is raw, and C#'s `IndexOf(char)` is
+            //      ordinal. So on a line whose first non-space character is UPPERCASE, the
+            //      search looks for a lowercase letter that is not in the line at all and
+            //      returns -1. `GetRange` then clamps that to 0 (DiagnosticProvider.cs:86-92)
+            //      -- and writes a line to stderr while doing so, i.e. the C# itself treats it
+            //      as an anomaly it absorbs, not as a designed path -- so the squiggle is
+            //      published starting at column 0, over the leading whitespace, instead of over
+            //      the offending text. Measured: `"    Narrate <[x]>"` published as 0-16.
+            //
+            //   2. THE END DROPS THE LAST CHARACTER. LSP ranges are end-exclusive, so passing
+            //      `Length - 1` never covers the line's final character. This one is visible on
+            //      EVERY instance, not just uppercase ones. Measured:
+            //      `"    <player.as_decimal123.zsszxfdfs>"` (36 chars) published as 4-35, with
+            //      the closing '>' left outside the squiggle.
+            //
+            // Fixing both was a USER RULING, taken knowingly in preference to bug-for-bug
+            // fidelity, on the grounds that a squiggle sitting on the indent instead of on the
+            // offending text is a defect the user can see and the C# cannot defend.
+            //
+            // The corrected start is the first non-whitespace character of the RAW line, which
+            // is evidently what the C# expression was reaching for. It is computed with
+            // `firstNonWhitespaceIndex`, NOT `countPreSpaces` -- see the note on that helper for
+            // why the space-only count would reintroduce defect 1 on tab-indented scripts.
+            //
+            // Unchanged from the C#: the key, the `warnings` list, the message, and -- most
+            // importantly -- WHETHER this fires at all. A bare tag on its own line genuinely is
+            // an invalid Denizen line. Only the range moved.
             checker.warn(
                 checker.warnings,
                 i,
                 'useless_invalid_line',
                 'Useless/invalid line (possibly missing a `-` or a `:`, or just accidentally hit enter or paste).',
-                lines[i].indexOf(cleanedLines[i][0]),
-                lines[i].length - 1
+                firstNonWhitespaceIndex(lines[i]),
+                lines[i].length
             );
         }
         // The section-symbol check that ScriptChecker.cs runs here (:356-360) has been moved out

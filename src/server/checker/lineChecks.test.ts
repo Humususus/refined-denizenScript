@@ -24,9 +24,11 @@ import type { ScriptWarning } from './scriptWarnings';
  * Character indices are counted by hand off the literal source strings, never read back out
  * of the implementation.
  *
- * ONE describe block -- `checkForColorCodes` -- asserts behaviour that deliberately DIFFERS
- * from the C#, by user ruling during review. It is labelled as such, with both defects spelled
- * out. Every other expectation in this file is the C#'s behaviour, warts included.
+ * TWO describe blocks assert behaviour that deliberately DIFFERS from the C#, by user ruling:
+ *   - `checkForColorCodes` (the section-symbol line/column mismatch);
+ *   - `basicLineFormatCheck: useless_invalid_line` (the range's start and end).
+ * Both are labelled as such, with their defects spelled out. Every other expectation in this
+ * file is the C#'s behaviour, warts included.
  */
 
 /** Compact shape for asserting on a warning without repeating the long message strings. */
@@ -245,7 +247,8 @@ describe('basicLineFormatCheck: stray_space_eol (ScriptChecker.cs:318-330)', () 
         // "- foo  " ends with a space, so :318 wins and the :331 continuation branch is never
         // entered. i is therefore not advanced, and line 1 is judged on its own merits.
         // "    bar": cleaned = "bar", no ':' -> useless_invalid_line.
-        //   start = "    bar".indexOf('b') = 4; end = 7 - 1 = 6.
+        //   start = first non-whitespace of "    bar" = 4; end = length = 7 (see the
+        //   DELIBERATE DEVIATION describe block below for why the end is the full length).
         const checker = new ScriptChecker('- foo  \n    bar');
         basicLineFormatCheck(checker);
         // Mutant caught: turning the if/else-if chain at :318/:331/:352 into independent ifs.
@@ -255,7 +258,7 @@ describe('basicLineFormatCheck: stray_space_eol (ScriptChecker.cs:318-330)', () 
             { line: 0, key: 'stray_space_eol', start: 4, end: 6 }
         ]);
         expect(shapes(checker.warnings)).toEqual([
-            { line: 1, key: 'useless_invalid_line', start: 4, end: 6 }
+            { line: 1, key: 'useless_invalid_line', start: 4, end: 7 }
         ]);
     });
 });
@@ -380,33 +383,82 @@ describe('checkForColorCodes (deviation from ScriptChecker.cs:356-360)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// BasicLineFormatCheck -- useless_invalid_line (ScriptChecker.cs:352-355)
+// BasicLineFormatCheck -- useless_invalid_line: DELIBERATE DEVIATION from
+// ScriptChecker.cs:352-355.
+//
+// The C# computes the range as (Lines[i].IndexOf(CleanedLines[i][0]), Lines[i].Length - 1).
+// Both ends are wrong, and both were reproduced against the faithful port before this change:
+//   1. START. CleanedLines is trimmed AND lowercased (:145) while Lines is raw, so on a line
+//      whose first non-space character is uppercase the ordinal IndexOf searches for a
+//      lowercase letter that is not there and returns -1. DiagnosticProvider.cs:86-92 clamps
+//      that to 0 -- and logs it to stderr as an anomaly -- so the squiggle lands on column 0,
+//      i.e. on the INDENT, instead of on the offending text. Measured: "    Narrate <[x]>"
+//      published as 0-16.
+//   2. END. LSP ranges are end-exclusive, so `Length - 1` never covers the line's LAST
+//      character. Measured on every instance, not just uppercase ones:
+//      "    <player.as_decimal123.zsszxfdfs>" (36 chars) published as 4-35, dropping the '>'.
+// Fixing both was a USER RULING. Corrected: start = the index of the first non-whitespace
+// character of the RAW line; end = the full line length. Everything else about the warning --
+// key, `warnings` list, message, and WHETHER it fires at all -- is unchanged from the C#.
 // ---------------------------------------------------------------------------
-describe('basicLineFormatCheck: useless_invalid_line (ScriptChecker.cs:352-355)', () => {
-    it('spans the first cleaned character\'s index in the raw line to length - 1', () => {
-        // "  foo": cleaned = "foo"; Lines[0].IndexOf('f') = 2; end = 5 - 1 = 4.
+describe('basicLineFormatCheck: useless_invalid_line (deviation from ScriptChecker.cs:352-355)', () => {
+    it('spans the first non-whitespace character to the full line length', () => {
+        // "  foo": first non-whitespace at 2; end = length = 5.
         const checker = new ScriptChecker('  foo');
         basicLineFormatCheck(checker);
-        // Mutant caught: end = line.length (off-by-one), or start = 0.
+        // Mutant caught: reverting the end to `line.length - 1` (the C# shape), which would
+        // give 4 and leave the final 'o' outside the squiggle; or start = 0 (the indent).
         expect(shapes(checker.warnings)).toEqual([
-            { line: 0, key: 'useless_invalid_line', start: 2, end: 4 }
+            { line: 0, key: 'useless_invalid_line', start: 2, end: 5 }
         ]);
         // Mutant caught: routing to minorWarnings -- the C# puts this on Warnings (:354).
         expect(checker.minorWarnings).toEqual([]);
         expect(checker.errors).toEqual([]);
     });
 
-    it('yields start = -1 when the raw line starts uppercase, because the C# searches the raw '
-        + 'line for the LOWERCASED first cleaned character (:354)', () => {
-        // CleanedLines is lowercased (:145), so CleanedLines[0][0] = 'f' while Lines[0] holds
-        // 'F'. C# IndexOf(char) is ordinal, so the search misses and returns -1.
-        const checker = new ScriptChecker('  Foo');
+    it('starts at the first non-whitespace character when that character is UPPERCASE '
+        + '(defect 1: start was -1, published as column 0 -- the indent)', () => {
+        // This is the shape the user actually reported. "    Narrate <[x]>" is 17 characters:
+        // 0-3 spaces, 4 'N', ... 16 '>'. Corrected: start = 4, end = 17.
+        // Pre-fix the C# port computed "    Narrate <[x]>".indexOf('n') -- 'Narrate' holds no
+        // LOWERCASE 'n' -- which is -1, clamped by buildDiagnostics to 0.
+        const checker = new ScriptChecker('    Narrate <[x]>');
         basicLineFormatCheck(checker);
-        // Mutant caught: any "fix" that finds the first non-whitespace index (2) or does a
-        // case-insensitive search. This is a real C# wart; it is ported, not repaired, so that
-        // the TS and C# checkers stay diffable.
+        // Mutant caught: reverting to `lines[i].indexOf(cleanedLines[i][0])`, which yields -1
+        // here. This is THE defect the deviation exists to fix, so it is the one that must not
+        // silently come back. A case-insensitive indexOf would also pass this line but is
+        // pinned separately by the tab case below.
         expect(shapes(checker.warnings)).toEqual([
-            { line: 0, key: 'useless_invalid_line', start: -1, end: 4 }
+            { line: 0, key: 'useless_invalid_line', start: 4, end: 17 }
+        ]);
+    });
+
+    it('measures a TAB indent as whitespace too, so the squiggle clears it', () => {
+        // "\tNarrate <[x]>" is 14 characters: 0 '\t', 1 'N', ... 13 '>'. The first
+        // non-whitespace character is at 1, so start = 1, end = 14.
+        const checker = new ScriptChecker('\tNarrate <[x]>');
+        basicLineFormatCheck(checker);
+        // Mutant caught: measuring the indent with `countPreSpaces` (the file's port of
+        // ScriptChecker.cs:1395) instead of a first-non-whitespace search. countPreSpaces
+        // counts LITERAL spaces only and a tab terminates its count, so it returns 0 here --
+        // putting the squiggle back on the indent, which is the exact defect being fixed, just
+        // for tab-indented scripts. Also caught: a case-insensitive indexOf "fix" for defect 1,
+        // which would find 'N' at 1 here but 0 on a line indented with spaces before an
+        // uppercase word only by coincidence -- it never looks at whitespace at all.
+        expect(shapes(checker.warnings)).toEqual([
+            { line: 0, key: 'useless_invalid_line', start: 1, end: 14 }
+        ]);
+    });
+
+    it('still FIRES on a bare tag line -- only the range moved, never the trigger', () => {
+        // "    <[x]>" is 9 characters; cleaned = "<[x]>", non-empty and colon-free, so :352
+        // holds. A bare tag on its own line genuinely is an invalid Denizen line.
+        const checker = new ScriptChecker('    <[x]>');
+        basicLineFormatCheck(checker);
+        // Mutant caught: "fixing" the range by narrowing the :352 guard (e.g. skipping lines
+        // that are entirely a tag), which would silence a correct diagnostic.
+        expect(shapes(checker.warnings)).toEqual([
+            { line: 0, key: 'useless_invalid_line', start: 4, end: 9 }
         ]);
     });
 
@@ -446,13 +498,13 @@ describe('basicLineFormatCheck: continuation skipping (ScriptChecker.cs:331-351)
     it('stops skipping at the first line that is not more indented than the dash line', () => {
         // "- foo" -> spaces = 0. "  a" (2 > 0) is consumed, i -> 1. "b" has 0 pre-spaces,
         // 0 > 0 is false -> break. The outer loop then lands on line 2:
-        //   "b" -> start = "b".indexOf('b') = 0, end = 1 - 1 = 0.
+        //   "b" -> start = first non-whitespace = 0, end = length = 1.
         const checker = new ScriptChecker('- foo\n  a\nb');
         basicLineFormatCheck(checker);
         // Mutant caught: a `while` that consumes every following non-dash line regardless of
         // indentation (dropping the CountPreSpaces comparison at :338).
         expect(shapes(checker.warnings)).toEqual([
-            { line: 2, key: 'useless_invalid_line', start: 0, end: 0 }
+            { line: 2, key: 'useless_invalid_line', start: 0, end: 1 }
         ]);
     });
 
@@ -462,7 +514,7 @@ describe('basicLineFormatCheck: continuation skipping (ScriptChecker.cs:331-351)
         //   the while breaks WITHOUT consuming it. The outer loop then handles line 1 as a dash
         //   line in its own right, with spaces = 4; "  zap" has 2 pre-spaces and 2 > 4 is false,
         //   so it is not consumed either. Line 2 therefore reaches :352:
-        //   start = "  zap".indexOf('z') = 2; end = 5 - 1 = 4.
+        //   start = first non-whitespace of "  zap" = 2; end = length = 5.
         const checker = new ScriptChecker('- foo\n    - bar\n  zap');
         basicLineFormatCheck(checker);
         // Mutant caught: dropping the `!cleaned2.StartsWith("- ")` half of :338. Line 1 would
@@ -470,7 +522,7 @@ describe('basicLineFormatCheck: continuation skipping (ScriptChecker.cs:331-351)
         // the run is still measuring against line 0's `spaces` of 0 rather than line 1's 4
         // (2 > 0 holds). The mutant produces NO warning at all.
         expect(shapes(checker.warnings)).toEqual([
-            { line: 2, key: 'useless_invalid_line', start: 2, end: 4 }
+            { line: 2, key: 'useless_invalid_line', start: 2, end: 5 }
         ]);
     });
 
@@ -480,26 +532,26 @@ describe('basicLineFormatCheck: continuation skipping (ScriptChecker.cs:331-351)
         //   lines = ["- foo", "    bar:", "    baz"]
         //   i=0: consume line 1 (4 > 0, not dash) -> i = 1; "bar:" ends with ':' -> break.
         //   outer i++ -> 2: "    baz" cleaned "baz", no ':' -> useless_invalid_line.
-        //   start = "    baz".indexOf('b') = 4; end = 7 - 1 = 6.
+        //   start = first non-whitespace of "    baz" = 4; end = length = 7.
         const checker = new ScriptChecker('- foo\n    bar:\n    baz');
         basicLineFormatCheck(checker);
         // Mutant caught: removing the EndsWith(':') break at :341-344 -- line 2 would be
         // consumed as a further continuation and no warning would be produced at all.
         expect(shapes(checker.warnings)).toEqual([
-            { line: 2, key: 'useless_invalid_line', start: 4, end: 6 }
+            { line: 2, key: 'useless_invalid_line', start: 4, end: 7 }
         ]);
     });
 
     it('does not start a skip run from a "- " line that ends with ":"', () => {
         // cleaned[0] = "- if <[x]>:" ends with ':' so :331 fails; :352 then also fails because
         // the line contains ':'. Line 1 is therefore judged on its own.
-        //   "    foo" -> start = 4, end = 7 - 1 = 6.
+        //   "    foo" -> start = 4, end = length = 7.
         const checker = new ScriptChecker('- if <[x]>:\n    foo');
         basicLineFormatCheck(checker);
         // Mutant caught: dropping the `!CleanedLines[i].EndsWith(':')` half of :331 -- line 1
         // would be swallowed and nothing reported.
         expect(shapes(checker.warnings)).toEqual([
-            { line: 1, key: 'useless_invalid_line', start: 4, end: 6 }
+            { line: 1, key: 'useless_invalid_line', start: 4, end: 7 }
         ]);
     });
 
@@ -548,7 +600,8 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
         //   "<def[" first/last occurrence both at 10.
         // lines[1] = "on foo: {"  -> 0'o'1'n'2' '3'f'4'o'5'o'6':'7' '8'{'; brace start/end = 8.
         // lines[2] = "\tbar" -> cleaned "bar", no ':' -> useless_invalid_line,
-        //   start = "\tbar".indexOf('b') = 1, end = 4 - 1 = 3; tab at index 0 (first and last).
+        //   start = first non-whitespace of "\tbar" = 1, end = length = 4; tab at index 0
+        //   (first and last).
         const checker = new ScriptChecker('- narrate <def[a]> \non foo: {\n\tbar');
         checker.run();
         // Mutant caught: reordering the calls at :2027-2030. The `warnings` list preserves
@@ -563,7 +616,7 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
         // other); the order that DOES matter is theirs against clearCommentsFromLines, which
         // the two neighbouring tests pin for tabs and for braces respectively.
         expect(shapes(checker.warnings)).toEqual([
-            { line: 2, key: 'useless_invalid_line', start: 1, end: 3 },
+            { line: 2, key: 'useless_invalid_line', start: 1, end: 4 },
             { line: 2, key: 'raw_tab_symbol', start: 0, end: 0 },
             { line: 0, key: 'old_defs', start: 10, end: 10 }
         ]);

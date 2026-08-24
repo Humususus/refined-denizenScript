@@ -186,21 +186,43 @@ describe('buildDiagnostics', () => {
         expect(buildDiagnostics(checker)[0].range.end.character).toBe(0);
     });
 
-    it('clamps the -1 startChar that useless_invalid_line really produces', () => {
-        // MUTANT CAUGHT: treating the clamp as a theoretical guard and omitting it, or
-        // applying it only to `line`. This is the live path, not a synthetic one:
-        // lineChecks.ts:157 passes `lines[i].indexOf(cleanedLines[i][0])`, and `cleanedLines`
-        // is lowercased while `lines` is not -- so a line whose first character is uppercase
-        // searches its raw self for a lowercase letter, misses, and yields -1.
-        const checker = new ScriptChecker('Hello');
+    it('publishes an uppercase useless_invalid_line over the TEXT, not over the indent', () => {
+        // MUTANT CAUGHT: reverting lineChecks.ts's useless_invalid_line start to the C#'s
+        // `lines[i].indexOf(cleanedLines[i][0])`, or its end to `lines[i].length - 1`. Both
+        // were live user-visible defects, fixed by user ruling (see the DELIBERATE DEVIATION
+        // note at that check). Pre-fix, "    Hello" produced startChar = -1 -- `cleanedLines`
+        // is lowercased while `lines` is not, so the ordinal search for 'h' missed -- and the
+        // clamp below turned that into column 0, i.e. the indent. The end stopped at 8,
+        // dropping the final 'o'.
+        //
+        // This is deliberately an END-TO-END assertion through buildDiagnostics rather than a
+        // check-level one: the clamp is what MASKED defect 1 into a plausible-looking range,
+        // so the fix has to be proven at the published range, which is what the user sees.
+        const checker = new ScriptChecker('    Hello');
         checker.run();
-        // Guard the premise: if this ever stops being -1 the test below stops proving anything.
         expect(checker.warnings[0].warningUniqueKey).toBe('useless_invalid_line');
-        expect(checker.warnings[0].startChar).toBe(-1);
 
         const [diagnostic] = buildDiagnostics(checker);
-        expect(diagnostic.range.start.character).toBe(0);
-        expect(diagnostic.range.end.character).toBe(4);
+        expect(diagnostic.range.start.character).toBe(4);
+        expect(diagnostic.range.end.character).toBe(9);
+    });
+
+    it('has no check left that produces a negative startChar for the clamp to catch', () => {
+        // MUTANT CAUGHT: reintroducing a negative-yielding start index in any line check. The
+        // clamp above is retained as a faithful port of DiagnosticProvider.cs:89-91, but after
+        // the useless_invalid_line fix it no longer has a live producer -- the C# treats a
+        // negative index as an anomaly it absorbs (and logs to stderr, :86-92), so a check that
+        // starts feeding it one again is a regression, not a supported path. The three clamp
+        // tests above therefore stay SYNTHETIC on purpose; this test is what keeps that honest.
+        const scripts = ['    Hello', 'Hello', '\tHello', '  Foo', '    <[x]>', '- narrate §C ', '\tBar'];
+        for (const script of scripts) {
+            const checker = new ScriptChecker(script);
+            checker.run();
+            for (const warning of [...checker.errors, ...checker.warnings, ...checker.minorWarnings]) {
+                expect(warning.startChar, `${JSON.stringify(script)} / ${warning.warningUniqueKey}`)
+                    .toBeGreaterThanOrEqual(0);
+            }
+        }
     });
 
     it('emits errors first, then warnings, then minorWarnings', () => {

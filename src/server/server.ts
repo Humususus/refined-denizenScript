@@ -112,10 +112,16 @@ export function buildCapabilities(): ServerCapabilities {
  * unconditionally is behaviourally identical, because when the condition is false all three
  * values are already non-negative and `Math.max(0, x)` is the identity on them.
  *
- * The clamp is not theoretical. `useless_invalid_line` genuinely produces `startChar = -1`
- * on any line whose first non-space character is uppercase: lineChecks.ts:157 passes
- * `lines[i].indexOf(cleanedLines[i][0])`, and `cleanedLines` is lowercased while `lines` is
- * not, so the search misses. A negative character is not a legal LSP `Position`.
+ * The clamp no longer has a live producer, and is retained deliberately rather than by
+ * inertia. It used to have one: `useless_invalid_line` produced `startChar = -1` on any line
+ * whose first non-space character was uppercase, because it passed
+ * `lines[i].indexOf(cleanedLines[i][0])` while `cleanedLines` is lowercased and `lines` is
+ * not. That was a user-visible defect -- the clamp silently moved the squiggle onto the
+ * indent -- and it was fixed at source by user ruling (see the DELIBERATE DEVIATION note on
+ * that branch in lineChecks.ts). The clamp stays because it is a faithful port of the C#'s
+ * own defence (DiagnosticProvider.cs:86-92, which clamps AND logs the anomaly to stderr) and
+ * because a negative character is not a legal LSP `Position`; it must not be read as
+ * sanctioning a check that emits one. server.test.ts pins that no check does.
  *
  * NOT clamped: an `endChar` past the end of the line, which `color_code_misformat` produces
  * when the section symbol is the final character (`index + 2` vs. a length of `index + 1`,
