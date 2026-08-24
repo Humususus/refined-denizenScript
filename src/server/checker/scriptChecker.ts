@@ -10,6 +10,11 @@ import {
     checkForOldDefs,
     checkForTabs
 } from './lineChecks';
+import { gatherActualContainers } from './containerGather';
+// `import type`: ScriptSection is a type alias, used only in type position below. A value
+// import would be redundant with the line above; keeping it type-only makes the emitted JS
+// carry exactly one require() for this module.
+import type { ScriptSection } from './containerGather';
 
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
@@ -49,6 +54,15 @@ export class ScriptChecker extends WarningCollector {
      * reasoning applies (ScriptChecker.cs:206-209).
      */
     codeLines = 0;
+    /**
+     * The raw container structure gathered by `gatherActualContainers`, or `null` before
+     * `run()` has been called.
+     *
+     * The C# keeps this as a local in `Run()` (ScriptChecker.cs:2031) and hands it straight to
+     * `ConvertContainers`. It is a field here because `ConvertContainers` lands in Phase 2C-3,
+     * so between now and then the only way to reach the parse result is off the checker.
+     */
+    containers: ScriptSection | null = null;
 
     /**
      * Constructs the checker from a script string.
@@ -98,6 +112,12 @@ export class ScriptChecker extends WarningCollector {
         checkForTabs(this);
         checkForBraces(this);
         checkForOldDefs(this);
+        // ScriptChecker.cs:2031. Must come after `clearCommentsFromLines`, which blanks comment
+        // lines in both arrays -- otherwise every comment would be parsed as a structural line.
+        // The C# immediately passes the result to ConvertContainers (:2032); that, plus
+        // CheckAllContainers (:2033), MergeData (:2034) and CollectStatisticInfos (:2035), are
+        // still out of scope, so the result is parked on the field instead.
+        this.containers = gatherActualContainers(this);
     }
 
     /**

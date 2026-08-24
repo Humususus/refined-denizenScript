@@ -615,10 +615,26 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
         // no observable effect anyway (they touch disjoint keys and never dedup against each
         // other); the order that DOES matter is theirs against clearCommentsFromLines, which
         // the two neighbouring tests pin for tabs and for braces respectively.
+        //
+        // The last two entries arrived with Phase 2C-2 Task 2, which wired
+        // `gatherActualContainers` into `run()` (ScriptChecker.cs:2031 -- it runs AFTER the four
+        // line checks, hence its warnings sort last). This fixture is deliberately malformed, so
+        // the container parser has plenty to say about it; both entries are hand-derived from
+        // ScriptChecker.cs and are what the C# `Run()` produces for this same input:
+        //   line 0, "- narrate <def[a]> " -- a list entry with no list open (secwaiting and
+        //     clist both null) -> weird_line_growth (:1500-1505). Its range END is
+        //     `line.IndexOf('-')`, which is 0 here, NOT `spaces`.
+        //   line 2, "\tbar" -- tab-expanded to "    bar" at :1422, so 7 chars; it is not "- ",
+        //     does not end ':' and has no ": " -> identifier_missing_line (:1575-1579), range
+        //     (0, line.Length) = (0, 7).
+        // This assertion is therefore STRICTER than before, not weaker: it now pins five
+        // warnings and the position of the gather step within run(), where it pinned three.
         expect(shapes(checker.warnings)).toEqual([
             { line: 2, key: 'useless_invalid_line', start: 1, end: 4 },
             { line: 2, key: 'raw_tab_symbol', start: 0, end: 0 },
-            { line: 0, key: 'old_defs', start: 10, end: 10 }
+            { line: 0, key: 'old_defs', start: 10, end: 10 },
+            { line: 0, key: 'weird_line_growth', start: 0, end: 0 },
+            { line: 2, key: 'identifier_missing_line', start: 0, end: 7 }
         ]);
         // Mutant caught: dropping any one of the five calls from run().
         expect(shapes(checker.errors)).toEqual([{ line: 1, key: 'brace_syntax', start: 8, end: 8 }]);
