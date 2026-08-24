@@ -18,6 +18,46 @@ export interface ScriptWarning {
 }
 
 /**
+ * A string paired with the line/column it was read from. Ported from ScriptChecker.cs's
+ * `LineTrackedString` (constructor at :1364, fields at :1366-1373).
+ *
+ * EQUALITY (load-bearing for Task 2): ScriptChecker.cs:1381-1385 overrides `Equals` to compare
+ * ONLY `Text`, and :1376-1379 overrides `GetHashCode` the same way -- `Line` and `StartChar`
+ * are excluded from both. That makes two C# `LineTrackedString` instances with equal `Text`
+ * (regardless of line or start position) the *same* `Dictionary<LineTrackedString, object>`
+ * key, which is exactly how the C#'s duplicate-key and duplicate-script-name checks detect a
+ * repeat: they construct a fresh `new LineTrackedString(0, key, 0)` and look it up against a
+ * section built from real, differently-positioned instances (see e.g. ScriptChecker.cs:957,
+ * :964, :1652).
+ *
+ * TypeScript objects always compare by identity as `Map`/`Set` keys or with `===`, and this
+ * class does not (cannot, without a custom Map type) change that. So the text-only equality is
+ * instead exposed via the static `textKey` helper: Task 2 must key its section maps on
+ * `textKey(...)` (e.g. `Map<string, ...>`), never on `LineTrackedString` instances themselves,
+ * to reproduce the C#'s "does this section already have a key with this text" lookup.
+ */
+export class LineTrackedString {
+    constructor(
+        /** The line number. (`Line`, ScriptChecker.cs:1370) */
+        public readonly line: number,
+        /** The text of the line. (`Text`, ScriptChecker.cs:1367) */
+        public readonly text: string,
+        /** The character index of where this line starts. (`StartChar`, ScriptChecker.cs:1373) */
+        public readonly startChar: number,
+    ) {}
+
+    /**
+     * The value to use as a lookup/Map key wherever the C# would rely on `LineTrackedString`'s
+     * `Equals`/`GetHashCode` (text-only, per ScriptChecker.cs:1376-1385). Accepts either a
+     * `LineTrackedString` or a plain string so a fresh probe key -- the TS equivalent of the
+     * C#'s `new LineTrackedString(0, key, 0)` lookups -- doesn't need a throwaway instance.
+     */
+    static textKey(value: LineTrackedString | string): string {
+        return typeof value === 'string' ? value : value.text;
+    }
+}
+
+/**
  * Collects warnings into severity-separated lists, matching the four lists on
  * ScriptChecker (ScriptChecker.cs:108-118: `Errors`, `Warnings`, `MinorWarnings`, `Infos`)
  * plus the ignore tracking (ScriptChecker.cs:87 `IgnoredWarnings`, :127 `IgnoredWarningTypes`).
@@ -102,5 +142,19 @@ export class WarningCollector {
         seen.add(dedupKey);
         // ScriptChecker.cs:169
         list.push({ line, warningUniqueKey: key, customMessageForm: message, startChar: start, endChar: end });
+    }
+
+    /**
+     * Adds a warning to track, anchored to a `LineTrackedString` instead of explicit
+     * line/start/end. Ported from the second `Warn` overload (ScriptChecker.cs:177-180).
+     *
+     * TypeScript cannot overload on argument type the way C# does, so per the controller's
+     * ambiguity resolution this gets a distinct name, `warnAt`. It routes through `warn` --
+     * exactly as the C# overload calls the first `Warn` -- so dedup and ignore behaviour are
+     * identical, not reimplemented.
+     */
+    warnAt(list: ScriptWarning[], key: string, message: string, tracked: LineTrackedString): void {
+        // ScriptChecker.cs:179: `Warn(warnType, line.Line, key, message, line.StartChar, line.StartChar + line.Text.Length)`.
+        this.warn(list, tracked.line, key, message, tracked.startChar, tracked.startChar + tracked.text.length);
     }
 }
