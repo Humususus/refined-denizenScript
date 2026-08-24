@@ -25,16 +25,25 @@ export interface ScriptWarning {
  * ONLY `Text`, and :1376-1379 overrides `GetHashCode` the same way -- `Line` and `StartChar`
  * are excluded from both. That makes two C# `LineTrackedString` instances with equal `Text`
  * (regardless of line or start position) the *same* `Dictionary<LineTrackedString, object>`
- * key, which is exactly how the C#'s duplicate-key and duplicate-script-name checks detect a
- * repeat: they construct a fresh `new LineTrackedString(0, key, 0)` and look it up against a
- * section built from real, differently-positioned instances (see e.g. ScriptChecker.cs:957,
- * :964, :1652).
+ * key. Known-key lookups rely on exactly that: e.g. ScriptChecker.cs:950, :957, :964, :1652
+ * construct a fresh `new LineTrackedString(0, key, 0)` probe and look it up (via
+ * `TryGetValue`/`ContainsKey`) against a section built from real, differently-positioned
+ * instances, which only matches because of the `Equals`/`GetHashCode` override.
+ *
+ * The `duplicate_key`/`duplicate_script` checks themselves (ScriptChecker.cs:1473-1476 and
+ * :1607-1616, inside `GatherActualContainers`) do NOT go through that dictionary-probe path --
+ * they use `currentSection.Keys.Any(k => k.Text == secwaiting.Text)`, a LINQ scan that compares
+ * `.Text` directly and never touches `Equals`/`GetHashCode` at all. So the override matters for
+ * *lookup-by-known-key*; the duplicate checks reach the same "same text = same key" answer by
+ * an explicit scan instead.
  *
  * TypeScript objects always compare by identity as `Map`/`Set` keys or with `===`, and this
  * class does not (cannot, without a custom Map type) change that. So the text-only equality is
  * instead exposed via the static `textKey` helper: Task 2 must key its section maps on
- * `textKey(...)` (e.g. `Map<string, ...>`), never on `LineTrackedString` instances themselves,
- * to reproduce the C#'s "does this section already have a key with this text" lookup.
+ * `textKey(...)` (e.g. `Map<string, ...>`), never on `LineTrackedString` instances themselves.
+ * `textKey` serves both C# shapes -- it reproduces the dictionary-probe lookups (`section.get
+ * (textKey(probe))`) AND the "does this section already have a key with this text" duplicate
+ * scan (`section.has(textKey(candidate))`), so Task 2 does not need two different mechanisms.
  */
 export class LineTrackedString {
     constructor(
