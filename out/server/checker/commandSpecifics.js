@@ -8,8 +8,10 @@
 // NOTHING CALLS THIS YET. `CheckSingleCommand` (Task 4) dispatches through the registry, and
 // `CheckAllContainers` (Phase 2C-6) is what drives that.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.argHasPrefix = exports.BAD_EXECUTE_COMMANDS = exports.register = exports.COMMAND_CHECKERS = exports.CommandCheckDetails = void 0;
+exports.checkSingleCommand = exports.argHasPrefix = exports.BAD_EXECUTE_COMMANDS = exports.register = exports.COMMAND_CHECKERS = exports.CommandCheckDetails = void 0;
 const containerConvert_1 = require("./containerConvert");
+const buildArgs_1 = require("./buildArgs");
+const tagChecks_1 = require("./tagChecks");
 /**
  * Everything a per-command checker gets to look at.
  * Ported from ScriptCheckerCommandSpecifics.cs:17-67.
@@ -318,4 +320,122 @@ register(['determine'], (details) => {
         details.warn(details.checker.minorWarnings, 'typo_cancelled', "'- determine canceled' (one 'L') is a likely mistake - you probably meant '- determine cancelled' (two 'L's)");
     }
 });
+/**
+ * Performs the necessary checks on a single command line.
+ * Ported from ScriptChecker.cs:793-882.
+ *
+ * Four warning keys of its own -- `unknown_command`, `deprecated_command`, `too_few_args`,
+ * `too_many_args` -- plus `raw_object_notation`, plus whatever the per-command checker above
+ * raises, plus whatever `checkSingleArgument` finds in each argument.
+ */
+function checkSingleCommand(checker, line, startChar, commandText, context, script) {
+    var _a;
+    // ScriptChecker.cs:795-804. Needs no meta, so it runs before the cold-start guard below.
+    if (commandText.includes('@')) {
+        const range = (0, tagChecks_1.containsObjectNotation)(commandText);
+        if (range !== null) {
+            checker.warn(checker.warnings, line, 'raw_object_notation', 'This line appears to contain raw object notation. There is almost always a better way to write a line than using raw object notation. Consider the relevant object constructor tags.', startChar + range.start, startChar + range.end);
+        }
+    }
+    // ScriptChecker.cs:805-808
+    commandText = commandText.replaceAll('\n', ' ');
+    const firstSpace = commandText.indexOf(' ');
+    const rawName = firstSpace < 0 ? commandText : commandText.substring(0, firstSpace);
+    let commandName = toLowerFast(rawName);
+    // :808 -- taken BEFORE the sigil is stripped, so `unknown_command`'s range covers the `~`.
+    const cmdLen = commandName.length;
+    // ScriptChecker.cs:809-812: `~` waits for the command, `^` runs it instantly. Neither is
+    // part of the name.
+    if (commandName.startsWith('~') || commandName.startsWith('^')) {
+        commandName = commandName.substring(1);
+    }
+    // ScriptChecker.cs:813. The checker IS passed here, unlike from preprocContainer, so
+    // `bad_quotes` and `missing_quotes` fire. The offset uses the RAW first part's length, so a
+    // sigil still counts toward where the arguments begin.
+    const argumentText = firstSpace < 0 ? null : commandText.substring(firstSpace + 1);
+    const args = argumentText === null
+        ? []
+        : (0, buildArgs_1.buildArgs)(line, startChar + rawName.length + 1, argumentText, checker);
+    // NOT IN THE C#, which reads an ambient always-present meta. Everything from here on is a
+    // comparison against it: with none loaded, `Meta.Commands` holds nothing and EVERY command
+    // in the file would be reported unknown. Checking nothing until the docs arrive is the only
+    // honest answer -- see the same guard in checkSingleTag.
+    if (checker.meta === null) {
+        return;
+    }
+    // ScriptChecker.cs:814-821
+    const command = checker.meta.commands.get(commandName);
+    if (command === undefined) {
+        // :816 -- `case` and `default` are block labels, not commands, and have no meta entry.
+        if (commandName !== 'case' && commandName !== 'default') {
+            checker.warn(checker.errors, line, 'unknown_command', `Unknown command \`${commandName.replaceAll('`', "'")}\` (typo? Use \`!command [...]\` to find a valid command).`, startChar, startChar + cmdLen);
+        }
+        return;
+    }
+    // ScriptChecker.cs:822. The four prefixed forms are the command's own plumbing, not
+    // arguments to be counted against its documented arity.
+    const argCount = args.filter(s => !s.text.startsWith('save:') && !s.text.startsWith('if:')
+        && !s.text.startsWith('player:') && !s.text.startsWith('npc:')).length;
+    // ScriptChecker.cs:823-834
+    const details = new CommandCheckDetails();
+    details.startChar = startChar;
+    details.line = line;
+    details.commandText = commandText;
+    details.argCount = argCount;
+    details.arguments = args;
+    details.commandName = commandName;
+    details.context = context;
+    details.script = script;
+    details.checker = checker;
+    // ScriptChecker.cs:835-838
+    if (!isNullOrWhiteSpace(command.deprecated)) {
+        checker.warn(checker.errors, line, 'deprecated_command', `Command '${command.name}' is deprecated: ${command.deprecated}`, startChar, startChar + cmdLen);
+    }
+    // ScriptChecker.cs:839-856: four definitions inferred from SUBSTRINGS of the whole command
+    // text. Deliberately global and sloppy -- the C# marks the first with its own TODO ("Handle
+    // this locally to the tag, rather than globally pretending it exists"). Ported as-is,
+    // because narrowing them would start reporting definitions these tags really do provide.
+    if (commandText.includes('parse_tag')) {
+        details.trackDefinition('parse_value');
+    }
+    if (commandText.includes('null_if_tag')) {
+        details.trackDefinition('null_if_value');
+    }
+    if (commandText.includes('parse_value_tag')) {
+        details.trackDefinition('parse_value');
+        details.trackDefinition('parse_key');
+    }
+    if (commandText.includes('filter_tag')) {
+        details.trackDefinition('filter_key');
+        details.trackDefinition('filter_value');
+    }
+    // ScriptChecker.cs:857-864
+    if (argCount < command.required) {
+        checker.warn(checker.errors, line, 'too_few_args', `Insufficient arguments... the \`${command.name}\` command requires at least ${command.required} arguments, but you only provided ${argCount}.`, startChar, startChar + commandText.length);
+    }
+    if (argCount > command.maximum) {
+        checker.warn(checker.errors, line, 'too_many_args', `Too many arguments... the \`${command.name}\` command requires no more than ${command.maximum} arguments, but you provided ${argCount}. Did you forget 'quotes'?`, startChar, startChar + commandText.length);
+    }
+    // ScriptChecker.cs:865-868
+    const specific = exports.COMMAND_CHECKERS.get(commandName);
+    if (specific !== undefined) {
+        specific(details);
+    }
+    // ScriptChecker.cs:869-877. Read from every argument, not from the filtered set -- `save:`
+    // is one of the four the filter drops.
+    const saveArgument = (_a = args.find(s => s.text.startsWith('save:'))) === null || _a === void 0 ? void 0 : _a.text;
+    if (saveArgument !== undefined) {
+        context.saveEntries.add(toLowerFast(saveArgument.substring('save:'.length)));
+        if (saveArgument.includes('<')) {
+            context.hasUnknowableSaveEntries = true;
+        }
+    }
+    // ScriptChecker.cs:878-881. `isCommand` is TRUE here despite these being the command's
+    // ARGUMENTS: the flag suppresses the object-notation check, which already ran once over the
+    // whole command text at :795.
+    for (const argument of args) {
+        (0, tagChecks_1.checkSingleArgument)(checker, line, argument.startChar, argument.text, context, true, (l, s, t, c) => (0, tagChecks_1.checkSingleTag)(checker, l, s, t, c));
+    }
+}
+exports.checkSingleCommand = checkSingleCommand;
 //# sourceMappingURL=commandSpecifics.js.map
