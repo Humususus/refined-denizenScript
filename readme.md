@@ -13,57 +13,135 @@ A fork of [DenizenVSCode](https://github.com/DenizenScript/DenizenVSCode) by **M
 
 You'll be notified when a new release is out. To check manually: `Ctrl+Shift+P` → `Refined denizen: Check for updates`.
 
+Auto-checking is configurable — `refinedDenizenscript.update.autoCheck` and `refinedDenizenscript.update.checkIntervalHours`.
+
 ---
 
 ## Features
 
-### DenizenM
-Autocomplete and hover docs for DenizenM text-formatting tags and events.
-→ [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1)
+### File and folder icons
+A **DenizenScript Icons** file icon theme, with distinct icons for `.dsc` files and for 28 recognised Denizen folder names — `handlers`, `data`, `dialogs`, `utils`, `worlds`, `commands`, `entities`, `tasks`, `animations`, `extensions` and more, including their singular/plural spellings.
 
-### Denizen-Utilities
+Enable it with `Ctrl+Shift+P` → `Preferences: File Icon Theme` → **DenizenScript Icons**.
+
+### Mute diagnostics
+Silence warnings you don't want without touching the script:
+
+- **`Refined DenizenScript: Mute Diagnostics in Selection`** — select a range and mute everything reported inside it.
+- **`Refined DenizenScript: Unmute Diagnostics`** — undo it.
+- `##ignorewarning <key>` at the top of a file silences one specific check for that whole file.
+
+### Escaped symbol helper
+- Select text and press <kbd>/</kbd> to convert Denizen special characters into escape codes.
+- Type a delimited value like `/[]/` to turn it into `<&lb><&rb>`.
+- Press <kbd>Backspace</kbd> right after a conversion to undo it back to the original `/…/` text.
+
+### DenizenM support
+Completion and hover documentation for [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1) — escape tags, base tags, dot tags, commands, command arguments and events. DenizenM syntax is also excluded from diagnostics, so the base Denizen checker doesn't flag it as invalid.
+
+### Denizen-Utilities support
 - `dialog` snippet for scaffolding a dialog container.
-- Autocomplete for `<context.KEY>` values, read from `inputs.*.key` in the surrounding dialog container.
+- Completion for `<context.KEY>` values, read from `inputs.*.key` in the surrounding dialog container.
+- Dialog containers are excluded from the diagnostics that don't apply to them.
 
 → [Denizen-Utilities](https://modrinth.com/project/denizen-utilities)
 
-### Escaped symbol helper
-- Select text and press `/` to convert Denizen special characters into escape codes.
-- Type a delimited value like `/[]/` to turn it into `<&lb><&rb>`.
-- Press Backspace right after a conversion to undo it back to the original `/…/` text.
-
 ### Workspace completion
 - Local `- define` names offered inside `<[...]>`.
-- Tracked player and server flags, kept separate so they don't mix in suggestions.
-- Indexed across your whole open folder, not just the current file.
+- Player and server flags, kept in **separate** indexes so they never mix in suggestions.
+- Indexed across the whole open folder, not just the current file (`denizenscript.behaviors.track_full_workspace`).
 
-### Syntax highlighting
-Custom colour containers from your Denizen `config.yml` are parsed and applied where possible.
+### Syntax highlighting and inline colours
+- Custom colour containers from your Denizen `config.yml` are parsed and applied where possible.
+- Inline colour rendering for colour tags (`denizenscript.behaviors.do_inline_colors`), with an option for very dark colours (`display_dark_colors`).
+- Uses your active VS Code theme by default; the legacy DenizenScript palette is available via `denizenscript.behaviors.use_custom_syntax_colors`.
 
-### Workflow tools
-- Explorer commands for creating Denizen script categories and files.
+### Script scaffolding
+- **`Refined DenizenScript: Create Category`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>C</kbd>
+- **`Refined DenizenScript: Create Script File`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>F</kbd>
 - Automatic `.dsc` extension handling for files created under `denizen/script`.
-- Mute diagnostics over a selected range — `Refined DenizenScript: Mute Diagnostics in Selection`.
-- `##ignorewarning <key>` at the top of a file silences one check for that file.
+
+### Extra meta sources
+Load documentation for your own add-ons alongside the official Denizen meta — `denizenscript.extra_sources` (C# engine) or `denizenscript.server.extra_sources` (TypeScript engine), as direct `.zip` URLs.
 
 ---
 
 ## Fixes
 
-Things this fork corrects that the original gets wrong:
+Defects this fork corrects that the original gets wrong:
 
 - **`type: dialog` containers are recognised.** Previously every dialog container was reported as an unknown script type — a red error on perfectly valid scripts.
-- **Squiggles land on the text, not the indentation.** Three separate cases where a warning underlined the leading whitespace instead of the thing it was complaining about, including one where a capitalised key produced a broken range.
-- **Colour-code warnings report on the right line.** `§` used for colour codes was previously reported on the wrong line when a command spanned several lines, and was missed entirely when it appeared on a continuation line.
+- **Squiggles land on the text, not the indentation.** Three separate cases where a warning underlined the leading whitespace instead of the thing it complained about, including one where a capitalised key produced a broken range.
+- **Colour-code warnings report on the right line.** `§` used for colour codes was reported on the wrong line when a command spanned several lines, and missed entirely when it appeared on a continuation line.
 
 ---
 
 ## Language server
 
-Two engines ship with the extension, picked with the `denizenscript.server.engine` setting:
+Two engines ship with the extension, picked with `denizenscript.server.engine`:
 
 - **`csharp`** *(default)* — the original .NET server. Complete and stable. Needs the .NET 8 runtime.
-- **`typescript`** — an in-progress rewrite with no .NET dependency and a faster start. Completion, hover and most script diagnostics work; **tag and command checking isn't finished**, so it reports less than the C# engine. Try it if you want, but the default is the safe choice.
+- **`typescript`** — an in-progress rewrite with no .NET dependency and a faster start. Completion, hover and most script diagnostics work; **tag and command checking isn't finished**, so it reports less than the C# engine. The default is the safe choice.
+
+---
+
+## For developers
+
+### Setup
+
+```bash
+npm install
+```
+
+### Build
+
+```bash
+node node_modules/typescript/bin/tsc -p ./ --skipLibCheck
+```
+
+> Don't use `npm run compile` to verify a build — on some setups it exits 0 without writing anything, even when the code is broken. Invoke the compiler directly and check the exit code; it prints nothing on success.
+
+The compiled output in `out/` is **committed to the repository** and is what actually ships in the VSIX. After changing anything in `src/`, rebuild and commit `out/` too, or the change won't reach users.
+
+### Test
+
+```bash
+node node_modules/vitest/vitest.mjs run
+```
+
+Use this rather than `npx vitest`, which can swallow the output.
+
+`scripts/verify-phase*.js` are end-to-end checks that download real Denizen meta and drive the server the way it runs in production. Run them after any language-server change:
+
+```bash
+node scripts/verify-phase2c3.js
+```
+
+Each prints `ALL CHECKS PASSED` or a list of failures.
+
+### Package
+
+```bash
+npm run package
+```
+
+### Current state
+
+The TypeScript language server is a **faithful port** of `SharpDenizenTools`, not a reimplementation. The C# is treated as the specification, warts included: behaviours that look like bugs are ported verbatim and marked `C# QUIRK` in the source. Where the port knowingly disagrees, the site is marked `DELIBERATE DEVIATION` and the reason recorded.
+
+| | |
+|---|---|
+| Unit tests | **704 passing**, 31 files |
+| End-to-end verification | **10 scripts**, all passing against live meta |
+| TypeScript compile | clean |
+
+**Done:** meta loading and linking · command, argument, tag and tag-parameter completion · tag tracing · hover · 23 diagnostics across three layers (line-level checks, container structure, container validity).
+
+**In progress:** tag and command checking — the layer that reports an undefined `<[definition]>` or a garbage tag. The pieces are ported and tested; connecting them needs the container walker.
+
+**Not started:** event validation · tag hover and deprecation warnings · cross-file workspace analysis · YAML validation (deliberately — the rewrite takes no YAML dependency, and the hand-written structure parser covers most of what it caught).
+
+Every test names the mutant it catches, and each task ends with a mutation audit that proves it does. That standard exists because nine tests across one phase named a mutant they did not actually catch — every one found by auditing, none by review.
 
 ---
 
