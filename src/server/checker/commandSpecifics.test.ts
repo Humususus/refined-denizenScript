@@ -4,6 +4,7 @@ import { ScriptChecker } from './scriptChecker';
 import { ScriptCheckContext } from './tagChecks';
 import {
     CommandCheckDetails, COMMAND_CHECKERS, register, argHasPrefix, BAD_EXECUTE_COMMANDS
+, checkSingleCommand
 } from './commandSpecifics';
 import type { CommandChecker } from './commandSpecifics';
 import { buildArgs } from './buildArgs';
@@ -595,5 +596,181 @@ describe('gaps the first draft of these tests could not see', () => {
         details.trackDefinition('mymap.key');
         expect(viaChecker).toEqual(Array.from(details.context.definitions));
         expect(viaChecker).toEqual(['mymap']);
+    });
+});
+
+/**
+ * Phase 2C-5 Task 4: `checkSingleCommand` (ScriptChecker.cs:793-882).
+ */
+describe('checkSingleCommand', () => {
+    /** A small command set: one plain, one deprecated, one with a tight arity. */
+    function commandMeta(): MetaDocs {
+        const cmd = (name: string, extra: string[] = []) => ({
+            objectType: 'command', url: 'src#L1',
+            data: ['@name ' + name, '@syntax ' + name + ' [x]', '@short x', '@group x', '@description x', ...extra, '@end_meta']
+        });
+        const d = buildMetaDocs([
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
+            cmd('narrate', ['@required 1', '@maximum 2']),
+            cmd('oldcmd', ['@required 0', '@maximum 5', '@deprecated Use newcmd instead.']),
+            cmd('webget', ['@required 1', '@maximum 5']),
+            // `take` is registered in the checker registry, so it is what proves the dispatch
+            // actually happens. The earlier fixture had no such command and the mutant lived.
+            cmd('take', ['@required 1', '@maximum 5'])
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+    const META = commandMeta();
+
+    function run(commandText: string, opts: { meta?: MetaDocs | null; context?: ScriptCheckContext } = {}) {
+        const checker = new ScriptChecker('- ' + commandText);
+        checker.meta = opts.meta === undefined ? META : opts.meta;
+        const context = opts.context ?? new ScriptCheckContext();
+        checkSingleCommand(checker, 0, 0, commandText, context, null);
+        return {
+            checker, context,
+            keys: [...checker.errors, ...checker.warnings, ...checker.minorWarnings].map(w => w.warningUniqueKey)
+        };
+    }
+
+    it('says nothing about a well-formed command', () => {
+        expect(run('narrate hello').keys).toEqual([]);
+    });
+
+    it('reports unknown_command over the command NAME only', () => {
+        const r = run('nosuchcommand x');
+        expect(r.keys).toEqual(['unknown_command']);
+        expect({ start: r.checker.errors[0].startChar, end: r.checker.errors[0].endChar })
+            .toEqual({ start: 0, end: 'nosuchcommand'.length });
+    });
+
+    it('exempts case and default, which are block labels rather than commands', () => {
+        // :816. Both are legal script lines with no meta entry of their own.
+        // MUTANT CAUGHT: dropping the exemption -- every switch block would report twice.
+        expect(run('case 5').keys).toEqual([]);
+        expect(run('default').keys).toEqual([]);
+    });
+
+    it('strips a leading ~ or ^ from the name but KEEPS it in the range (C# QUIRK)', () => {
+        // :808 takes the length BEFORE :809-812 strips the sigil, so `unknown_command` underlines
+        // the `~` too. Here `~webget` resolves, proving the strip works; the range quirk is shown
+        // by the unknown case below.
+        expect(run('~webget https://example.com').keys).toEqual([]);
+        expect(run('^webget https://example.com').keys).toEqual([]);
+        const r = run('~nosuchcommand x');
+        expect(r.checker.errors[0].endChar).toBe('~nosuchcommand'.length);
+    });
+
+    it('reports deprecated_command, naming the command and its reason', () => {
+        const r = run('oldcmd x');
+        expect(r.keys).toEqual(['deprecated_command']);
+        expect(r.checker.errors[0].customMessageForm).toBe("Command 'oldcmd' is deprecated: Use newcmd instead.");
+    });
+
+    it('reports too_few_args and too_many_args against the DOCUMENTED arity', () => {
+        expect(run('narrate').keys).toEqual(['too_few_args']);
+        expect(run('narrate a b c').keys).toEqual(['too_many_args']);
+    });
+
+    it('excludes the four prefixed forms from the argument count', () => {
+        // :822. `save:`, `if:`, `player:` and `npc:` are the command's own plumbing. Counting
+        // them would report too_many_args on ordinary lines.
+        // MUTANT CAUGHT: counting every argument -- `narrate a save:x if:y` becomes 3 and trips
+        // the maximum of 2.
+        expect(run('narrate a save:x if:y player:z npc:w').keys).toEqual([]);
+    });
+
+    it('records a save: entry on the context', () => {
+        // :869-877, and the index the <entry[...]> completion work needs.
+        const r = run('webget https://example.com save:MyPage');
+        expect(Array.from(r.context.saveEntries)).toEqual(['mypage']);
+        expect(r.context.hasUnknowableSaveEntries).toBe(false);
+    });
+
+    it('marks save entries unknowable when the name is built from a tag', () => {
+        // :873. A tagged save name cannot be known, so `entry_of_nothing` must stop firing
+        // rather than report every entry tag in the script.
+        // MUTANT CAUGHT: dropping the flag, or testing the stripped name instead of the whole
+        // argument.
+        const r = run('webget https://example.com save:<[dynamic]>');
+        expect(r.context.hasUnknowableSaveEntries).toBe(true);
+    });
+
+    it('reads save: from ALL arguments, not the counted subset', () => {
+        // The filter at :822 drops `save:` -- so looking there would find nothing.
+        expect(Array.from(run('webget x save:page').context.saveEntries)).toEqual(['page']);
+    });
+
+    it('infers definitions from substrings of the whole command text (C# QUIRK)', () => {
+        // :839-856. Deliberately global and sloppy; the C# marks the first with its own TODO.
+        // Narrowing them would start reporting definitions these tags really do provide.
+        expect(Array.from(run('narrate <[x].parse_tag[<[parse_value]>]>').context.definitions).sort())
+            .toEqual(['parse_value']);
+        expect(Array.from(run('narrate <[x].filter_tag[<[filter_key]>]>').context.definitions).sort())
+            .toEqual(['filter_key', 'filter_value']);
+        expect(Array.from(run('narrate <[x].null_if_tag[y]>').context.definitions).sort())
+            .toEqual(['null_if_value']);
+    });
+
+    it('dispatches to the per-command checker', () => {
+        // :865-868 -- the bridge to the twelve.
+        //
+        // `take stone` is the proof: `take` is registered AND present in the fixture's meta, so
+        // reaching take_raw means the dispatch ran. An earlier version of this test used commands
+        // with no registered checker and asserted silence, which stays silent whether or not the
+        // dispatch happens -- the mutant survived it.
+        // MUTANT CAUGHT: never calling the registered checker.
+        expect(run('take stone').keys).toEqual(['take_raw']);
+        expect(run('take item:stone').keys).toEqual([]);
+        // A command with no registered checker is simply silent.
+        expect(run('webget x save:p').keys).toEqual([]);
+        // And the registry is only reached for KNOWN commands: `queue` has a checker but no meta
+        // entry here, so it stops at unknown_command.
+        expect(run('queue clear').keys).toEqual(['unknown_command']);
+    });
+
+    it('checks each argument for tags', () => {
+        // :878-881. The argument checks run even when the command itself is fine.
+        // MUTANT CAUGHT: not iterating the arguments.
+        const r = run('narrate <nosuchbase>');
+        expect(r.keys).toContain('bad_tag_base');
+    });
+
+    it('reports raw object notation over the whole command line', () => {
+        // :795-804, which runs BEFORE the meta guard because it needs no meta.
+        expect(run('narrate e@1234').keys).toContain('raw_object_notation');
+    });
+
+    it('still reports object notation with NO meta loaded, and nothing else', () => {
+        // The cold start. Every check after the guard compares against the meta; with none
+        // loaded, EVERY command in the file would be reported unknown.
+        // MUTANT CAUGHT: moving the guard above the object-notation check, or removing it.
+        const r = run('nosuchcommand e@1234', { meta: null });
+        expect(r.keys).toEqual(['raw_object_notation']);
+    });
+
+    it('passes isCommand=true to each argument -- equivalent here, and deliberate (EQUIVALENT)', () => {
+        // :880 passes TRUE despite these being the command's ARGUMENTS. The flag suppresses the
+        // per-argument object-notation check, because one already ran over the whole command
+        // text at :795.
+        //
+        // Flipping it to false is an EQUIVALENT mutant in this caller, not an untested branch:
+        // `warn` dedups on (line, key) per list, and the :795 check always fires first for the
+        // same line and key whenever an argument would have qualified -- the argument text is a
+        // substring of the command text. So the second report is dropped either way.
+        //
+        // Kept true because it is what the C# passes, and because a future caller that skips the
+        // :795 check would depend on it.
+        const r = run('narrate e@1234');
+        expect(r.keys.filter(k => k === 'raw_object_notation').length).toBe(1);
+    });
+
+    it('passes the checker to buildArgs, so quote problems are reported', () => {
+        // :813 passes `this`, unlike preprocContainer's null. That is what makes bad_quotes and
+        // missing_quotes reachable at all.
+        // MUTANT CAUGHT: passing null.
+        expect(run('narrate "hello').keys).toContain('missing_quotes');
+        expect(run('narrate "hello"').keys).toContain('bad_quotes');
     });
 });
