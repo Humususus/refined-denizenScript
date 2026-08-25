@@ -806,3 +806,31 @@ describe('the case checker is UNREACHABLE through checkSingleCommand (C# QUIRK)'
         expect(runChecker('case default').keys).toEqual(['case_default']);
     });
 });
+
+describe('the define name cut at "[" (DELIBERATE DEVIATION, user ruling)', () => {
+    it('records the real name for Denizen\'s indexed-define syntax', () => {
+        // The C# (:229 and :1798) cuts at ':' and '.' but NOT at '[', even though the flag
+        // branch four cases down does. `- define background[46]:x` therefore recorded
+        // `background[46]` -- a name no tag can reference, so `<[background]>` would be reported
+        // undefined on a correct script once Phase 2C-6 turns that check on.
+        // MUTANT CAUGHT: reverting to the C#'s two cuts.
+        expect(runChecker('define background[46]:<item[red_dye]>').defs).toEqual(['background']);
+        expect(runChecker('define background[54]:x').defs).toEqual(['background']);
+    });
+
+    it('handles an index built from a tag, which the C# truncated to a bare "background["', () => {
+        // The nastier case: `background[<[loop_index]>]` has no ':' before its '[', so the C#'s
+        // Before(':') leaves the whole thing and MixedKnowledgeSet then splits it at the '<',
+        // storing the prefix `background[` as a partial. That prefix matches `background[46]`
+        // but never plain `background`.
+        expect(runChecker('define background[<[loop_index]>]:<[sound_item]>').defs).toEqual(['background']);
+    });
+
+    it('leaves an ordinary define untouched', () => {
+        // The deviation must not disturb the 161 defines in the user's corpus that were already
+        // recorded correctly.
+        expect(runChecker('define greeting hello').defs).toEqual(['greeting']);
+        expect(runChecker('define mymap.key value').defs).toEqual(['mymap']);
+        expect(runChecker('define name:value').defs).toEqual(['name']);
+    });
+});

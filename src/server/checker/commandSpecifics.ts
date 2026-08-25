@@ -301,7 +301,11 @@ register(['define', 'definemap'], (details) => {
     // the four prefixed forms while `arguments` does not. `- define save:x` therefore tracks a
     // definition called `save` rather than nothing.
     if (details.argCount >= 1) {
-        const defName = before(toLowerFast(before(details.arguments[0].text, ':')), '.');
+        // DELIBERATE DEVIATION, the same one as containerConvert.ts's define branch and taken by
+        // the same user ruling: the C# (:229) cuts at ':' and '.' but NOT at '[', so
+        // `- define background[46]:x` records `background[46]` -- a name no tag can reference.
+        // See the long note at the other site for the measurements behind the ruling.
+        const defName = before(before(toLowerFast(before(details.arguments[0].text, ':')), '.'), '[');
         details.trackDefinition(defName);
     }
 });

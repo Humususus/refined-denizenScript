@@ -287,7 +287,29 @@ function preprocContainer(script) {
                 case 'define':
                 case 'definemap':
                     if (cleanArgs.length > 0) {
-                        script.defNames.add(before(before(cleanArgs[0], ':'), '.'));
+                        // -----------------------------------------------------------------
+                        // DELIBERATE DEVIATION FROM ScriptChecker.cs -- NOT a porting mistake.
+                        // -----------------------------------------------------------------
+                        // The C# is `cleanArgs[0].Before(':').Before('.')` -- no `.Before('[')`,
+                        // even though the FLAG branch four cases down (:1837) has exactly that
+                        // cut. So Denizen's indexed-define syntax records a name nobody can
+                        // write:
+                        //     - define background[46]:<item[red_dye]>   ->  `background[46]`
+                        //     - define background[<[i]>]:<[x]>          ->  `background[`
+                        // The real definition is `background`, and `<[background]>` would then
+                        // be reported as undefined by Phase 2C-6 on a correct script.
+                        //
+                        // USER RULING: FIX, on the same grounds as the four range corrections
+                        // before it -- a warning on working code is a defect the user can see
+                        // and the C# cannot defend. The cut is one word, and it is the one the
+                        // sibling branch in this same method already performs.
+                        //
+                        // Measured on the user's corpus before the change: 161 defines recorded
+                        // their name correctly and 3 did not, all of them `background` in
+                        // sfx.dsc. Nothing there breaks either way, because that script also
+                        // defines `background` plainly -- the fix closes the class of failure
+                        // rather than a live one.
+                        script.defNames.add(before(before(before(cleanArgs[0], ':'), '.'), '['));
                     }
                     break;
                 // ScriptChecker.cs:1801-1809
