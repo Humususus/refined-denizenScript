@@ -12,6 +12,7 @@ import type { ScriptCheckContext } from './tagChecks';
 import type { CommandArgument } from './buildArgs';
 import type { ScriptWarning } from './scriptWarnings';
 import type { ScriptContainerData } from './containerConvert';
+import { contextValidatedIsValidScriptName } from './containerConvert';
 
 /**
  * Everything a per-command checker gets to look at.
@@ -137,3 +138,234 @@ export function argHasPrefix(arg: string): boolean {
     }
     return false;
 }
+
+/** ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`. */
+function toLowerFast(text: string): string {
+    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
+/** FreneticUtilities' `string.Before(char)`. */
+function before(input: string, match: string): string {
+    const index = input.indexOf(match);
+    return index < 0 ? input : input.slice(0, index);
+}
+
+/** FreneticUtilities' `string.After(char)`: everything after the first occurrence, else ''. */
+function after(input: string, match: string): string {
+    const index = input.indexOf(match);
+    return index < 0 ? '' : input.slice(index + match.length);
+}
+
+/** ScriptChecker.cs:1958-1961's `StartsWithAny`. */
+function startsWithAny(input: string, ...checks: string[]): boolean {
+    return checks.some(s => input.startsWith(s));
+}
+
+/** C#'s `string.IsNullOrWhiteSpace`. */
+function isNullOrWhiteSpace(text: string | null | undefined): boolean {
+    return text === null || text === undefined || text.trim().length === 0;
+}
+
+// --------------------------------------------------------------------------------------------
+// The twelve checkers, in the C#'s registration order (ScriptCheckerCommandSpecifics.cs:114-308).
+// THE ORDER OF THESE CALLS IS BEHAVIOUR, not style: `register` combines new-before-old, and the
+// array ['foreach', 'repeat', 'while'] must keep `while` LAST. See `register`'s doc comment.
+// --------------------------------------------------------------------------------------------
+
+// ScriptCheckerCommandSpecifics.cs:114-128
+register(['if', 'waituntil', 'while'], (details) => {
+    let borkLen = ' == true'.length;
+    let borkIndex = details.commandText.indexOf(' == true');
+    if (borkIndex === -1) {
+        borkLen = ' == false'.length;
+        borkIndex = details.commandText.indexOf(' == false');
+    }
+    if (borkIndex !== -1) {
+        details.warn(details.checker.errors, 'truly_true',
+            "'== true' style checks are nonsense. Refer to <https://guide.denizenscript.com/guides/troubleshooting/common-mistakes.html#if-true-is-true-equal-to-truly-true-is-the-truth> for more info.",
+            details.startChar + borkIndex, details.startChar + borkIndex + borkLen);
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:129-186 -- the largest of the twelve.
+register(['adjust'], (details) => {
+    const meta = details.checker.meta;
+    if (meta === null) {
+        return;
+    }
+    // :131 -- `def:` and `if:` are the command's own arguments, never the mechanism.
+    const argReserved = (s: CommandArgument): boolean => s.text.startsWith('def:') || s.text.startsWith('if:');
+    // :132-133. First choice: a genuinely prefixed argument. Failing that, a bare word that is
+    // not a tag and not a known raw-adjustable object -- whatever is left must be the mechanism.
+    const mechanism = details.arguments.find(s => argHasPrefix(s.text) && !argReserved(s))
+        ?? details.arguments.find(s => !argReserved(s) && !s.text.includes('<') && !meta.rawAdjustables.has(s.text));
+    if (mechanism === undefined) {
+        // :136-139. A single tag as the second argument is an adjust-by-MapTag, which is legal.
+        if (details.arguments.length < 2 || !details.arguments[1].text.startsWith('<') || !details.arguments[1].text.endsWith('>')) {
+            details.warn(details.checker.errors, 'bad_adjust_no_mech', 'Malformed adjust command. No mechanism input given.');
+        }
+        return;
+    }
+    // :143-144. The C# reads the AMBIENT `MetaDocs.CurrentMeta` here while using
+    // `details.Checker.Meta` twelve lines earlier; there is no such singleton in this repo, so
+    // both go through the checker.
+    const mechanismName = toLowerFast(before(mechanism.text, ':'));
+    const possible = Array.from(meta.mechanisms.values()).filter(m => m.mechName === mechanismName);
+    let mech = null;
+    if (possible.length === 1) {
+        mech = possible[0];
+    }
+    else if (possible.length > 1) {
+        // :150-167. Several object types share this mechanism name, so try to pick by which
+        // object is being adjusted -- and fall back to the FIRST either way, which means the
+        // deprecation message below can name a mechanism from the wrong type. C# QUIRK.
+        const objArg = details.arguments.find(s => !argHasPrefix(s.text));
+        if (objArg === undefined) {
+            mech = possible[0];
+        }
+        else {
+            mech = possible.find(m => m.mechObject === objArg.text) ?? possible[0];
+        }
+    }
+    if (mech === null) {
+        details.warn(details.checker.errors, 'bad_adjust_unknown_mech', 'Malformed adjust command. Mechanism name given is unrecognized.',
+            mechanism.startChar, mechanism.startChar + mechanismName.length);
+    }
+    else if (!isNullOrWhiteSpace(mech.deprecated)) {
+        details.warn(details.checker.errors, 'bad_adjust_deprecated_mech', `Mechanism '${mech.name}' is deprecated: ${mech.deprecated}`,
+            mechanism.startChar, mechanism.startChar + mechanismName.length);
+    }
+    // :176-184
+    const defArg = details.arguments.find(s => s.text.startsWith('def:'));
+    if (defArg !== undefined) {
+        const defName = toLowerFast(after(defArg.text, ':'));
+        if (!details.context.definitions.has(defName) && !details.context.hasUnknowableDefinitions) {
+            details.warn(details.checker.errors, 'bad_adjust_unknown_def', 'Malformed adjust command. Definition name given is unrecognized.',
+                defArg.startChar, defArg.startChar + defArg.text.length);
+        }
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:187-198
+register(['execute'], (details) => {
+    if (details.argCount >= 2) {
+        // :191 -- `as_server`/`as_player`/... shift the real command to the second argument.
+        const bukkitCommandArg = toLowerFast(details.arguments[0].text).startsWith('as_')
+            ? details.arguments[1].text
+            : details.arguments[0].text;
+        const bukkitCommandName = toLowerFast(before(bukkitCommandArg, ' '));
+        if (BAD_EXECUTE_COMMANDS.has(bukkitCommandName) || bukkitCommandName.startsWith('minecraft:') || bukkitCommandName.startsWith('bukkit:')) {
+            details.warn(details.checker.warnings, 'bad_execute',
+                "Inappropriate usage of the 'execute' command. Execute is for external plugin interop, and should never be used for vanilla commands. Use the relevant Denizen script command or mechanism instead.");
+        }
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:199-208
+register(['inject'], (details) => {
+    // An injected script brings definitions and save entries this file cannot see, so BOTH
+    // become unknowable. Without this, 2C-4's def_of_nothing would fire across the whole script.
+    details.context.hasUnknowableDefinitions = true;
+    details.context.hasUnknowableSaveEntries = true;
+    const scrName = details.arguments.map(a => toLowerFast(a.text)).find(a => a !== 'instantly' && !a.startsWith('path:')) ?? null;
+    if (!contextValidatedIsValidScriptName(details.checker, scrName)) {
+        details.warn(details.checker.errors, 'invalid_script_inject', `Script name \`${scrName}\` is invalid. Cannot be injected.`);
+    }
+});
+
+/** ScriptCheckerCommandSpecifics.cs:209 -- arguments of `run` that are not the script name. */
+const RUN_OTHER_ARGS: ReadonlySet<string> = new Set(['instant', 'instantly', 'local', 'locally']);
+
+// ScriptCheckerCommandSpecifics.cs:210-217
+register(['run', 'runlater'], (details) => {
+    const scrName = details.arguments.map(a => toLowerFast(a.text))
+        .find(a => !RUN_OTHER_ARGS.has(a) && !startsWithAny(a, 'path:', 'id:', 'speed:', 'delay:', 'def:', 'def.', 'defmap:')) ?? null;
+    if (!contextValidatedIsValidScriptName(details.checker, scrName)) {
+        details.warn(details.checker.errors, 'invalid_script_run', `Script name \`${scrName}\` is invalid. Cannot be ran.`);
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:218-224
+register(['queue'], (details) => {
+    if (details.argCount === 1 && (toLowerFast(details.arguments[0].text) === 'stop' || toLowerFast(details.arguments[0].text) === 'clear')) {
+        details.warn(details.checker.minorWarnings, 'queue_clear',
+            "Old style 'queue clear'. Use the modern 'stop' command instead. Refer to <https://guide.denizenscript.com/guides/troubleshooting/updates-since-videos.html#stop-is-the-new-queue-clear> for more info.");
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:225-232
+register(['define', 'definemap'], (details) => {
+    // C# QUIRK: gated on argCount but indexes `arguments`, and those differ -- argCount skips
+    // the four prefixed forms while `arguments` does not. `- define save:x` therefore tracks a
+    // definition called `save` rather than nothing.
+    if (details.argCount >= 1) {
+        const defName = before(toLowerFast(before(details.arguments[0].text, ':')), '.');
+        details.trackDefinition(defName);
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:233-252. `while` is LAST on purpose -- see `register`.
+register(['foreach', 'repeat', 'while'], (details) => {
+    if (details.commandName !== 'while') {
+        const asArgumentRaw = details.arguments.find(s => toLowerFast(s.text).startsWith('as:'))?.text ?? null;
+        const asArgument = asArgumentRaw === null ? 'value' : asArgumentRaw.substring('as:'.length);
+        details.trackDefinition(toLowerFast(asArgument));
+    }
+    if (details.commandName !== 'repeat') {
+        details.trackDefinition('loop_index');
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:253-265
+register(['foreach'], (details) => {
+    const keyArgumentRaw = details.arguments.find(s => toLowerFast(s.text).startsWith('key:'))?.text ?? null;
+    const keyArgument = keyArgumentRaw === null ? 'key' : keyArgumentRaw.substring('key:'.length);
+    details.trackDefinition(toLowerFast(keyArgument));
+});
+
+// ScriptCheckerCommandSpecifics.cs:266-287
+register(['give'], (details) => {
+    if (details.arguments.some(a => a.text === '<player>' || a.text === '<player.name>' || a.text === '<npc>')) {
+        details.warn(details.checker.warnings, 'give_player',
+            "The 'give' will automatically give to the linked player, so you do not need to specify that. To specify a different target, use the 'to:<inventory>' argument.");
+    }
+    // -------------------------------------------------------------------------------------
+    // DEAD IN THE C#, AND PORTED DEAD. ScriptCheckerCommandSpecifics.cs:272 reads
+    //     FirstOrDefault(a => ScriptChecker.StartsWithAny("quantity:", "unlimit_stack_size",
+    //                                                     "to:", "t:", "slot:"))
+    // `StartsWithAny(input, params checks)` takes the string to test FIRST -- so this passes the
+    // literal "quantity:" as the input and ignores the lambda's own `a` entirely. The predicate
+    // is the constant false ("quantity:" starts with none of the other four), `itemGive` is
+    // always null, and `give_invalid_item` can never fire. The intent was plainly
+    // `!StartsWithAny(a, ...)`: find the first argument that is NOT one of those prefixes.
+    //
+    // Left dead rather than repaired. Fixing it would turn a silent check into a live one that
+    // has never run against a real workspace, on a command used everywhere -- that needs a
+    // ruling, not a drive-by. It is doubly unreachable anyway: the body is also gated on
+    // `SurroundingWorkspace`, which stays null until Phase 2D.
+    // -------------------------------------------------------------------------------------
+});
+
+// ScriptCheckerCommandSpecifics.cs:288-294
+register(['take'], (details) => {
+    if (details.arguments.some(a => !a.text.includes(':') && a.text !== 'money' && a.text !== 'xp' && a.text !== 'iteminhand' && a.text !== 'cursoritem')) {
+        details.warn(details.checker.minorWarnings, 'take_raw',
+            "The 'take' command should always be used with a standard prefixed take style, like 'take item:my_item_here' or 'take slot:5'.");
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:295-301
+register(['case'], (details) => {
+    if (details.argCount === 1 && toLowerFast(details.arguments[0].text).replaceAll(':', '') === 'default') {
+        details.warn(details.checker.minorWarnings, 'case_default',
+            "'- case default:' is a likely mistake - you probably meant '- default:'");
+    }
+});
+
+// ScriptCheckerCommandSpecifics.cs:302-308
+register(['determine'], (details) => {
+    if (details.arguments.some(arg => toLowerFast(arg.text) === 'canceled')) {
+        details.warn(details.checker.minorWarnings, 'typo_cancelled',
+            "'- determine canceled' (one 'L') is a likely mistake - you probably meant '- determine cancelled' (two 'L's)");
+    }
+});

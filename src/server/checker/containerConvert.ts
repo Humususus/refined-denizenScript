@@ -545,3 +545,61 @@ function resolveInjects(checker: ScriptChecker): void {
         recurseAdd(script);
     }
 }
+
+/**
+ * The first/best container matching `scriptName`, if it is knowable and known.
+ * Ported from ScriptChecker.cs:1964-1998.
+ *
+ * DORMANT UNTIL PHASE 2D. The very first line returns null whenever `surroundingWorkspace` is
+ * null, which it always is until cross-file scanning exists. Ported now, with its real shape,
+ * so the call sites in `commandSpecifics` read like the C# instead of like a stub someone has to
+ * come back and replace.
+ */
+export function contextValidatedGetScriptFor(checker: ScriptChecker, scriptName: string | null, requireType: string | null): ScriptContainerData | null {
+    if (checker.surroundingWorkspace === null || scriptName === null) {
+        return null;
+    }
+    // ScriptChecker.cs:1970-1974
+    scriptName = before(toLowerFast(scriptName), '.');
+    if (scriptName.startsWith('script:')) {
+        scriptName = after(scriptName, ':');
+    }
+    let res: ScriptContainerData | null = null;
+    if (scriptName.includes('<')) {
+        // ScriptChecker.cs:1976-1984: a tagged name can only be matched by prefix.
+        const partial = before(scriptName, '<');
+        const matches = (from: Map<string, ScriptContainerData>): ScriptContainerData | null => {
+            for (const [key, value] of from) {
+                if (key.startsWith(partial) && (requireType === null || value.type === requireType)) {
+                    return value;
+                }
+            }
+            return null;
+        };
+        res = matches(checker.surroundingWorkspace.scripts) ?? matches(checker.generatedWorkspace.scripts);
+    }
+    else {
+        // ScriptChecker.cs:1985-1996
+        res = checker.surroundingWorkspace.scripts.get(scriptName)
+            ?? checker.generatedWorkspace.scripts.get(scriptName)
+            ?? null;
+        if (res !== null && requireType !== null && res.type !== requireType) {
+            return null;
+        }
+    }
+    return res;
+}
+
+/**
+ * Whether a script name is null, unknowable, or valid.
+ * Ported from ScriptChecker.cs:2001-2008.
+ *
+ * Returns TRUE -- i.e. "no complaint" -- whenever there is no surrounding workspace, which is
+ * why `invalid_script_inject` and `invalid_script_run` cannot fire before Phase 2D.
+ */
+export function contextValidatedIsValidScriptName(checker: ScriptChecker, scriptName: string | null): boolean {
+    if (checker.surroundingWorkspace === null || scriptName === null) {
+        return true;
+    }
+    return contextValidatedGetScriptFor(checker, scriptName, null) !== null;
+}
