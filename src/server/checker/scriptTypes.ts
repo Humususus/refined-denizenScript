@@ -11,6 +11,11 @@
 // The table was therefore NOT verified by reading it against the C# side by side. It was checked
 // by a throwaway extractor that parses the C# source text and diffs it field by field against
 // this file's compiled output. Redo that if you edit anything here.
+//
+// There is exactly ONE intentional exception to the porting rule in this file, labelled
+// DELIBERATE DEVIATION at its site and taken as a USER RULING: the `dialog` entry, which the C#
+// does not have and which the user's own scripts need. The extractor knows about it by name and
+// still diffs every other entry strictly.
 
 /**
  * Basic metadata about a known script type. Ported from ScriptChecker.cs:885-907.
@@ -172,6 +177,42 @@ export const KNOWN_SCRIPT_TYPES: Map<string, KnownScriptType> = new Map<string, 
         likelyBadKeys: ['script', 'steps', 'actions', 'events'],
         valueKeys: ['original', 'display name', 'auto update', 'objects.*', 'contextual'],
         strict: true,
+        canHaveRandomScripts: false
+    })],
+    // -----------------------------------------------------------------
+    // DELIBERATE DEVIATION FROM ScriptChecker.cs -- NOT a porting mistake.
+    // -----------------------------------------------------------------
+    // `dialog` is NOT in the C#'s table, and is not in Denizen's downloadable meta either --
+    // the meta ships 17 "script container" language pages and none of them is dialog. It is a
+    // recent Denizen container type that the vendored SharpDenizenTools predates entirely.
+    //
+    // Without this entry, `convertContainers` reports `wrong_type` -- an ERROR-severity
+    // diagnostic on the container's title line -- for every dialog container. Measured on the
+    // user's own scripts: 2 of 44 containers, both perfectly valid.
+    //
+    // USER RULING, and one they had already asked for before this port began: prompt.md names
+    // this exact container ("Еще убрать error подсветку у Контейнера / nicknameChanged: /
+    // type: dialog ... Ну типо поддержку этого контейнера добавь").
+    //
+    // THE FIELDS ARE DELIBERATELY CONSERVATIVE, because every field here can only ADD
+    // diagnostics and the point of the change is to remove one:
+    //   - `requiredKeys` and `likelyBadKeys` are EMPTY ON PURPOSE. Both exist to drive warnings
+    //     in CheckAllContainers (Phase 2C-4). With no authoritative meta to copy, anything put
+    //     here would be invented, and inventing a required key turns a valid minimal dialog into
+    //     a new error -- trading one false positive for another.
+    //   - `strict: false`, so unrecognised keys never warn.
+    //   - `canHaveRandomScripts: false`, so a list under `base`/`bodies`/`inputs` is NOT walked
+    //     as commands. Only the one key that genuinely holds code is.
+    //   - `scriptKeys: ['buttons.*']` is the one thing that must be right: a dialog's code lives
+    //     at `buttons.<n>.script`, and `keyText` at ScriptChecker.cs:1930 is built from the
+    //     TOP-LEVEL key name, so `buttons.*` is the expression that reaches it -- exactly the
+    //     shape `world` uses for `events.*`.
+    // Derived by reading the user's two real dialog containers; re-derive if Denizen publishes
+    // real meta for this type.
+    ['dialog', knownType({
+        valueKeys: ['base.*', 'bodies.*', 'inputs.*'],
+        scriptKeys: ['buttons.*'],
+        strict: false,
         canHaveRandomScripts: false
     })],
     ['enchantment', knownType({

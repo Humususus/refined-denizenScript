@@ -602,3 +602,70 @@ describe('preprocContainer: the item early return', () => {
         expect(Array.from(c.defNames.exactKnown)).toEqual([]);
     });
 });
+
+describe('dialog containers (the DELIBERATE DEVIATION in scriptTypes.ts)', () => {
+    // Reduced from the user's own mafia/dialogs/mf.first.dsc and clans/clans-menu.dsc, which are
+    // the two files that reported `wrong_type` before `dialog` was added to the type table.
+    const DIALOG = [
+        'nicknamechanged:',
+        '  type: dialog',
+        '  base:',
+        '    type: multi',
+        '    title: Welcome',
+        '    columns: 1',
+        '  bodies:',
+        '    header:',
+        '      type: message',
+        '      message: Enter a name',
+        '  inputs:',
+        '    1:',
+        '      type: text',
+        '      label: Name',
+        '      key: display_name',
+        '  buttons:',
+        '    1:',
+        '      label: Confirm',
+        '      script:',
+        '      - define name_regex sometext',
+        '      - flag server dialogs.seen:true',
+        '      - flag player last_dialog:nickname',
+        '      - narrate "done"'
+    ].join('\n');
+
+    it('produces ZERO diagnostics -- this is the user-visible point of the deviation', () => {
+        // Before `dialog` was in the table, `convertContainers` reported wrong_type at
+        // ScriptChecker.cs:1708 -- an ERROR, on the title line, for a perfectly valid container.
+        // Measured on the user's real scripts: 2 of 44 containers.
+        // MUTANT CAUGHT: removing the dialog entry from KNOWN_SCRIPT_TYPES.
+        const checker = run(DIALOG);
+        expect(checker.errors.map(shape)).toEqual([]);
+        expect(checker.warnings.map(shape)).toEqual([]);
+        expect(checker.generatedWorkspace.scripts.get('nicknamechanged')!.type).toBe('dialog');
+    });
+
+    it('walks buttons.<n>.script as code, so its definitions and flags are harvested', () => {
+        // `scriptKeys: ['buttons.*']`. Being in the table is enough to silence wrong_type, but
+        // NOT enough to make the container useful -- without this key the button's commands are
+        // invisible and 2C-4 would report `<[name_regex]>` as undefined inside the very script
+        // that defines it.
+        // MUTANT CAUGHT: emptying dialog's scriptKeys. defs/flags all come back empty while the
+        // zero-diagnostics test above still passes.
+        const checker = run(DIALOG);
+        const c = checker.generatedWorkspace.scripts.get('nicknamechanged')!;
+        expect(ownDefs(checker, 'nicknamechanged')).toEqual(['name_regex']);
+        expect(Array.from(c.serverFlags.exactKnown)).toEqual(['dialogs']);
+        expect(Array.from(c.objectFlags.exactKnown)).toEqual(['last_dialog']);
+    });
+
+    it('does NOT walk base/bodies/inputs as code', () => {
+        // `canHaveRandomScripts: false` is what stops the data sections being treated as
+        // commands. A list under `bodies:` is content, not script.
+        // MUTANT CAUGHT: setting canHaveRandomScripts true -- `notacommand` is harvested via
+        // the second disjunct at ScriptChecker.cs:1937.
+        const checker = run(
+            'd:\n  type: dialog\n  bodies:\n    header:\n    - define notacommand 1\n' +
+            '  buttons:\n    1:\n      script:\n      - define real 1\n'
+        );
+        expect(ownDefs(checker, 'd')).toEqual(['real']);
+    });
+});

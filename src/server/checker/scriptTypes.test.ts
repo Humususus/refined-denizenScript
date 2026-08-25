@@ -18,16 +18,41 @@ import { KNOWN_SCRIPT_TYPES, ALWAYS_SCRIPT_KEYS, ALWAYS_DATA_KEYS, matchesSet } 
  */
 
 describe('KNOWN_SCRIPT_TYPES: shape', () => {
-    it('has exactly 16 entries, in the C# declaration order', () => {
+    it('has the C#\'s 16 entries in declaration order, plus the one deliberate addition', () => {
         // Counted mechanically off ScriptChecker.cs:22-42, not by eye -- the first draft of the
-        // plan said 17. Five Denizen Core, eleven Denizen-Bukkit.
-        // MUTANT CAUGHT: dropping or reordering an entry. Order matters here only as a proxy for
-        // "transcribed from the source in one pass" -- nothing reads the map in order.
+        // plan said 17 ported entries and there are 16. Five Denizen Core, eleven Denizen-Bukkit.
+        //
+        // `dialog` is the DELIBERATE DEVIATION (see the note at its site): not in the C#, not in
+        // Denizen's downloadable meta, added by user ruling because otherwise every dialog
+        // container draws an ERROR. It is asserted here BY NAME rather than by relaxing the
+        // count, so that a future accidental addition still fails this test.
+        // MUTANT CAUGHT: dropping or reordering an entry.
         expect(Array.from(KNOWN_SCRIPT_TYPES.keys())).toEqual([
             'custom', 'procedure', 'task', 'world', 'data',
             'assignment', 'book', 'command', 'economy', 'entity', 'format',
-            'interact', 'inventory', 'item', 'map', 'enchantment'
+            'interact', 'inventory', 'item', 'map', 'dialog', 'enchantment'
         ]);
+    });
+
+    it('gives dialog conservative flags and the one script key that matters', () => {
+        // The DELIBERATE DEVIATION's fields. Every field in this table can only ADD diagnostics,
+        // and the point of adding dialog was to remove one -- so requiredKeys and likelyBadKeys
+        // are empty on purpose rather than by omission, and both flags are the quiet setting.
+        //
+        // `scriptKeys: ['buttons.*']` is the load-bearing one: a dialog's code lives at
+        // `buttons.<n>.script`, and ScriptChecker.cs:1930 builds `keyText` from the TOP-LEVEL
+        // key name, so `buttons.*` is what reaches it -- the same shape world uses for events.
+        // MUTANT CAUGHT: inventing requiredKeys (turns a minimal dialog into a new error), or
+        // setting canHaveRandomScripts true (walks `base`/`bodies`/`inputs` lists as commands).
+        expect(KNOWN_SCRIPT_TYPES.get('dialog')).toEqual({
+            requiredKeys: [],
+            likelyBadKeys: [],
+            valueKeys: ['base.*', 'bodies.*', 'inputs.*'],
+            listKeys: [],
+            scriptKeys: ['buttons.*'],
+            strict: false,
+            canHaveRandomScripts: false
+        });
     });
 
     it('gives every entry all five key arrays, never undefined', () => {
