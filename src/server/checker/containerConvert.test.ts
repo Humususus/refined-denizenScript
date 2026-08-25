@@ -32,6 +32,21 @@ function errorsOfKind(checker: ScriptChecker, key: string) {
     return checker.errors.filter(w => w.warningUniqueKey === key).map(shape);
 }
 
+/**
+ * The definition names `procAsScript` adds to EVERY task container regardless of its contents
+ * (ScriptChecker.cs:1881-1891): the `shoot` command workaround and the ten default `run`
+ * arguments. Listed here so the tests below can subtract them and still assert exactly, rather
+ * than relaxing to `toContain`.
+ */
+const TASK_BASELINE_DEFS = ['shot_entities', 'last_entity', 'location', 'hit_entities',
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+
+/** A container's own definition names, with the unconditional task baseline removed. */
+function ownDefs(checker: ScriptChecker, name: string): string[] {
+    const defs = checker.generatedWorkspace.scripts.get(name)!.defNames;
+    return Array.from(defs.exactKnown).filter(d => !TASK_BASELINE_DEFS.includes(d)).sort();
+}
+
 describe('convertContainers: a well-formed container', () => {
     it('produces a ScriptContainerData with name, line, type and knownType', () => {
         // ScriptChecker.cs:1711-1718. The name is trimmed AND lowercased (:1713), which is what
@@ -171,8 +186,7 @@ describe('convertContainers: the definitions key', () => {
     it('reads a pipe-separated scalar into defNames', () => {
         // ScriptChecker.cs:1719-1724, the `defs.ToString().SplitFast('|')` arm.
         const checker = run('my_task:\n  type: task\n  definitions: target|message\n  script:\n  - narrate hi');
-        const defs = checker.generatedWorkspace.scripts.get('my_task')!.defNames;
-        expect(Array.from(defs.exactKnown).sort()).toEqual(['message', 'target']);
+        expect(ownDefs(checker, 'my_task')).toEqual(['message', 'target']);
     });
 
     it('reads a LIST of definitions too', () => {
@@ -181,8 +195,7 @@ describe('convertContainers: the definitions key', () => {
         // which becomes a false "undefined definition" in 2C-4.
         // MUTANT CAUGHT: handling only the scalar arm.
         const checker = run('my_task:\n  type: task\n  definitions:\n  - target\n  - message\n  script:\n  - narrate hi');
-        const defs = checker.generatedWorkspace.scripts.get('my_task')!.defNames;
-        expect(Array.from(defs.exactKnown).sort()).toEqual(['message', 'target']);
+        expect(ownDefs(checker, 'my_task')).toEqual(['message', 'target']);
     });
 
     it('lowercases, then cuts at "[", then trims -- in that order', () => {
@@ -192,13 +205,14 @@ describe('convertContainers: the definitions key', () => {
         // MUTANT CAUGHT: trimming before cutting, which leaves 'target ' with a trailing space
         // and then never matches a real `<[target]>`.
         const checker = run('my_task:\n  type: task\n  definitions: Target [Optional]|MESSAGE\n  script:\n  - narrate hi');
-        const defs = checker.generatedWorkspace.scripts.get('my_task')!.defNames;
-        expect(Array.from(defs.exactKnown).sort()).toEqual(['message', 'target']);
+        expect(ownDefs(checker, 'my_task')).toEqual(['message', 'target']);
     });
 
-    it('leaves defNames empty when there is no definitions key', () => {
+    it('adds NOTHING of its own when there is no definitions key', () => {
+        // Only the unconditional task baseline from :1881-1891 survives the subtraction -- the
+        // `definitions:` branch at :1719-1724 contributes nothing.
         const checker = run('my_task:\n  type: task\n  script:\n  - narrate hi');
-        expect(checker.generatedWorkspace.scripts.get('my_task')!.defNames.any()).toBe(false);
+        expect(ownDefs(checker, 'my_task')).toEqual([]);
     });
 });
 
@@ -270,5 +284,321 @@ describe('ScriptingWorkspaceData', () => {
         expect(Array.from(a.scripts.keys()).sort()).toEqual(['one', 'two']);
         expect(Array.from(a.allKnownServerFlagNames.exactKnown).sort()).toEqual(['alpha', 'beta']);
         expect(Array.from(a.allKnownObjectFlagNames.exactKnown)).toEqual(['gamma']);
+    });
+});
+
+/**
+ * Phase 2C-3 Task 5: `preprocContainer` (ScriptChecker.cs:1763-1955).
+ *
+ * These are the assertions Phase 2C-4 will lean on. A branch that silently fails to collect a
+ * name looks exactly like success from here -- nothing warns -- until 2C-4 reports that name as
+ * undefined on a script that is correct. Hence one test per branch, not one per behaviour.
+ */
+describe('preprocContainer: definitions from commands', () => {
+    it('harvests a - define name, cut at ":" and at "."', () => {
+        // ScriptChecker.cs:1794-1800. `define` and `definemap` share the arm.
+        // MUTANT CAUGHT: dropping either `.Before(':')` or `.Before('.')` -- `- define a.b:c 1`
+        // would record `a.b:c`, which no `<[a]>` could ever match.
+        const checker = run('t:\n  type: task\n  script:\n  - define greeting hello\n  - define a.b:c 1\n  - definemap m.x val');
+        expect(ownDefs(checker, 't')).toEqual(['a', 'greeting', 'm']);
+    });
+
+    it('harvests the loop variables of foreach, repeat and while', () => {
+        // ScriptChecker.cs:1810-1833. `foreach` adds `loop_index` and then FALLS THROUGH to the
+        // while arm (`goto case "while"` at :1818), so it also gets the loop-variable name.
+        // Without `as:`, that name defaults to `value`.
+        // MUTANT CAUGHT: not falling through -- `foreach` would lose `value`/its `as:` name.
+        const checker = run('t:\n  type: task\n  script:\n  - foreach <[list]>:\n    - narrate hi');
+        expect(ownDefs(checker, 't')).toEqual(['loop_index', 'value']);
+    });
+
+    it('honours as: and key: on a foreach', () => {
+        // ScriptChecker.cs:1813-1817 (`key:`) and :1823-1827 (`as:`), both cut at '.'.
+        // MUTANT CAUGHT: reading before(':') instead of after(':') -- the names would come out
+        // as `as` and `key`.
+        const checker = run('t:\n  type: task\n  script:\n  - foreach <[map]> as:entry key:mykey:\n    - narrate hi');
+        expect(ownDefs(checker, 't')).toEqual(['entry', 'loop_index', 'mykey']);
+    });
+
+    it('adds "value" for a bare while, and the as: name when given', () => {
+        // ScriptChecker.cs:1820-1833, without the foreach-only additions.
+        const bare = run('t:\n  type: task\n  script:\n  - while <[x]>:\n    - narrate hi');
+        expect(ownDefs(bare, 't')).toEqual(['value']);
+        const named = run('t:\n  type: task\n  script:\n  - repeat 5 as:i:\n    - narrate hi');
+        expect(ownDefs(named, 't')).toEqual(['i']);
+    });
+
+    it('adds the unconditional task baseline, and economy gets "amount" instead', () => {
+        // ScriptChecker.cs:1881-1891. These look like padding and are not: without them 2C-4
+        // reports false "undefined definition" on ordinary scripts.
+        // MUTANT CAUGHT: dropping the shoot workaround or the ten run-argument names.
+        const task = run('t:\n  type: task\n  script:\n  - narrate hi');
+        expect(Array.from(task.generatedWorkspace.scripts.get('t')!.defNames.exactKnown).sort())
+            .toEqual(['1', '10', '2', '3', '4', '5', '6', '7', '8', '9', 'hit_entities', 'last_entity', 'location', 'shot_entities']);
+        const eco = run('e:\n  type: economy\n  withdraw:\n  - narrate hi');
+        const ecoDefs = Array.from(eco.generatedWorkspace.scripts.get('e')!.defNames.exactKnown);
+        expect(ecoDefs).toContain('amount');
+        expect(ecoDefs).not.toContain('shot_entities');
+    });
+
+    it('recurses into a command sub-list, but NOT into a definemap body', () => {
+        // ScriptChecker.cs:1898-1906. A `- definemap x:` body is data, so its lines are not
+        // commands and must not be harvested.
+        // MUTANT CAUGHT: recursing unconditionally -- `- define inner 1` under the definemap
+        // would be picked up as a real definition.
+        const checker = run(
+            't:\n  type: task\n  script:\n' +
+            '  - if true:\n    - define nested 1\n' +
+            '  - definemap dm:\n      key: value\n'
+        );
+        expect(ownDefs(checker, 't')).toEqual(['dm', 'nested']);
+    });
+});
+
+describe('preprocContainer: flags, saves and injects', () => {
+    it('separates server flags from object flags', () => {
+        // ScriptChecker.cs:1834-1847. `cleanArgs[0] == "server"` is the ONLY thing that routes a
+        // flag to the server set; anything else is an object flag. That separation is exactly
+        // what the user asked for in prompt.md -- player and server flag completions must not
+        // mix -- so it is load-bearing beyond the checker.
+        // MUTANT CAUGHT: routing both to one set, or inverting the test.
+        const checker = run(
+            't:\n  type: task\n  script:\n' +
+            '  - flag server serverflag:1\n' +
+            '  - flag player playerflag:2\n' +
+            '  - flag <player> objflag[expire=1m]:3\n'
+        );
+        const c = checker.generatedWorkspace.scripts.get('t')!;
+        expect(Array.from(c.serverFlags.exactKnown).sort()).toEqual(['serverflag']);
+        expect(Array.from(c.objectFlags.exactKnown).sort()).toEqual(['objflag', 'playerflag']);
+    });
+
+    it('cuts a flag name at ":", "." and "["', () => {
+        // ScriptChecker.cs:1837 -- three cuts in that order, so `a.b[c]:d` records `a`.
+        const checker = run('t:\n  type: task\n  script:\n  - flag server a.b[c]:d\n');
+        expect(Array.from(checker.generatedWorkspace.scripts.get('t')!.serverFlags.exactKnown)).toEqual(['a']);
+    });
+
+    it('harvests the "flag=" special case out of the RAW command text', () => {
+        // ScriptChecker.cs:1864-1872 -- data like 'stone[flag=x:y]'. It searches the whole
+        // command string rather than the parsed arguments, and cuts at the first of ' ;]:.'
+        // MUTANT CAUGHT: searching cleanArgs instead, which never sees the bracketed form.
+        const checker = run('t:\n  type: task\n  script:\n  - give stone[flag=special:1]\n');
+        expect(Array.from(checker.generatedWorkspace.scripts.get('t')!.objectFlags.exactKnown)).toEqual(['special']);
+    });
+
+    it('harvests an inventory flag, skipping the legacy argument aliases', () => {
+        // ScriptChecker.cs:1848-1862. The alias list exists because `- inventory flag d:...`
+        // would otherwise record `d` (a `destination` alias) as the flag name.
+        // MUTANT CAUGHT: dropping the alias list, which records `d:...` -> `d`.
+        const checker = run('t:\n  type: task\n  script:\n  - inventory flag d:<player.inventory> myflag:1\n');
+        expect(Array.from(checker.generatedWorkspace.scripts.get('t')!.objectFlags.exactKnown)).toEqual(['myflag']);
+    });
+
+    it('harvests save: entry names from fullArgs, not cleanArgs', () => {
+        // ScriptChecker.cs:1873-1877. `save:` is one of the three prefixes :1791 STRIPS from
+        // cleanArgs, so looking there would find nothing at all.
+        // MUTANT CAUGHT: reading cleanArgs -- saveEntryNames would come back empty.
+        // This is also the index the `<entry[...]>` completion work needs (PHASE-2C-BACKLOG 4b).
+        const checker = run('t:\n  type: task\n  script:\n  - spawn zombie save:myentry\n  - webget example.com save:req\n');
+        expect(Array.from(checker.generatedWorkspace.scripts.get('t')!.saveEntryNames.exactKnown).sort()).toEqual(['myentry', 'req']);
+    });
+
+    it('harvests inject targets, skipping "instantly" and "path:"', () => {
+        // ScriptChecker.cs:1801-1809 -- the first argument that is neither.
+        const checker = run('t:\n  type: task\n  script:\n  - inject instantly othertask\n');
+        expect(Array.from(checker.generatedWorkspace.scripts.get('t')!.injectedPaths.exactKnown)).toEqual(['othertask']);
+    });
+
+    it('merges an injected script definitions into the injecting one', () => {
+        // ScriptChecker.cs:1739-1759, running with surroundingWorkspace null -- the single-file
+        // half. Without it, 2C-4 reports the injected script's definitions as undefined.
+        // MUTANT CAUGHT: skipping resolveInjects, or merging in the wrong direction.
+        const checker = run(
+            'caller:\n  type: task\n  script:\n  - inject helper\n' +
+            'helper:\n  type: task\n  script:\n  - define from_helper 1\n'
+        );
+        const caller = checker.generatedWorkspace.scripts.get('caller')!;
+        expect(Array.from(caller.realInjects)).toEqual(['helper']);
+        expect(ownDefs(checker, 'caller')).toEqual(['from_helper']);
+        expect(ownDefs(checker, 'helper')).toEqual(['from_helper']);
+    });
+
+    it('terminates on a self-injecting script', () => {
+        // The `RealInjects.Add` return value at ScriptChecker.cs:1749 is the cycle guard.
+        // MUTANT CAUGHT: recursing without the guard -- this hangs or blows the stack.
+        const checker = run(
+            'a:\n  type: task\n  script:\n  - inject b\n' +
+            'b:\n  type: task\n  script:\n  - inject a\n'
+        );
+        expect(Array.from(checker.generatedWorkspace.scripts.get('a')!.realInjects).sort()).toEqual(['a', 'b']);
+    });
+});
+
+describe('preprocContainer: which keys count as script', () => {
+    it('harvests NOTHING from a data container', () => {
+        // ScriptChecker.cs:1765-1768 -- the early return. A data container's lists are data.
+        // MUTANT CAUGHT: dropping the early return -- `- define x 1` inside a data blob would
+        // be treated as a command.
+        const checker = run('d:\n  type: data\n  script:\n  - define notacommand 1\n');
+        const c = checker.generatedWorkspace.scripts.get('d')!;
+        expect(c.defNames.any()).toBe(false);
+        expect(c.objectFlags.any()).toBe(false);
+    });
+
+    it('harvests ONLY flags.* from an item container', () => {
+        // ScriptChecker.cs:1769-1779 -- harvest, then early return.
+        // MUTANT CAUGHT: returning before the flags harvest, or falling through to the general
+        // loop and treating `lore:` as script.
+        const checker = run('i:\n  type: item\n  material: stone\n  flags:\n    myflag.sub: 1\n  lore:\n  - define nope 1\n');
+        const c = checker.generatedWorkspace.scripts.get('i')!;
+        expect(Array.from(c.objectFlags.exactKnown)).toEqual(['myflag']);
+        expect(c.defNames.any()).toBe(false);
+    });
+
+    it('skips the "data" and "description" keys on a normal container', () => {
+        // ScriptChecker.cs:1783-1786.
+        const checker = run('t:\n  type: task\n  data:\n  - define nope 1\n  description:\n  - define alsonope 1\n  script:\n  - define yes 1\n');
+        expect(ownDefs(checker, 't')).toEqual(['yes']);
+    });
+
+    it('walks a world container events sub-map as script', () => {
+        // ScriptChecker.cs:1928-1953, via world's `scriptKeys: ['events.*']` -- the sub-map arm
+        // rather than the list arm, and the reason `keyText` is `keyName + '.*'`.
+        // MUTANT CAUGHT: testing matchesSet instead of the raw `.includes(keyText)` at :1937.
+        const checker = run('w:\n  type: world\n  events:\n    on player joins:\n    - define greeted 1\n');
+        expect(ownDefs(checker, 'w')).toEqual(['greeted']);
+    });
+
+    it('does NOT walk a strict type declared list key as script', () => {
+        // ScriptChecker.cs:1919-1922. `book` is strict and declares `text` as a list key, so its
+        // contents are data no matter what they look like.
+        // MUTANT CAUGHT: reordering the cascade so canHaveRandomScripts is consulted first.
+        const checker = run('b:\n  type: book\n  title: t\n  author: a\n  text:\n  - define nope 1\n');
+        expect(checker.generatedWorkspace.scripts.get('b')!.defNames.any()).toBe(false);
+    });
+
+    it('walks an unrecognised list key on a NON-strict type that allows random scripts', () => {
+        // ScriptChecker.cs:1923-1926 -- the last arm of the cascade. `task` is non-strict with
+        // canHaveRandomScripts true, so a made-up key holding a list is treated as script.
+        // MUTANT CAUGHT: defaulting canHaveRandomScripts to false (the Task 2 mutant), which
+        // would silently stop harvesting here.
+        const checker = run('t:\n  type: task\n  script:\n  - narrate hi\n  my_subroutine:\n  - define fromsub 1\n');
+        expect(ownDefs(checker, 't')).toEqual(['fromsub']);
+    });
+});
+
+describe('mergeData', () => {
+    it('collects every container flags into the workspace sets', () => {
+        // ScriptChecker.cs:2011-2018, called from Run() at :2034.
+        // MUTANT CAUGHT: not calling mergeData from run() -- both workspace sets stay empty,
+        // which is what a consumer would see as "flags are not tracked at all".
+        const checker = run(
+            'a:\n  type: task\n  script:\n  - flag server sflag:1\n' +
+            'b:\n  type: task\n  script:\n  - flag player oflag:1\n'
+        );
+        const ws = checker.generatedWorkspace;
+        expect(Array.from(ws.allKnownServerFlagNames.exactKnown)).toEqual(['sflag']);
+        expect(Array.from(ws.allKnownObjectFlagNames.exactKnown)).toEqual(['oflag']);
+    });
+});
+
+/**
+ * Four tests added after a mutation audit found the originals in this file did not discriminate
+ * the branches they named. Each fixture below was chosen specifically to make one guard the
+ * DECIDING one; the comments record what masked it before.
+ */
+describe('preprocContainer: branches the first draft of these tests could not see', () => {
+    it('does not recurse into a "- definemap:" sub-section', () => {
+        // ScriptChecker.cs:1902's `!onlyEntry.Key.Text.StartsWith("definemap")` guard.
+        //
+        // The first fixture used `- definemap dm:`, which never reaches this guard at all: the
+        // GATHER has its own definemap branch (:1532-1547) that stores such a line whole and
+        // swallows its body unparsed, so the list entry is a string, not a sub-map. The guard
+        // only ever sees `- definemap:` -- no space, no arguments -- which :1532 does not match
+        // (it tests `startsWith('definemap ')`, with the space) and which therefore becomes an
+        // ordinary command sub-section.
+        //
+        // Verified by dumping the parsed structure before asserting: the entry really is a
+        // sub-map whose single key is `definemap`, holding a list of one command. Nothing is
+        // harvested from it -- `procSingleCommand('definemap')` has no arguments to read, and
+        // the guard stops the body being walked.
+        //
+        // MUTANT CAUGHT: recursing unconditionally -- `inner` appears.
+        const checker = run('t:\n  type: task\n  script:\n  - definemap:\n    - define inner 1\n');
+        expect(ownDefs(checker, 't')).toEqual([]);
+    });
+
+    it('skips a "data" key holding a SECTION, which the cascade would otherwise walk', () => {
+        // ScriptChecker.cs:1783-1786's early `continue`.
+        //
+        // The first fixture gave `data:` a LIST, and that is masked: :1911's
+        // `MatchesSet(keyName, AlwaysDataKeys)` arm catches the same two key names one branch
+        // later, so the list is ignored either way. The sub-map arm at :1928-1953 has NO
+        // equivalent check -- for a non-strict type it falls through to
+        // `(!Strict && !keyName.StartsWith("definemap"))` and walks the section as script.
+        //
+        // MUTANT CAUGHT: dropping the :1783 skip -- `nope` is harvested out of a data blob.
+        const checker = run('t:\n  type: task\n  data:\n    inner:\n    - define nope 1\n  script:\n  - define yes 1\n');
+        expect(ownDefs(checker, 't')).toEqual(['yes']);
+    });
+
+    it('lets Strict suppress an unrecognised list key on a type that allows random scripts', () => {
+        // ScriptChecker.cs:1919-1922's `|| script.KnownType.Strict`.
+        //
+        // The first fixture used `book`, and that cannot show it twice over: `text` is in book's
+        // ListKeys so the arm matches anyway, and book's CanHaveRandomScripts is false so the
+        // next arm would ignore it regardless. Isolating Strict needs a type that is BOTH strict
+        // AND random-capable, with a key in none of its lists -- `assignment`, `interact` or
+        // `procedure`. Of those, procedure declares `*` in ScriptKeys so arm 2 swallows
+        // everything; `assignment` is the clean case.
+        //
+        // MUTANT CAUGHT: dropping `|| Strict` -- the next arm's CanHaveRandomScripts (true for
+        // assignment) then harvests `fromstrict`.
+        const checker = run(
+            'a:\n  type: assignment\n  actions:\n    on assignment:\n    - narrate hi\n' +
+            '  mystery:\n  - define fromstrict 1\n'
+        );
+        expect(ownDefs(checker, 'a')).toEqual([]);
+    });
+
+    it('walks an unrecognised SUB-MAP key on world via the second disjunct, not the first', () => {
+        // ScriptChecker.cs:1937 is `ScriptKeys.Contains(keyText) || (!ListKeys.Contains(keyText)
+        // && CanHaveRandomScripts)` -- raw `.Contains`, not `MatchesSet`.
+        //
+        // The first fixture used world's `events:`, where both spellings agree: `events.*` is
+        // literally in world's ScriptKeys, so the first disjunct fires either way. The two only
+        // diverge on a key that is in NO list, where the real code still walks it through the
+        // second disjunct and `MatchesSet` would not.
+        //
+        // MUTANT CAUGHT: substituting matchesSet for the whole condition -- `fromnested` is
+        // never harvested.
+        const checker = run(
+            'w:\n  type: world\n  events:\n    on player joins:\n    - narrate hi\n' +
+            '  extras:\n    nested:\n    - define fromnested 1\n'
+        );
+        expect(ownDefs(checker, 'w')).toEqual(['fromnested']);
+    });
+});
+
+describe('preprocContainer: the item early return', () => {
+    it('stops an item container with a stray "script:" key being walked as script', () => {
+        // ScriptChecker.cs:1778's `return`, and the ONLY shape that can observe it.
+        //
+        // I first believed this return was unobservable -- item is Strict, declares no
+        // ScriptKeys and has CanHaveRandomScripts false, so all three type-driven arms of the
+        // cascade refuse. That reasoning was WRONG, and an exhaustive check over the type table
+        // said so: arm 2 also tests `MatchesSet(keyName, AlwaysScriptKeys)`, which is
+        // TYPE-INDEPENDENT. Any of `script`, `scripts`, `subscripts`, `subtasks`, `inject`,
+        // `injects`, `injectables` or `subprocedures` reaches procAsScript on ANY type.
+        //
+        // A stray `script:` on an item is not contrived, either -- it is exactly the mistake
+        // item's own `likelyBadKeys` list exists to flag.
+        //
+        // MUTANT CAUGHT: dropping the early return. `nope` is harvested, and the ten default
+        // run-argument definitions are added to an item container.
+        const checker = run('i:\n  type: item\n  material: stone\n  script:\n  - define nope 1\n');
+        const c = checker.generatedWorkspace.scripts.get('i')!;
+        expect(Array.from(c.defNames.exactKnown)).toEqual([]);
     });
 });

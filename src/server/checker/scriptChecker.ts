@@ -11,7 +11,7 @@ import {
     checkForTabs
 } from './lineChecks';
 import { gatherActualContainers } from './containerGather';
-import { convertContainers, ScriptingWorkspaceData } from './containerConvert';
+import { convertContainers, mergeData, ScriptingWorkspaceData } from './containerConvert';
 // `import type`: ScriptSection is a type alias, used only in type position below. A value
 // import would be redundant with the line above; keeping it type-only makes the emitted JS
 // carry exactly one require() for this module.
@@ -137,6 +137,9 @@ export class ScriptChecker extends WarningCollector {
         // ScriptChecker.cs:2032. The C# passes the gather's result straight in as a local; it
         // is parked on `this.containers` first because 2C-2's tests assert on it directly.
         convertContainers(this, this.containers);
+        // ScriptChecker.cs:2034. Runs after conversion, since it reads what preprocContainer
+        // harvested onto each container.
+        mergeData(this);
         // Still out of scope: CheckAllContainers (:2033) and CollectStatisticInfos (:2035).
     }
 

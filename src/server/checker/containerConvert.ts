@@ -12,9 +12,10 @@
 
 import { LineTrackedString } from './scriptWarnings';
 import { MixedKnowledgeSet } from './mixedKnowledgeSet';
-import { KNOWN_SCRIPT_TYPES } from './scriptTypes';
+import { KNOWN_SCRIPT_TYPES, ALWAYS_SCRIPT_KEYS, ALWAYS_DATA_KEYS, matchesSet } from './scriptTypes';
+import { buildArgs } from './buildArgs';
 import type { KnownScriptType } from './scriptTypes';
-import type { ScriptSection, SectionValue } from './containerGather';
+import type { ScriptSection, ScriptList, SectionValue } from './containerGather';
 // `import type` (not a plain import) is load-bearing: scriptChecker.ts imports this module for
 // real, so a value import here would close a require() cycle at runtime. Same pattern as
 // lineChecks.ts and containerGather.ts.
@@ -94,6 +95,44 @@ function before(input: string, match: string): string {
     const index = input.indexOf(match);
     return index < 0 ? input : input.slice(0, index);
 }
+
+/**
+ * FreneticUtilities' `string.After(char)`: everything after the first occurrence.
+ *
+ * Returns `''` when the character is absent, matching the "after" half of `beforeAndAfter` in
+ * containerGather.ts. Every call site below guards on `startsWith('as:')` or `startsWith('key:')`
+ * first, so the absent case is unreachable in practice.
+ */
+function after(input: string, match: string): string {
+    const index = input.indexOf(match);
+    return index < 0 ? '' : input.slice(index + match.length);
+}
+
+/** ScriptChecker.cs:1958-1961's `StartsWithAny`. */
+function startsWithAny(input: string, ...checks: string[]): boolean {
+    return checks.some(s => input.startsWith(s));
+}
+
+/** C#'s `string.BeforeAndAfter(char, out string after)`, as used at ScriptChecker.cs:1789. */
+function splitFirst(input: string, match: string): [string, string] {
+    const index = input.indexOf(match);
+    if (index < 0) {
+        return [input, ''];
+    }
+    return [input.slice(0, index), input.slice(index + match.length)];
+}
+
+/**
+ * ScriptChecker.cs:1851-1856's legacy argument-alias list for the `inventory` command, kept in
+ * the C#'s order and with its own comment: "inventory command has a long legacy-style list of
+ * arg aliases".
+ */
+const INVENTORY_ARG_ALIASES: string[] = [
+    'origin', 'o', 'source', 'items', 'item', 'i', 'from', 'f',
+    'destination', 'dest', 'd', 'target', 'to', 't',
+    'slot', 's',
+    'duration', 'expire', 'expires', 'expiration'
+];
 
 /**
  * What the C# gets from calling `.ToString()` on a `SectionValue`.
@@ -205,8 +244,8 @@ export function convertContainers(checker: ScriptChecker, containers: ScriptSect
                 // trim -- so `Target [Optional]` becomes `target`, not `target [optional]`.
                 container.defNames.addAll(...rawNames.map(d => before(toLowerFast(d), '[').trim()));
             }
-            // ScriptChecker.cs:1725-1726. `preprocContainer` lands in Task 5 and its call goes
-            // here; until then a container is stored with its harvesting sets empty.
+            // ScriptChecker.cs:1725-1726
+            preprocContainer(container);
             workspace.scripts.set(container.name, container);
         } catch (ex) {
             // ScriptChecker.cs:1728-1732
@@ -221,6 +260,244 @@ export function convertContainers(checker: ScriptChecker, containers: ScriptSect
         }
     }
     resolveInjects(checker);
+}
+
+/**
+ * Harvests everything later phases need to know from a container's script keys: definition
+ * names, `save:` entry names, flag names and injected paths.
+ * Ported from ScriptChecker.cs:1763-1955.
+ *
+ * THIS IS THE FUNCTION PHASE 2C-4 DEPENDS ON. A branch here that silently fails to collect a
+ * name does not look like a bug -- nothing warns, nothing changes -- until 2C-4 reports that
+ * name as undefined on a script that is perfectly correct.
+ */
+export function preprocContainer(script: ScriptContainerData): void {
+    const knownType = script.knownType;
+    if (knownType === null) {
+        return;
+    }
+    // ScriptChecker.cs:1765-1768: a data container holds no script at all.
+    if (script.type === 'data') {
+        return;
+    }
+    // ScriptChecker.cs:1769-1779: an item container holds no script either, but its `flags:`
+    // section names object flags, so those are harvested before the early return.
+    //
+    // THE RETURN IS LOAD-BEARING, contrary to how it looks. Item is strict, declares no
+    // ScriptKeys and has canHaveRandomScripts false, so every TYPE-DRIVEN arm of the cascade
+    // below would refuse anyway -- but arm 2 also tests `ALWAYS_SCRIPT_KEYS`, which is
+    // type-independent. Without this return, an item with a stray `script:` key (precisely the
+    // mistake item's own `likelyBadKeys` exists to flag) would have its contents walked as
+    // commands. Pinned by test.
+    if (script.type === 'item') {
+        const flagsEntry = script.keys.get(LineTrackedString.textKey('flags'));
+        if (flagsEntry !== undefined && flagsEntry.value instanceof Map) {
+            for (const flagEntry of flagsEntry.value.values()) {
+                script.objectFlags.addAll(before(toLowerFast(flagEntry.key.text.trim()), '.'));
+            }
+        }
+        return;
+    }
+    // ScriptChecker.cs:1780-1786
+    for (const entry of script.keys.values()) {
+        const key = entry.key;
+        const valueAtKey = entry.value;
+        const keyName = toLowerFast(key.text).trim();
+        if (keyName === 'data' || keyName === 'description') {
+            continue;
+        }
+
+        /** ScriptChecker.cs:1787-1878. */
+        const procSingleCommand = (cmd: string): void => {
+            // ScriptChecker.cs:1789
+            const [cmdNameRaw, argTextRaw] = splitFirst(cmd.trim(), ' ');
+            const cmdName = toLowerFast(cmdNameRaw);
+            // ScriptChecker.cs:1790. The NULL checker is deliberate: this tokenises every
+            // command of every script in the file, and `bad_quotes`/`missing_quotes` from here
+            // would fire with no useful position.
+            const fullArgs = buildArgs(key.line, 0, argTextRaw, null).map(a => toLowerFast(a.text));
+            // ScriptChecker.cs:1791
+            const cleanArgs = fullArgs.filter(a => !startsWithAny(a, 'save:', 'player:', 'npc:'));
+            switch (cmdName) {
+                // ScriptChecker.cs:1794-1800
+                case 'define':
+                case 'definemap':
+                    if (cleanArgs.length > 0) {
+                        script.defNames.add(before(before(cleanArgs[0], ':'), '.'));
+                    }
+                    break;
+                // ScriptChecker.cs:1801-1809
+                case 'inject': {
+                    const arg = cleanArgs.find(a => a !== 'instantly' && !a.startsWith('path:'));
+                    if (arg !== undefined) {
+                        script.injectedPaths.add(before(arg, '.'));
+                    }
+                    break;
+                }
+                // ScriptChecker.cs:1810-1833. `foreach` does `goto case "while"` at :1818, so it
+                // adds its own two names AND then the loop-variable name that repeat/while add.
+                // A copy-pasted body would drift; the shared closure below cannot.
+                case 'foreach':
+                case 'repeat':
+                case 'while': {
+                    if (cmdName === 'foreach') {
+                        script.defNames.add('loop_index');
+                        const keyArg = cleanArgs.find(a => a.startsWith('key:'));
+                        if (keyArg !== undefined) {
+                            script.defNames.add(before(after(keyArg, ':'), '.'));
+                        }
+                    }
+                    const asArg = cleanArgs.find(a => a.startsWith('as:'));
+                    if (asArg !== undefined) {
+                        script.defNames.add(before(after(asArg, ':'), '.'));
+                    } else {
+                        script.defNames.add('value');
+                    }
+                    break;
+                }
+                // ScriptChecker.cs:1834-1847. `cleanArgs[0]` is the target; anything that is not
+                // literally `server` counts as an object flag.
+                case 'flag':
+                    if (cleanArgs.length >= 2) {
+                        const flag = before(before(before(cleanArgs[1], ':'), '.'), '[');
+                        if (cleanArgs[0] === 'server') {
+                            script.serverFlags.add(flag);
+                        } else {
+                            script.objectFlags.add(flag);
+                        }
+                    }
+                    break;
+                // ScriptChecker.cs:1848-1862
+                case 'inventory':
+                    if (cleanArgs.includes('flag')) {
+                        const flag = cleanArgs.find(a => !startsWithAny(a, ...INVENTORY_ARG_ALIASES));
+                        if (flag !== undefined) {
+                            script.objectFlags.add(before(before(flag, ':'), '.'));
+                        }
+                    }
+                    break;
+            }
+            // ScriptChecker.cs:1864-1872: data like 'stone[flag=x:y]'. NOTE it searches `cmd`,
+            // the WHOLE original command text, not the parsed arguments -- and case-sensitively,
+            // which is why the casing `procAsScript` passes in below matters.
+            const specialFlag = cmd.indexOf('flag=');
+            if (specialFlag !== -1) {
+                let flagData = cmd.slice(specialFlag + 'flag='.length);
+                for (const cut of [' ', ';', ']', ':', '.']) {
+                    flagData = before(flagData, cut);
+                }
+                if (flagData !== '') {
+                    script.objectFlags.add(flagData);
+                }
+            }
+            // ScriptChecker.cs:1873-1877. Taken from `fullArgs`, NOT `cleanArgs` -- `save:` is
+            // one of the three prefixes :1791 strips, so looking in cleanArgs would find nothing.
+            const save = fullArgs.find(a => a.startsWith('save:'));
+            if (save !== undefined) {
+                script.saveEntryNames.add(after(save, ':'));
+            }
+        };
+
+        /** ScriptChecker.cs:1879-1908. */
+        const procAsScript = (list: ScriptList): void => {
+            // ScriptChecker.cs:1881-1889. These look like padding and are not: without them,
+            // 2C-4 would report false "undefined definition" warnings on ordinary scripts.
+            if (script.type === 'task') {
+                // "Workaround the weird way shoot command does things" -- the C#'s own comment.
+                script.defNames.addAll('shot_entities', 'last_entity', 'location', 'hit_entities');
+            } else if (script.type === 'economy') {
+                script.defNames.add('amount');
+            }
+            // ScriptChecker.cs:1890-1891: the default `run` command definitions.
+            script.defNames.addAll('1', '2', '3', '4', '5', '6', '7', '8', '9', '10');
+            // ScriptChecker.cs:1892-1907
+            for (const listEntry of list) {
+                if (listEntry instanceof LineTrackedString) {
+                    // ScriptChecker.cs:1896: LOWERCASED here...
+                    procSingleCommand(toLowerFast(listEntry.text));
+                } else if (listEntry instanceof Map) {
+                    // ScriptChecker.cs:1900-1905. `subMap.First()` -- a command sub-section has
+                    // exactly one key, the command itself.
+                    const onlyEntry = listEntry.values().next().value;
+                    if (onlyEntry === undefined) {
+                        continue;
+                    }
+                    // ...but NOT lowercased here. C# QUIRK, ported verbatim: it changes what the
+                    // case-sensitive `cmd.IndexOf("flag=")` above can find on a `- foo:` line.
+                    procSingleCommand(onlyEntry.key.text);
+                    if (!onlyEntry.key.text.startsWith('definemap')) {
+                        procAsScript(onlyEntry.value as ScriptList);
+                    }
+                }
+            }
+        };
+
+        // ScriptChecker.cs:1909-1927: which keys hold script, for a LIST value. The cascade's
+        // ORDER is the whole logic -- data keys win over script keys, which win over declared
+        // list/value keys and strictness, and only then does `canHaveRandomScripts` decide.
+        if (Array.isArray(valueAtKey)) {
+            if (matchesSet(keyName, ALWAYS_DATA_KEYS)) {
+                // ScriptChecker.cs:1911-1914: ignore.
+                //
+                // C# QUIRK: THIS ARM IS DEAD, and is ported anyway. `ALWAYS_DATA_KEYS` holds no
+                // `*` and no `X.*` entry, so `matchesSet` here degenerates to plain membership
+                // of {'data', 'description'} -- exactly the two names the `continue` at :1783
+                // has already skipped, several lines above. Nothing can reach this branch.
+                // Verified by enumerating `matchesSet(k, ALWAYS_DATA_KEYS)` against
+                // `k === 'data' || k === 'description'` over all 97 key names the type table
+                // mentions: no disagreement. Kept so the cascade stays diffable against the C#.
+            } else if (matchesSet(keyName, knownType.scriptKeys) || matchesSet(keyName, ALWAYS_SCRIPT_KEYS)) {
+                procAsScript(valueAtKey);
+            } else if (matchesSet(keyName, knownType.listKeys) || matchesSet(keyName, knownType.valueKeys) || knownType.strict) {
+                // ScriptChecker.cs:1919-1922: ignore.
+            } else if (knownType.canHaveRandomScripts) {
+                procAsScript(valueAtKey);
+            }
+        } else if (valueAtKey instanceof Map) {
+            // ScriptChecker.cs:1928-1953. NOTE that these tests use raw `.includes(keyText)`
+            // rather than `matchesSet` -- a DIFFERENT question, since matchesSet would also
+            // accept a bare key or a `*`. Following each call site exactly, as the C# does.
+            const keyText = keyName + '.*';
+            const procSubMaps = (subMap: ScriptSection): void => {
+                for (const subEntry of subMap.values()) {
+                    const subValue = subEntry.value;
+                    if (Array.isArray(subValue)) {
+                        // ScriptChecker.cs:1937
+                        if (knownType.scriptKeys.includes(keyText) || (!knownType.listKeys.includes(keyText) && knownType.canHaveRandomScripts)) {
+                            procAsScript(subValue);
+                        }
+                    } else if (subValue instanceof Map) {
+                        procSubMaps(subValue);
+                    }
+                }
+            };
+            // ScriptChecker.cs:1948-1952
+            if (knownType.valueKeys.includes(keyText) || knownType.listKeys.includes(keyText) || knownType.scriptKeys.includes(keyText)
+                || ALWAYS_SCRIPT_KEYS.includes(keyName)
+                || knownType.valueKeys.includes('*') || knownType.listKeys.includes('*') || knownType.scriptKeys.includes('*')
+                || (!knownType.strict && !keyName.startsWith('definemap'))) {
+                procSubMaps(valueAtKey);
+            }
+        }
+    }
+}
+
+/**
+ * Merges every converted container's flag names into the workspace's own sets.
+ * Ported from ScriptChecker.cs:2011-2018 (`MergeData`), called from `Run()` at :2034.
+ *
+ * NOT IN THE ORIGINAL PLAN for this phase -- it was listed under Phase 2D alongside the other
+ * `ScriptingWorkspaceData` work. Pulled forward on reading it: it is six lines, it depends on
+ * nothing this phase does not already build, and leaving it out would ship a
+ * `generatedWorkspace` whose two flag sets are permanently empty, which reads as broken rather
+ * than as deferred.
+ */
+export function mergeData(checker: ScriptChecker): void {
+    const workspace = checker.generatedWorkspace;
+    for (const container of workspace.scripts.values()) {
+        workspace.allKnownServerFlagNames.mergeIn(container.serverFlags);
+        workspace.allKnownObjectFlagNames.mergeIn(container.objectFlags);
+    }
 }
 
 /**
