@@ -7,6 +7,7 @@ exports.ScriptChecker = void 0;
 const scriptWarnings_1 = require("./scriptWarnings");
 const lineChecks_1 = require("./lineChecks");
 const containerGather_1 = require("./containerGather");
+const containerConvert_1 = require("./containerConvert");
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
  * preparation (the constructor, ScriptChecker.cs:137-146), comment stripping
@@ -50,10 +51,26 @@ class ScriptChecker extends scriptWarnings_1.WarningCollector {
          * `run()` has been called.
          *
          * The C# keeps this as a local in `Run()` (ScriptChecker.cs:2031) and hands it straight to
-         * `ConvertContainers`. It is a field here because `ConvertContainers` lands in Phase 2C-3,
-         * so between now and then the only way to reach the parse result is off the checker.
+         * `ConvertContainers`. It stays a field here because it is the only view of the parse
+         * result before conversion, and Phase 2C-2's tests and verify script both assert on it.
          */
         this.containers = null;
+        /**
+         * The converted containers of THIS file. (ScriptChecker.cs:130-131, `GeneratedWorkspace`)
+         *
+         * Populated by `convertContainers` during `run()`. This is what Phase 2C-4 checks tags
+         * against, and the reason Phase 2C-3 exists.
+         */
+        this.generatedWorkspace = new containerConvert_1.ScriptingWorkspaceData();
+        /**
+         * Workspace data from the OTHER files around this one, or `null`.
+         * (ScriptChecker.cs:133-134, `SurroundingWorkspace`)
+         *
+         * Always null for now: cross-file scanning is Phase 2D. It is declared because
+         * `resolveInjects` reads it (ScriptChecker.cs:1735), and giving it its real name now means
+         * that code is the C#'s shape rather than a stub to revisit.
+         */
+        this.surroundingWorkspace = null;
         // ScriptChecker.cs:139
         this.fullOriginalScript = script;
         // ScriptChecker.cs:140-143: normalize CRLF and lone CR to LF before splitting, but only
@@ -97,10 +114,14 @@ class ScriptChecker extends scriptWarnings_1.WarningCollector {
         (0, lineChecks_1.checkForOldDefs)(this);
         // ScriptChecker.cs:2031. Must come after `clearCommentsFromLines`, which blanks comment
         // lines in both arrays -- otherwise every comment would be parsed as a structural line.
-        // The C# immediately passes the result to ConvertContainers (:2032); that, plus
-        // CheckAllContainers (:2033), MergeData (:2034) and CollectStatisticInfos (:2035), are
-        // still out of scope, so the result is parked on the field instead.
         this.containers = (0, containerGather_1.gatherActualContainers)(this);
+        // ScriptChecker.cs:2032. The C# passes the gather's result straight in as a local; it
+        // is parked on `this.containers` first because 2C-2's tests assert on it directly.
+        (0, containerConvert_1.convertContainers)(this, this.containers);
+        // ScriptChecker.cs:2034. Runs after conversion, since it reads what preprocContainer
+        // harvested onto each container.
+        (0, containerConvert_1.mergeData)(this);
+        // Still out of scope: CheckAllContainers (:2033) and CollectStatisticInfos (:2035).
     }
     /**
      * Clears all comment lines. Ported from ScriptChecker.cs:183-215 in full (the task brief's
