@@ -71,6 +71,20 @@ class ScriptChecker extends scriptWarnings_1.WarningCollector {
          * that code is the C#'s shape rather than a stub to revisit.
          */
         this.surroundingWorkspace = null;
+        /**
+         * The loaded Denizen meta, or `null` if it is not available.
+         * (ScriptChecker.cs:63, `Meta`)
+         *
+         * The C# reads an ambient singleton at `Run()` (`Meta = MetaDocs.CurrentMeta`, :2023). This
+         * repo has no such singleton, so the docs are handed in by whoever constructs the checker --
+         * `server.ts`, which already holds them.
+         *
+         * NULL IS A REAL STATE, NOT A DEFENSIVE ONE. Diagnostics run from the first keystroke, while
+         * meta is still downloading on a cold start. Every consumer must degrade to "check nothing"
+         * rather than guess, because guessing means underlining every tag in the file for the first
+         * few seconds after the editor opens.
+         */
+        this.meta = null;
         // ScriptChecker.cs:139
         this.fullOriginalScript = script;
         // ScriptChecker.cs:140-143: normalize CRLF and lone CR to LF before splitting, but only

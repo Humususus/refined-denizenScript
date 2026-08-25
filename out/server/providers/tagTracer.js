@@ -9,15 +9,24 @@
  * `traceTagPartSingle` correspond one-to-one with the C# methods of the same names;
  * every branch below cites its C# line range.
  *
- * DIAGNOSTICS ARE DELIBERATELY OMITTED. `TagTracer` in C# has an `Error` action
- * (TagTracer.cs:23) and a `DeprecationError` action (TagTracer.cs:26), both of which
- * default to ignoring their message. This phase consumes the trace for completion
- * only, so this port takes those defaults: no message is emitted, collected or
- * exposed anywhere. The CONTROL FLOW is nonetheless identical — wherever C# calls
- * `Error(...)` and then `return`s, this port still returns at exactly that point,
- * because the early return is behaviour even though the string is not. The
- * deprecation sweep at TagTracer.cs:111-119 is dropped entirely: it only calls
- * `DeprecationError` and cannot affect control flow or any traced value.
+ * DIAGNOSTICS. `TagTracer` in C# carries an `Error` action (TagTracer.cs:23) and a
+ * `DeprecationError` action (TagTracer.cs:26), both defaulting to ignoring their
+ * message, and raises them at thirteen sites. The original port of this file dropped
+ * them: it served completion only, where the messages are noise, and it kept the
+ * CONTROL FLOW identical — wherever C# calls `Error(...)` and then `return`s, it still
+ * returned at exactly that point, because the early return is behaviour even though
+ * the string is not.
+ *
+ * Phase 2C-4 needs them back: `CheckSingleTag` (ScriptChecker.cs:499-500) turns them
+ * into the `tag_trace_failure` and `deprecated_tag_part` diagnostics. They are now
+ * OPTIONAL CALLBACKS, defaulting to no-ops, so every existing caller is unaffected —
+ * a second tracer implementation would have drifted from this one. The deprecation
+ * sweep at TagTracer.cs:111-119, which the first port dropped entirely on the grounds
+ * that it cannot affect control flow or any traced value, is restored with it.
+ *
+ * RESTORING THEM MUST NOT MOVE A TRACED VALUE. The completion provider consumes this
+ * tracer and Phase 2B-5/2B-6's live verification pins its output; the callbacks are
+ * therefore pure additions at points that already existed, never new branches.
  *
  * DEVIATION 1 — no mutation of the input tag. C# writes its results back onto
  * `SingleTag.Part.PossibleTags` / `.PossibleSubTypes` in place. This port must not:
@@ -27,8 +36,9 @@
  * results come back in a `TraceResult` instead.
  *
  * DEVIATION 2 — `LegacySpecialTags` (TagTracer.cs:29-30) is an obsolete-tag
- * diagnostic path. The branch is ported so the control flow matches (it returns
- * early, before the `Docs.Tags` lookups), but with no message. See `trace`.
+ * diagnostic path. The branch was originally ported so the control flow matched (it
+ * returns early, before the `Docs.Tags` lookups) but with no message; the message is
+ * now raised through the `error` callback. See `trace`.
  *
  * DEVIATION 3 — two null-safety guards that C# does not have, both flagged at their
  * sites: `getFullComplexSetFrom` will not put a null `objectTagType` into a type set,
@@ -42,13 +52,16 @@ exports.traceTag = void 0;
 const LEGACY_SPECIAL_TAGS = new Set(['permission', 'text', 'name', 'amount']);
 /** Port of the `TagTracer` class (TagTracer.cs:14-287). Internal: `traceTag` is the public entry point. */
 class TagTracer {
-    constructor(docs, tag) {
+    constructor(docs, tag, callbacks) {
+        var _a, _b;
         /** Stands in for `SingleTag.Part.PossibleTags` (TagHelper.cs:111); see deviation 1. */
         this.possibleTags = new Map();
         /** Stands in for `SingleTag.Part.PossibleSubTypes` (TagHelper.cs:114); see deviation 1. */
         this.possibleSubTypes = new Map();
         this.docs = docs;
         this.tag = tag;
+        this.error = (_a = callbacks === null || callbacks === void 0 ? void 0 : callbacks.error) !== null && _a !== void 0 ? _a : (() => { });
+        this.deprecation = (_b = callbacks === null || callbacks === void 0 ? void 0 : callbacks.deprecation) !== null && _b !== void 0 ? _b : (() => { });
     }
     /** `Tag.Parts[index].PossibleTags.Add(tag)`. Appends, never dedupes — C#'s field is a List. */
     addPossibleTag(index, tag) {
@@ -62,7 +75,7 @@ class TagTracer {
     }
     /** Traces through a written tag, trying to find the documented tag parts inside it (TagTracer.cs:33-120). */
     trace() {
-        var _a;
+        var _a, _b;
         const parts = this.tag.parts;
         // TagTracer.cs:35-38.
         if (parts.length === 0) {
@@ -82,9 +95,9 @@ class TagTracer {
         if (root === 'context' || root === 'entry') {
             this.traceTagParts(new Set(this.docs.objectTypes.values()), 2);
         }
-        // TagTracer.cs:48-52. Deviation 2: the diagnostic is dropped, the early return is not.
-        // Checked before the Docs.Tags lookups below, exactly as in C#.
+        // TagTracer.cs:48-52. Checked before the Docs.Tags lookups below, exactly as in C#.
         else if (LEGACY_SPECIAL_TAGS.has(root)) {
+            this.error(`Tag base '${root}' is deprecated: write it as a definition, like '<[${root}]>'.`);
             return;
         }
         // TagTracer.cs:53-60.
@@ -114,26 +127,33 @@ class TagTracer {
             if (parts[0].parameter === null) {
                 // TagTracer.cs:82-86 — Error, then return.
                 if (realBaseTag.requiresParam) {
+                    this.error(`Tag base '${root}' requires an input [tag parameter] value.`);
                     return;
                 }
             }
             else {
                 // TagTracer.cs:90-94 — Error, then return.
                 if (!realBaseTag.allowsParam) {
+                    this.error(`Tag base '${root}' cannot have a [tag parameter].`);
                     return;
                 }
             }
             this.traceTagParts(this.parsePossibleTypes(realBaseTag.returns, realBaseTag.returnType), 1);
         }
-        // TagTracer.cs:98-105. The `Prefix == "none"` pseudo-object-type check at :100-103
-        // is Error-only with no return, so with diagnostics dropped it has no effect here
-        // and the trace continues from the documented type either way.
+        // TagTracer.cs:98-105. The `Prefix == "none"` check at :100-103 is Error-only with NO
+        // return, so the trace continues from the documented type either way -- the diagnostic
+        // is the whole of its effect.
         else if ((documentedObjectBase = this.docs.objectTypes.get(root))) {
+            if (documentedObjectBase.prefix.toLowerCase() === 'none') {
+                this.error(`Tag base '${parts[0].text}' seems to refer to a pseudo-object-type, but not one that can be used as a free-standing tag base.`);
+            }
             this.traceTagParts(new Set([documentedObjectBase]), 1);
         }
         // TagTracer.cs:106-109 — Error only, no return: execution falls through to :110.
+        // NOTE the message uses `parts[0].text`, NOT `root`, so an empty base (written `<[x]>`)
+        // reports as '' rather than as 'definition'. Ported verbatim.
         else {
-            // Intentionally empty.
+            this.error(`Tag base '${parts[0].text}' does not exist.`);
         }
         // TagTracer.cs:110. Runs after TraceTagParts, so for a multi-part tag it overwrites
         // whatever the loop stored for part 0. Note this uses the base tags' return types
@@ -146,7 +166,22 @@ class TagTracer {
             }
         }
         this.possibleSubTypes.set(0, this.getFullComplexSetFrom(rootReturnTypes));
-        // TagTracer.cs:111-119 (the DeprecationError sweep) is omitted; see the module header.
+        // TagTracer.cs:111-119: the deprecation sweep. Restored in Phase 2C-4; the first port of
+        // this file dropped it because it cannot affect control flow or any traced value.
+        //
+        // NOTE the condition at :114 -- it fires only when EVERY possible tag for the part is
+        // deprecated, not when any is. A part that could be one of several documented tags, only
+        // some of them deprecated, is not reported: the author may well mean a live one.
+        // An empty possibleTags list yields an empty `deprecated` list, so `.any()` is false and
+        // nothing fires -- which is why an unresolved part is silent here rather than reported.
+        for (let i = 0; i < parts.length; i++) {
+            const partTags = (_b = this.possibleTags.get(i)) !== null && _b !== void 0 ? _b : [];
+            const deprecated = partTags.filter(t => t.deprecated !== null && t.deprecated !== undefined);
+            if (deprecated.length > 0 && deprecated.length === partTags.length) {
+                const tag = deprecated[0];
+                this.deprecation(`Deprecated tag \`${tag.cleanedName}\`: ${tag.deprecated}`, parts[i]);
+            }
+        }
     }
     /**
      * Converts tag return data to something usable for the trace (TagTracer.cs:123-142).
@@ -176,6 +211,7 @@ class TagTracer {
             return result;
         }
         // TagTracer.cs:140-141 — Error, then return null.
+        this.error(`(Internal) Unknown object return type '${returnType}'`);
         return null;
     }
     /** Traces the parts of the tag, after the base has been traced (TagTracer.cs:145-217). */
@@ -195,14 +231,30 @@ class TagTracer {
                 return;
             }
             let result = matched;
-            // TagTracer.cs:159-174 — Error, then return.
+            // TagTracer.cs:158. Computed here, before the branches below, because all three
+            // messages use it.
+            const part = parts[index].text.toLowerCase();
+            // TagTracer.cs:159-174 — Error, then return. THREE message forms, chosen by how many
+            // object types were still in play: one names the type, up to four name them all, and
+            // five or more give up on naming them.
             if (result.length === 0) {
+                const names = Array.from(possibleRoots).map(r => r.name);
+                if (possibleRoots.size === 1) {
+                    this.error(`Tag part '${part}' does not exist for object type ${names[0]}`);
+                }
+                else if (possibleRoots.size < 5) {
+                    this.error(`Tag part '${part}' does not exist for object types ${names.join(', ')}`);
+                }
+                else {
+                    this.error(`Tag part '${part}' does not exist for any applicable object types`);
+                }
                 return;
             }
             if (parts[index].parameter === null) {
                 // TagTracer.cs:177-182.
                 result = result.filter(p => !p[0].requiresParam);
                 if (result.length === 0) {
+                    this.error(`Tag part '${part}' requires an input [tag parameter] value.`);
                     return;
                 }
             }
@@ -210,6 +262,7 @@ class TagTracer {
                 // TagTracer.cs:186-191.
                 result = result.filter(p => p[0].allowsParam);
                 if (result.length === 0) {
+                    this.error(`Tag part '${part}' cannot have a [tag parameter].`);
                     return;
                 }
             }
@@ -240,6 +293,7 @@ class TagTracer {
                     const wantedType = (_b = this.docs.objectTypes.get(castType)) !== null && _b !== void 0 ? _b : null;
                     // TagTracer.cs:205-209 — Error, then `return []`: contributes no types.
                     if (wantedType === null) {
+                        this.error(`Tag part 'as[${castType}]' is invalid: type name given doesn't appear to be a real object type.`);
                         continue;
                     }
                     // TagTracer.cs:210.
@@ -353,10 +407,14 @@ class TagTracer {
  * and each tag's returnType, all of which that pass populates.
  *
  * `tag` is not modified (see deviation 1 in the module header).
+ *
+ * `callbacks` is optional and defaults to the C#'s ignore-everything actions, so a caller
+ * that only wants the traced types — every caller before Phase 2C-4 — passes nothing and
+ * is unaffected.
  */
-function traceTag(docs, tag) {
+function traceTag(docs, tag, callbacks) {
     var _a;
-    const tracer = new TagTracer(docs, tag);
+    const tracer = new TagTracer(docs, tag, callbacks);
     tracer.trace();
     // The C# consumer reads `tag.Parts[^1]` (TextDocumentService.cs:527, 549), i.e. the
     // last part's sets, and `Part.PossibleSubTypes` starts out as an empty HashSet

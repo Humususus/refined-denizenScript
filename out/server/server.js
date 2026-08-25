@@ -295,6 +295,16 @@ function createServer() {
                 return;
             }
             const checker = new scriptChecker_1.ScriptChecker(doc.getText());
+            // ScriptChecker.cs:2023 does this inside Run() by reading the ambient
+            // `MetaDocs.CurrentMeta`. There is no such singleton here, so the docs are handed in.
+            //
+            // `loadedDocs` MAY BE NULL, and unlike onCompletion/onHover/onSignatureHelp above,
+            // this handler deliberately does NOT bail on that. Diagnostics are expected to work
+            // from the first keystroke, before the meta download finishes; the checks that need
+            // meta skip themselves, and the line and container checks -- which need none -- keep
+            // running. Bailing here would mean a freshly opened file shows no diagnostics at all
+            // until the network came back.
+            checker.meta = loadedDocs;
             checker.run();
             connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(checker) });
         }
