@@ -7,6 +7,7 @@ import * as https from "https";
 import { shouldUseTypeScriptServer } from './serverEngineSelector';
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 import { findSaveEntries, entryTagsFor } from "./entryTags";
+import { activateMapTagPeek } from "./mapTagPeek";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
@@ -3077,6 +3078,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateUpdateChecks(context);
     activateDenizenFileCommands(context);
     activateWorkspaceCompletions(context);
+    activateMapTagPeek(context);
     activateDenizenEscaping(context);
     activateDiagnosticMuting(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
