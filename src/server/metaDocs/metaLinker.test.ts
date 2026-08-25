@@ -120,3 +120,50 @@ describe('linkTypeGraph tags', () => {
         expect(docs.tags.get('player')!.requiresParam).toBe(true);
     });
 });
+
+describe('linkTypeGraph: rawAdjustables (MetaDocsLoader.cs:177)', () => {
+    function adjustableDocs(): MetaDocs {
+        const d = buildMetaDocs([
+            // Qualifies: its generated adjust example names itself, and the clean name has no
+            // "tag" suffix.
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name Material', '@prefix material', '@base ObjectTag', '@format x', '@description x', '@exampleadjustobject Material', '@end_meta'] },
+            // Rejected by the "tag" suffix rule, even though the adjust example names itself.
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name PlayerTag', '@prefix p', '@base ObjectTag', '@format x', '@description x', '@exampleadjustobject PlayerTag', '@end_meta'] },
+            // Rejected because the example adjusts something else.
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name Inventory', '@prefix inv', '@base ObjectTag', '@format x', '@description x', '@exampleadjustobject Material', '@end_meta'] },
+            // Rejected because it has no adjust example at all.
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name Plain', '@prefix plain', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] }
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+
+    it('collects only types whose adjust example names themselves', () => {
+        // The `adjust` checker uses this to tell a mechanism name from the object being
+        // adjusted, so a type wrongly included would make a real mechanism read as an object.
+        // MUTANT CAUGHT: dropping the `generatedExampleAdjust === name` test.
+        expect(Array.from(adjustableDocs().rawAdjustables).sort()).toEqual(['Material']);
+    });
+
+    it('excludes types whose clean name ends in "tag"', () => {
+        // MUTANT CAUGHT: dropping the suffix rule -- PlayerTag would join the set.
+        expect(adjustableDocs().rawAdjustables.has('PlayerTag')).toBe(false);
+    });
+
+    it('is rebuilt from scratch on a second link, dropping what no longer qualifies', () => {
+        // linkTypeGraph is idempotent by contract -- step 1 resets everything else too, and the
+        // meta is re-linked whenever it reloads.
+        //
+        // Re-linking UNCHANGED docs cannot detect a missing reset, because Set.add is idempotent
+        // and the second pass re-adds exactly what the first did. The stale entry only shows when
+        // a type STOPS qualifying between links. Confirmed by mutation: the naive version of this
+        // test survived deleting the reset entirely.
+        // MUTANT CAUGHT: initialising the set once outside the function.
+        const d = adjustableDocs();
+        expect(Array.from(d.rawAdjustables)).toEqual(['Material']);
+        d.objectTypes.get('material')!.generatedExampleAdjust = '<something.else>';
+        linkTypeGraph(d);
+        expect(Array.from(d.rawAdjustables)).toEqual([]);
+    });
+});

@@ -776,6 +776,8 @@ export interface MetaDocs {
      * (MetaDocs.cs:79). Used to offer completions for the first part of a tag.
      */
     tagBases: Set<string>;
+    /** Object type names that can be adjusted raw (MetaDocs.cs:100, derived at MetaDocsLoader.cs:177). */
+    rawAdjustables: Set<string>;
     /**
      * Every known tag "part": each dot-separated bit of a tag's clean name
      * after its base (e.g. "flag", "expiration" for `<PlayerTag.flag.expiration>`).
@@ -809,6 +811,7 @@ export function createEmptyMetaDocs(): MetaDocs {
         loadErrors: [],
         // Seeded per MetaDocs.cs:79.
         tagBases: new Set(['context', 'entry']),
+        rawAdjustables: new Set(),
         tagParts: new Set(),
         tagDeprecations: new Map(),
         objectTagType: null,
