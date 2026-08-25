@@ -637,7 +637,20 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
             { line: 2, key: 'identifier_missing_line', start: 0, end: 7 }
         ]);
         // Mutant caught: dropping any one of the five calls from run().
-        expect(shapes(checker.errors)).toEqual([{ line: 1, key: 'brace_syntax', start: 8, end: 8 }]);
+        //
+        // The second entry arrived with Phase 2C-3 Task 4, which wired `convertContainers` into
+        // `run()` (ScriptChecker.cs:2032 -- immediately after the gather, hence it sorts after
+        // brace_syntax). Hand-derived from the C# BEFORE running it: the gather leaves the root
+        // section holding exactly one key, `on foo` (line 1 has ": " so :1570-1574 splits it into
+        // key `on foo` and value `{`), and that value is a LineTrackedString rather than a map --
+        // so :1695-1699 fires `invalid_container` "missing content?" at the title's line, with
+        // range (0, Lines[1].Length) = (0, 9) for the 9-character `on foo: {`.
+        // Stricter than before, not weaker: it now also pins the position of the conversion step
+        // within run().
+        expect(shapes(checker.errors)).toEqual([
+            { line: 1, key: 'brace_syntax', start: 8, end: 8 },
+            { line: 1, key: 'invalid_container', start: 0, end: 9 }
+        ]);
         expect(shapes(checker.minorWarnings)).toEqual([
             { line: 0, key: 'stray_space_eol', start: 17, end: 18 }
         ]);

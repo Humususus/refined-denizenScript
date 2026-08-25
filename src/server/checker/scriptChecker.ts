@@ -11,6 +11,7 @@ import {
     checkForTabs
 } from './lineChecks';
 import { gatherActualContainers } from './containerGather';
+import { convertContainers, ScriptingWorkspaceData } from './containerConvert';
 // `import type`: ScriptSection is a type alias, used only in type position below. A value
 // import would be redundant with the line above; keeping it type-only makes the emitted JS
 // carry exactly one require() for this module.
@@ -59,10 +60,28 @@ export class ScriptChecker extends WarningCollector {
      * `run()` has been called.
      *
      * The C# keeps this as a local in `Run()` (ScriptChecker.cs:2031) and hands it straight to
-     * `ConvertContainers`. It is a field here because `ConvertContainers` lands in Phase 2C-3,
-     * so between now and then the only way to reach the parse result is off the checker.
+     * `ConvertContainers`. It stays a field here because it is the only view of the parse
+     * result before conversion, and Phase 2C-2's tests and verify script both assert on it.
      */
     containers: ScriptSection | null = null;
+
+    /**
+     * The converted containers of THIS file. (ScriptChecker.cs:130-131, `GeneratedWorkspace`)
+     *
+     * Populated by `convertContainers` during `run()`. This is what Phase 2C-4 checks tags
+     * against, and the reason Phase 2C-3 exists.
+     */
+    generatedWorkspace: ScriptingWorkspaceData = new ScriptingWorkspaceData();
+
+    /**
+     * Workspace data from the OTHER files around this one, or `null`.
+     * (ScriptChecker.cs:133-134, `SurroundingWorkspace`)
+     *
+     * Always null for now: cross-file scanning is Phase 2D. It is declared because
+     * `resolveInjects` reads it (ScriptChecker.cs:1735), and giving it its real name now means
+     * that code is the C#'s shape rather than a stub to revisit.
+     */
+    surroundingWorkspace: ScriptingWorkspaceData | null = null;
 
     /**
      * Constructs the checker from a script string.
@@ -114,10 +133,11 @@ export class ScriptChecker extends WarningCollector {
         checkForOldDefs(this);
         // ScriptChecker.cs:2031. Must come after `clearCommentsFromLines`, which blanks comment
         // lines in both arrays -- otherwise every comment would be parsed as a structural line.
-        // The C# immediately passes the result to ConvertContainers (:2032); that, plus
-        // CheckAllContainers (:2033), MergeData (:2034) and CollectStatisticInfos (:2035), are
-        // still out of scope, so the result is parked on the field instead.
         this.containers = gatherActualContainers(this);
+        // ScriptChecker.cs:2032. The C# passes the gather's result straight in as a local; it
+        // is parked on `this.containers` first because 2C-2's tests assert on it directly.
+        convertContainers(this, this.containers);
+        // Still out of scope: CheckAllContainers (:2033) and CollectStatisticInfos (:2035).
     }
 
     /**
