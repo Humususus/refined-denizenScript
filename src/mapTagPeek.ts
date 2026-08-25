@@ -27,6 +27,17 @@ interface Expansion {
     range: vscode.Range;
     /** The last content successfully written back, to avoid redundant edits. */
     lastWritten: string;
+    /**
+     * Whether a write is in flight.
+     *
+     * SERIALISING IS NOT OPTIONAL. `onDidChangeTextDocument` fires once per keystroke and
+     * `syncBack` awaits `applyEdit`, so typing `.round` produced six overlapping calls. Each read
+     * `range` BEFORE the previous write had landed, then replaced that stale, now-wrong-length
+     * range -- which ate the text after the tag. That was the reported corruption.
+     */
+    syncing: boolean;
+    /** Whether another change arrived while a write was in flight, so one more pass is owed. */
+    pending: boolean;
 }
 
 /**
@@ -82,22 +93,50 @@ const fileSystem = new MapTagFileSystem();
 const expansions = new Map<string, Expansion>();
 let counter = 0;
 
+/** The first tag on the line that is actually worth expanding, or null. */
+function firstExpandableTag(lineText: string): ReturnType<typeof findTagAt> {
+    for (let i = 0; i < lineText.length; i++) {
+        if (lineText[i] !== '<') {
+            continue;
+        }
+        const candidate = findTagAt(lineText, i + 1);
+        if (candidate !== null && formatTag(candidate.text) !== null) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+/** Where an expansion was asked for. Passed by the code lens; absent when invoked from a keybinding. */
+interface ExpandTarget {
+    line: number;
+    character: number;
+}
+
 /**
- * Opens the expanded, editable view of the map or list tag under the cursor.
+ * Opens the expanded, editable view of a map or list tag.
  *
- * Does nothing when the cursor is not inside one, or when the tag has a single entry -- expanding
- * that would add ceremony and no information.
+ * `target` is supplied by the code lens, which knows exactly which tag it sits above. Without it
+ * -- the keybinding and command-palette paths -- the cursor decides.
+ *
+ * THE LENS MUST PASS ITS OWN POSITION. The first version did not, so clicking the lens ran the
+ * command against wherever the caret happened to be, and did nothing unless the user had already
+ * put it inside the tag. That defeated the point of having something clickable.
  */
-async function expandTagAtCursor(): Promise<void> {
+async function expandTag(target?: ExpandTarget): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (editor === undefined) {
         return;
     }
-    const position = editor.selection.active;
+    const position = target !== undefined
+        ? new vscode.Position(target.line, target.character)
+        : editor.selection.active;
     const lineText = editor.document.lineAt(position.line).text;
-    const found = findTagAt(lineText, position.character);
+    // From a keybinding the caret may be anywhere on the line -- before the tag, after it, in the
+    // command name. Fall back to the first expandable tag on the line rather than refusing.
+    const found = findTagAt(lineText, position.character) ?? firstExpandableTag(lineText);
     if (found === null) {
-        vscode.window.showInformationMessage('Put the cursor inside a <map[...]> or <list[...]> tag to expand it.');
+        vscode.window.showInformationMessage('No <map[...]> or <list[...]> tag with more than one entry on this line.');
         return;
     }
     const pretty = formatTag(found.text);
@@ -108,7 +147,7 @@ async function expandTagAtCursor(): Promise<void> {
     const uri = vscode.Uri.parse(`${SCHEME}:/tag-${++counter}.dsc`);
     fileSystem.writeFile(uri, Buffer.from(pretty, 'utf8'));
     const range = new vscode.Range(position.line, found.start, position.line, found.end);
-    expansions.set(uri.toString(), { sourceUri: editor.document.uri, range, lastWritten: found.text });
+    expansions.set(uri.toString(), { sourceUri: editor.document.uri, range, lastWritten: found.text, syncing: false, pending: false });
     // The peek widget renders the target document inline, below the current line, and Escape
     // closes it. `editor.action.peekLocations` is a built-in command; the alternative
     // (createWebviewTextEditorInset) is still a proposed API and cannot ship.
@@ -131,6 +170,27 @@ async function syncBack(document: vscode.TextDocument): Promise<void> {
     if (expansion === undefined) {
         return;
     }
+    // Serialise. A change that arrives mid-write is remembered, not dropped: the run in flight
+    // loops again afterwards and picks up the latest document text, so the final state is always
+    // written even though the intermediate ones are coalesced.
+    if (expansion.syncing) {
+        expansion.pending = true;
+        return;
+    }
+    expansion.syncing = true;
+    try {
+        do {
+            expansion.pending = false;
+            await syncOnce(document, expansion);
+        } while (expansion.pending);
+    }
+    finally {
+        expansion.syncing = false;
+    }
+}
+
+/** One write-back pass. Only ever called from `syncBack`, which guarantees no overlap. */
+async function syncOnce(document: vscode.TextDocument, expansion: Expansion): Promise<void> {
     const pretty = document.getText();
     if (!isCollapsible(pretty)) {
         // Mid-keystroke. Leave the last good version in the file.
@@ -193,7 +253,9 @@ class ExpandTagLensProvider implements vscode.CodeLensProvider {
                     lenses.push(new vscode.CodeLens(new vscode.Range(i, found.start, i, found.end), {
                         title: '$(list-tree) Expand tag',
                         command: 'refinedDenizenscript.expandMapTag',
-                        arguments: []
+                        // The lens knows exactly which tag it sits above; passing that is what
+                        // makes clicking it work regardless of where the caret is.
+                        arguments: [{ line: i, character: found.start + 1 }]
                     }));
                     break;
                 }
@@ -207,7 +269,7 @@ class ExpandTagLensProvider implements vscode.CodeLensProvider {
 /** Wires up the expanded-tag view. Call from `activate`. */
 export function activateMapTagPeek(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.workspace.registerFileSystemProvider(SCHEME, fileSystem, { isCaseSensitive: true }));
-    context.subscriptions.push(vscode.commands.registerCommand('refinedDenizenscript.expandMapTag', expandTagAtCursor));
+    context.subscriptions.push(vscode.commands.registerCommand('refinedDenizenscript.expandMapTag', (target?: ExpandTarget) => expandTag(target)));
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
         if (event.document.uri.scheme === SCHEME) {
             void syncBack(event.document);
