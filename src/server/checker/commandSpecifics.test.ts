@@ -774,3 +774,35 @@ describe('checkSingleCommand', () => {
         expect(run('narrate "hello"').keys).toContain('bad_quotes');
     });
 });
+
+describe('the case checker is UNREACHABLE through checkSingleCommand (C# QUIRK)', () => {
+    it('never fires case_default, because case has no meta entry', () => {
+        // ScriptChecker.cs:814-821 takes the unknown-command branch for `case`, exempts it from
+        // the warning at :816, and then RETURNS -- unconditionally, before the registry dispatch
+        // at :865. So the checker registered at ScriptCheckerCommandSpecifics.cs:295 can never
+        // run through the real entry point.
+        //
+        // Verified against live meta: neither `case` nor `default` is in docs.commands. `if`,
+        // `choose`, `foreach`, `while` and `else` all are -- these two are block labels.
+        //
+        // The checker itself is correct and has its own tests above; only its reachability is
+        // dead. Ported as-is, like give_invalid_item: making it reachable would turn a check
+        // that has never run into a live one, which is a ruling rather than a tidy-up.
+        // MUTANT CAUGHT: moving the registry dispatch above the unknown-command return.
+        const meta = buildMetaDocs([
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'command', url: 'src#L1', data: ['@name narrate', '@syntax narrate [x]', '@short x', '@group x', '@description x', '@required 1', '@maximum 2', '@end_meta'] }
+        ]);
+        linkTypeGraph(meta);
+        const checker = new ScriptChecker('- case default');
+        checker.meta = meta;
+        checkSingleCommand(checker, 0, 0, 'case default', new ScriptCheckContext(), null);
+        expect([...checker.errors, ...checker.warnings, ...checker.minorWarnings]).toEqual([]);
+    });
+
+    it('but the checker is registered and works when called directly', () => {
+        // Proof that the port of :295 is right, and that only the path to it is dead.
+        expect(COMMAND_CHECKERS.has('case')).toBe(true);
+        expect(runChecker('case default').keys).toEqual(['case_default']);
+    });
+});
