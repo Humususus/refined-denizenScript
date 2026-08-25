@@ -632,3 +632,33 @@ export function eventSnippet(name: string): string {
     });
     return body;
 }
+
+/** What the author has typed so far on an event line. */
+export interface EventLinePrefix {
+    /** Whether an `on `/`after ` prefix is already written. */
+    hasPrefix: boolean;
+    /** The part after that prefix -- what the event name should be matched against. */
+    typed: string;
+}
+
+/**
+ * Splits the text before the cursor into its `on `/`after ` prefix and the rest.
+ *
+ * THE PREFIX IS NOT PART OF THE EVENT NAME. Denizen writes event lines as `on player joins:`,
+ * but the meta documents the event as `player joins`. Matching the whole typed text therefore
+ * found nothing the moment the author typed `on` -- which is how every event line starts -- and
+ * a replacement range covering the prefix would have deleted it on accept.
+ *
+ * Returns null when the line cannot be the beginning of an event line at all (a `- ` command, or
+ * text with characters no event name contains).
+ */
+export function parseEventLinePrefix(linePrefix: string): EventLinePrefix | null {
+    if (/^\s*-/.test(linePrefix)) {
+        return null;
+    }
+    const match = /^\s*(?:(on|after)\s+)?([A-Za-z0-9_<>'/ ]*)$/i.exec(linePrefix);
+    if (match === null) {
+        return null;
+    }
+    return { hasPrefix: match[1] !== undefined, typed: match[2] };
+}

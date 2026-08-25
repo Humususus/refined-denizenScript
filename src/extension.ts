@@ -8,7 +8,7 @@ import { shouldUseTypeScriptServer } from './serverEngineSelector';
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 import { findSaveEntries, entryTagsFor } from "./entryTags";
 import { activateMapTagPeek } from "./mapTagPeek";
-import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet } from "./denizenEvents";
+import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from "./denizenEvents";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
@@ -1665,19 +1665,33 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
     // Runs on BOTH engines, and only when the immediate parent key is `events:` on a `type:
     // world` container, so 527 event lines never bury the ordinary suggestions elsewhere.
     if (!/^\s*-/.test(linePrefix)) {
-        const eventPrefixMatch = /^\s*([A-Za-z0-9_<>'/ ]*)$/.exec(linePrefix);
+        // THE `on `/`after ` PREFIX IS NOT PART OF THE EVENT NAME. Denizen writes event lines as
+        // `on player joins:` or `after player breaks block:`, but the meta documents them as
+        // `player joins` -- so matching the whole typed text found nothing the moment the user
+        // typed `on`, which is how every event line starts. Worse, the replacement range covered
+        // the prefix, so accepting a suggestion would have deleted the `on ` too.
+        const eventPrefixMatch = parseEventLinePrefix(linePrefix);
         if (eventPrefixMatch && isInWorldEvents(document.getText().split(/\r?\n/), position.line)) {
-            const typed = eventPrefixMatch[1];
+            const hasPrefix = eventPrefixMatch.hasPrefix;
+            const typed = eventPrefixMatch.typed;
+            // Only the part AFTER `on `/`after ` is replaced, so what the user already typed
+            // stays put.
             const range = getCompletionRange(document, position, typed.length);
             return DENIZEN_EVENTS.map(event => {
                 const item = new vscode.CompletionItem(event.name, vscode.CompletionItemKind.Event);
                 // A snippet, not plain text: `<block>` and friends become tabstops the author
                 // tabs through, and the optional `(...)` groups are dropped to leave the
                 // minimal valid form.
-                item.insertText = new vscode.SnippetString(eventSnippet(event.name) + ':');
+                //
+                // `on ` is prepended only when the user has NOT already written a prefix --
+                // Denizen requires one, so a bare event line would be invalid.
+                item.insertText = new vscode.SnippetString((hasPrefix ? '' : 'on ') + eventSnippet(event.name) + ':');
                 item.detail = 'Denizen event';
                 item.documentation = new vscode.MarkdownString(event.trigger);
                 item.range = range;
+                // VS Code filters on the text inside `range`, which is now the event name
+                // without its prefix -- exactly what the label is.
+                item.filterText = event.name;
                 return item;
             });
         }

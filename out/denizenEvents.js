@@ -12,7 +12,7 @@
 // No `vscode` import: this stays a pure function of its inputs so it can be unit tested, same as
 // ./mutedDiagnostics, ./entryTags and ./tagFormatter.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.eventSnippet = exports.isInWorldEvents = exports.DENIZEN_EVENTS = void 0;
+exports.parseEventLinePrefix = exports.eventSnippet = exports.isInWorldEvents = exports.DENIZEN_EVENTS = void 0;
 // GENERATED from live Denizen meta on 2026-08-25.
 // 399 documented events, expanded to 527 concrete event lines.
 exports.DENIZEN_EVENTS = [
@@ -640,4 +640,26 @@ function eventSnippet(name) {
     return body;
 }
 exports.eventSnippet = eventSnippet;
+/**
+ * Splits the text before the cursor into its `on `/`after ` prefix and the rest.
+ *
+ * THE PREFIX IS NOT PART OF THE EVENT NAME. Denizen writes event lines as `on player joins:`,
+ * but the meta documents the event as `player joins`. Matching the whole typed text therefore
+ * found nothing the moment the author typed `on` -- which is how every event line starts -- and
+ * a replacement range covering the prefix would have deleted it on accept.
+ *
+ * Returns null when the line cannot be the beginning of an event line at all (a `- ` command, or
+ * text with characters no event name contains).
+ */
+function parseEventLinePrefix(linePrefix) {
+    if (/^\s*-/.test(linePrefix)) {
+        return null;
+    }
+    const match = /^\s*(?:(on|after)\s+)?([A-Za-z0-9_<>'/ ]*)$/i.exec(linePrefix);
+    if (match === null) {
+        return null;
+    }
+    return { hasPrefix: match[1] !== undefined, typed: match[2] };
+}
+exports.parseEventLinePrefix = parseEventLinePrefix;
 //# sourceMappingURL=denizenEvents.js.map

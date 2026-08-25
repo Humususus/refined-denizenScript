@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet } from './denizenEvents';
+import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from './denizenEvents';
 
 /**
  * Reported by the user: typing under a world container's `events:` key offered nothing.
@@ -115,5 +115,45 @@ describe('isInWorldEvents', () => {
 
     it('is false at the top of a file with no container at all', () => {
         expect(isInWorldEvents(['        '], 0)).toBe(false);
+    });
+});
+
+describe('parseEventLinePrefix', () => {
+    it('separates the on/after prefix from the event name being typed', () => {
+        // The reported bug: typing `on` -- which is how EVERY event line starts -- matched
+        // nothing, because the meta documents `player joins`, not `on player joins`. Matching the
+        // whole typed text could never find it.
+        // MUTANT CAUGHT: matching the whole line prefix, which finds no event once `on ` is typed.
+        expect(parseEventLinePrefix('        on player jo')).toEqual({ hasPrefix: true, typed: 'player jo' });
+        expect(parseEventLinePrefix('        after player br')).toEqual({ hasPrefix: true, typed: 'player br' });
+    });
+
+    it('reports no prefix when none is written yet', () => {
+        expect(parseEventLinePrefix('        player jo')).toEqual({ hasPrefix: false, typed: 'player jo' });
+        expect(parseEventLinePrefix('        ')).toEqual({ hasPrefix: false, typed: '' });
+    });
+
+    it('treats a bare on/after with nothing after it as a prefix already written', () => {
+        // `on ` with the cursor right after it is the commonest moment to ask for a suggestion.
+        expect(parseEventLinePrefix('        on ')).toEqual({ hasPrefix: true, typed: '' });
+    });
+
+    it('is case-insensitive about the prefix', () => {
+        expect(parseEventLinePrefix('        ON player')).toEqual({ hasPrefix: true, typed: 'player' });
+    });
+
+    it('does NOT treat a word merely starting with "on" as the prefix', () => {
+        // `once` is not `on`. The `\s+` after the alternation is what draws that line.
+        // MUTANT CAUGHT: matching `(on|after)` without requiring whitespace after it.
+        expect(parseEventLinePrefix('        once upon')).toEqual({ hasPrefix: false, typed: 'once upon' });
+    });
+
+    it('refuses a command line', () => {
+        // A `- ` line is a command, never an event.
+        expect(parseEventLinePrefix('        - narrate hi')).toBeNull();
+    });
+
+    it('refuses text containing characters no event name holds', () => {
+        expect(parseEventLinePrefix('        player joins: extra=1')).toBeNull();
     });
 });
