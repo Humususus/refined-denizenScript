@@ -6,6 +6,7 @@ import * as fs from "fs";
 import * as https from "https";
 import { shouldUseTypeScriptServer } from './serverEngineSelector';
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
+import { findSaveEntries, entryTagsFor } from "./entryTags";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
@@ -1652,6 +1653,29 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
         if (commandArgCompletions.length > 0) {
             return commandArgCompletions;
         }
+    }
+    // `<entry[NAME].…>` -- the sub-tags of the command that saved NAME.
+    //
+    // These are NOT in the tag index: entry sub-tags are documented per command, so there are
+    // zero tags in the meta whose base is `entry`. Without this branch the editor falls back to
+    // the general tag-part list, which contains none of the right answers -- typing
+    // `<entry[123].spawned` offered `spawned_npcs` and never `spawned_entity`.
+    //
+    // Runs on BOTH engines: the TypeScript server has the same blind spot as the C# one here.
+    const entryTagMatch = /<entry\[([^\]<>]*)\]\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
+    if (entryTagMatch) {
+        const saved = findSaveEntries(document.getText().split(/\r?\n/), position.line);
+        const range = getCompletionRange(document, position, entryTagMatch[2].length);
+        const known = saved.find(e => e.name == entryTagMatch[1].toLowerCase());
+        const detail = known ? `Entry tag from '${known.command}'` : "Denizen entry tag";
+        return entryTagsFor(entryTagMatch[1], saved).map(value => makeCompletion(value, vscode.CompletionItemKind.Property, detail, range));
+    }
+    // `<entry[…` -- the save-entry names written above the cursor in this container.
+    const entryNameMatch = /<entry\[([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
+    if (entryNameMatch) {
+        const saved = findSaveEntries(document.getText().split(/\r?\n/), position.line);
+        const range = getCompletionRange(document, position, entryNameMatch[1].length);
+        return saved.map(e => makeCompletion(e.name, vscode.CompletionItemKind.Variable, `Save entry from '${e.command}'`, range));
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
