@@ -16,6 +16,7 @@ import { convertContainers, mergeData, ScriptingWorkspaceData } from './containe
 // import would be redundant with the line above; keeping it type-only makes the emitted JS
 // carry exactly one require() for this module.
 import type { ScriptSection } from './containerGather';
+import type { MetaDocs } from '../metaDocs/metaTypes';
 
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
@@ -82,6 +83,21 @@ export class ScriptChecker extends WarningCollector {
      * that code is the C#'s shape rather than a stub to revisit.
      */
     surroundingWorkspace: ScriptingWorkspaceData | null = null;
+
+    /**
+     * The loaded Denizen meta, or `null` if it is not available.
+     * (ScriptChecker.cs:63, `Meta`)
+     *
+     * The C# reads an ambient singleton at `Run()` (`Meta = MetaDocs.CurrentMeta`, :2023). This
+     * repo has no such singleton, so the docs are handed in by whoever constructs the checker --
+     * `server.ts`, which already holds them.
+     *
+     * NULL IS A REAL STATE, NOT A DEFENSIVE ONE. Diagnostics run from the first keystroke, while
+     * meta is still downloading on a cold start. Every consumer must degrade to "check nothing"
+     * rather than guess, because guessing means underlining every tag in the file for the first
+     * few seconds after the editor opens.
+     */
+    meta: MetaDocs | null = null;
 
     /**
      * Constructs the checker from a script string.

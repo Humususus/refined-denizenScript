@@ -1,7 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { ScriptChecker } from './scriptChecker';
-import { containsObjectNotation, ScriptCheckContext, checkSingleArgument, checkSingleDataLine } from './tagChecks';
+import { containsObjectNotation, ScriptCheckContext, checkSingleArgument, checkSingleDataLine, checkSingleTag } from './tagChecks';
+import { buildMetaDocs } from '../metaDocs/metaDocsManager';
+import { linkTypeGraph } from '../metaDocs/metaLinker';
+import type { MetaDocs } from '../metaDocs/metaTypes';
+import type { MetaBlock } from '../metaDocs/metaLoader';
+
 import type { ScriptWarning } from './scriptWarnings';
+
+/** Fixture builder, same shape as tagTracer.test.ts's. */
+function type(name: string, base: string, extra: string[] = []): MetaBlock {
+    return {
+        objectType: 'objecttype',
+        url: 'src#L1',
+        data: ['@name ' + name, '@prefix ' + name.toLowerCase(), '@base ' + base, '@format x', '@description x', ...extra, '@end_meta']
+    };
+}
 
 /**
  * Every expectation in this file was hand-derived by reading
@@ -296,5 +310,290 @@ describe('checkSingleDataLine (ScriptChecker.cs:630-637)', () => {
         const checker = argChecker();
         checkSingleDataLine(checker, 0, 0, 'e@1234', null);
         expect(checker.warnings.map(argShape)).toEqual([{ line: 0, key: 'raw_object_notation', start: 0, end: 1 }]);
+    });
+});
+
+/**
+ * Phase 2C-4 Task 4: `checkSingleTag` (ScriptChecker.cs:426-525).
+ *
+ * These tests use a HAND-BUILT meta fixture rather than live meta. The plan asked for real meta
+ * for the base/part tests, and the live verification script (Task 6) does exactly that -- but a
+ * unit test asserting "bad_tag_base does not fire for <player.name>" against 2493 downloaded tags
+ * proves the network worked, not that the branch is right. The fixture here is small enough that
+ * every expectation can be derived by reading it.
+ */
+function tagDocs(): MetaDocs {
+    const d = buildMetaDocs([
+        type('ObjectTag', 'none'),
+        type('ElementTag', 'ObjectTag'),
+        type('PlayerTag', 'ElementTag'),
+        { objectType: 'tag', url: 'src#L1', data: ['@attribute <player>', '@returns PlayerTag', '@description x', '@end_meta'] },
+        { objectType: 'tag', url: 'src#L1', data: ['@attribute <PlayerTag.name>', '@returns ElementTag', '@description x', '@end_meta'] },
+        { objectType: 'tag', url: 'src#L1', data: ['@attribute <definition[<name>]>', '@returns ObjectTag', '@description x', '@end_meta'] },
+        { objectType: 'tag', url: 'src#L1', data: ['@attribute <entry[<name>].thing>', '@returns ObjectTag', '@description x', '@end_meta'] },
+        // A base whose name ends in "tag": the xtag_notation trigger at :441.
+        { objectType: 'tag', url: 'src#L1', data: ['@attribute <sometag>', '@returns ObjectTag', '@description x', '@end_meta'] }
+    ]);
+    linkTypeGraph(d);
+    return d;
+}
+const TAG_DOCS = tagDocs();
+
+/** Runs checkSingleTag over one tag, with the given context. */
+function checkTag(tag: string, context: ScriptCheckContext | null = null, startChar = 0) {
+    const checker = new ScriptChecker('- narrate placeholder');
+    checker.meta = TAG_DOCS;
+    checkSingleTag(checker, 0, startChar, tag, context);
+    return checker;
+}
+
+/** Just the warning keys raised, in order. */
+function keys(checker: ScriptChecker): string[] {
+    return [...checker.warnings, ...checker.minorWarnings].map(w => w.warningUniqueKey);
+}
+
+function contextWith(defs: string[] = [], saves: string[] = []): ScriptCheckContext {
+    const c = new ScriptCheckContext();
+    for (const d of defs) { c.definitions.add(d); }
+    for (const s of saves) { c.saveEntries.add(s); }
+    return c;
+}
+
+describe('checkSingleTag: the false-positive guard', () => {
+    it('says NOTHING about a fully valid tag', () => {
+        // The single most important assertion in this phase. Everything else here fires a
+        // warning; if this one ever fires, the extension underlines working scripts.
+        expect(keys(checkTag('player.name'))).toEqual([]);
+        expect(keys(checkTag('player'))).toEqual([]);
+    });
+
+    it('says nothing when the checker has no meta loaded', () => {
+        // Diagnostics run before meta finishes downloading on a cold start. With no meta there
+        // is nothing to check a tag against, and guessing would mean warning about every tag in
+        // the file for the first few seconds after opening it.
+        // MUTANT CAUGHT: dereferencing checker.meta unguarded -- this throws.
+        const checker = new ScriptChecker('- narrate placeholder');
+        expect(() => checkSingleTag(checker, 0, 0, 'anything.at.all', null)).not.toThrow();
+        expect(keys(checker)).toEqual([]);
+    });
+});
+
+describe('checkSingleTag: the tag base (ScriptChecker.cs:436-444)', () => {
+    it('reports bad_tag_base for a base that is not a known tag base', () => {
+        // :437-440. `Meta.TagBases` is the set of every documented base name.
+        //
+        // TWO diagnostics, not one, and that is correct: the meta-set check at :437 and the
+        // tracer at :502 both look at the base and both complain, under different keys. They are
+        // separate mechanisms -- the set is a flat name index, the tracer walks the type graph --
+        // and the C# runs both unconditionally.
+        const checker = checkTag('nosuchbase.name');
+        expect(keys(checker)).toEqual(['bad_tag_base', 'tag_trace_failure']);
+        expect(checker.warnings[0].customMessageForm).toContain('Invalid tag base `nosuchbase`');
+    });
+
+    it('anchors bad_tag_base on the BASE PART, offset by the tag start', () => {
+        // :434 -- `startChar + part.StartChar` to `startChar + part.EndChar`. The squiggle covers
+        // the base name only, not the whole tag.
+        //
+        // `endChar` is INCLUSIVE of the part's last character, not one past it: `nosuchbase` runs
+        // 0..9, so at startChar 10 the range is 10..19. An earlier draft assumed the usual
+        // exclusive convention and expected 20.
+        // MUTANT CAUGHT: reporting the whole tag's range instead of the part's.
+        const checker = checkTag('nosuchbase.name', null, 10);
+        expect({ start: checker.warnings[0].startChar, end: checker.warnings[0].endChar }).toEqual({ start: 10, end: 19 });
+    });
+
+    it('does NOT report an empty base -- that is how <[def]> is written', () => {
+        // :437's `&& tagName.Length > 0`. `<[x]>` parses to an empty base name, and it is valid.
+        // MUTANT CAUGHT: dropping the length test -- every definition tag in every script warns.
+        expect(keys(checkTag('[x]', contextWith(['x'])))).toEqual([]);
+    });
+
+    it('reports xtag_notation for a KNOWN base whose name ends in "tag"', () => {
+        // :441-444, and note it is an `else if`: a base that is not known at all gets
+        // bad_tag_base instead, never both.
+        // MUTANT CAUGHT: making it a second `if` -- an unknown base ending in "tag" would draw
+        // bad_tag_base AND xtag_notation, where the C# gives only the first.
+        expect(keys(checkTag('sometag'))).toEqual(['xtag_notation']);
+        expect(keys(checkTag('nosuchtag'))).toEqual(['bad_tag_base', 'tag_trace_failure']);
+    });
+});
+
+describe('checkSingleTag: definition and entry parameters (ScriptChecker.cs:445-468)', () => {
+    it('reports def_of_nothing for a definition the context does not know', () => {
+        expect(keys(checkTag('[missing]', contextWith(['known'])))).toEqual(['def_of_nothing']);
+    });
+
+    it('accepts a definition the context knows, written either way', () => {
+        // :445 accepts both the empty base (`<[x]>`) and the spelled-out `<definition[x]>`.
+        expect(keys(checkTag('[known]', contextWith(['known'])))).toEqual([]);
+        expect(keys(checkTag('definition[known]', contextWith(['known'])))).toEqual([]);
+    });
+
+    it('cuts the definition name at the first "." before looking it up', () => {
+        // :450's `.Before('.')`. `<[map.key]>` is reading INTO a definition called `map`.
+        // MUTANT CAUGHT: looking up the whole parameter -- every map/list access warns.
+        expect(keys(checkTag('[known.sub.deeper]', contextWith(['known'])))).toEqual([]);
+    });
+
+    it('lowercases the definition name before looking it up', () => {
+        // :450's `.ToLowerFast()`. Definition names are stored lowercased.
+        expect(keys(checkTag('[KNOWN]', contextWith(['known'])))).toEqual([]);
+    });
+
+    it('says nothing when there is no context at all', () => {
+        // :451's `context is not null`. Called from a place with no container context, the
+        // definition check simply does not run.
+        expect(keys(checkTag('[missing]', null))).toEqual([]);
+    });
+
+    it('is silenced entirely by hasUnknowableDefinitions', () => {
+        // :451. A script with an unresolvable inject has definitions the checker cannot know
+        // about; without this flag one such inject would paint the whole script red.
+        // MUTANT CAUGHT: dropping the flag from the condition.
+        const c = contextWith([]);
+        c.hasUnknowableDefinitions = true;
+        expect(keys(checkTag('[missing]', c))).toEqual([]);
+    });
+
+    it('reports entry_of_nothing for an unknown save entry', () => {
+        expect(keys(checkTag('entry[missing].thing', contextWith([], ['known'])))).toEqual(['entry_of_nothing']);
+        expect(keys(checkTag('entry[known].thing', contextWith([], ['known'])))).toEqual([]);
+    });
+
+    it('does NOT cut the entry name at a "." -- unlike a definition', () => {
+        // :462 lowercases but does NOT call `.Before('.')`, where :450 does. An asymmetry in the
+        // C#, ported as-is.
+        // MUTANT CAUGHT: adding the Before('.') for symmetry -- `entry[a.b]` would stop warning.
+        expect(keys(checkTag('entry[known.sub].thing', contextWith([], ['known'])))).toEqual(['entry_of_nothing']);
+    });
+
+    it('is silenced entirely by hasUnknowableSaveEntries', () => {
+        const c = contextWith([], []);
+        c.hasUnknowableSaveEntries = true;
+        expect(keys(checkTag('entry[missing].thing', c))).toEqual([]);
+    });
+});
+
+describe('checkSingleTag: tag parts (ScriptChecker.cs:469-483)', () => {
+    it('reports bad_tag_part for a part that is not a known tag part', () => {
+        expect(keys(checkTag('player.nosuchpart'))).toContain('bad_tag_part');
+    });
+
+    it('exempts the FIRST part after entry or context, but no others', () => {
+        // :474 -- `i != 1 || (tagName != "entry" && tagName != "context")`. `<context.whatever>`
+        // is the commonest construct in a world script and its key name cannot be known, so the
+        // first part is exempt. The SECOND part is not.
+        // MUTANT CAUGHT: exempting every part of a context tag, which would stop reporting real
+        // typos after the first.
+        expect(keys(checkTag('context.anything_at_all'))).toEqual([]);
+        expect(keys(checkTag('entry[known].anything', contextWith([], ['known'])))).toEqual([]);
+        expect(keys(checkTag('context.anything.nosuchpart'))).toContain('bad_tag_part');
+    });
+
+    it('adds xtag_notation alongside bad_tag_part when the part ends in "tag"', () => {
+        // :477-480 is nested INSIDE the bad-part branch, so a part ending in "tag" that IS
+        // documented gets nothing, and one that is not gets BOTH warnings.
+        // The tracer reports the same part separately, as it does for a bad base.
+        // MUTANT CAUGHT: hoisting the xtag check out of the bad-part branch.
+        expect(keys(checkTag('player.sometag'))).toEqual(['bad_tag_part', 'xtag_notation', 'tag_trace_failure']);
+    });
+});
+
+describe('checkSingleTag: recursion into parameters and fallbacks (ScriptChecker.cs:484-494)', () => {
+    it('checks a tag nested inside a parameter', () => {
+        // :486-489 re-enters checkSingleArgument for every part's parameter, which finds tags
+        // inside it and checks them too.
+        // MUTANT CAUGHT: not recursing -- the inner bad base goes unreported.
+        expect(keys(checkTag('player.name[<nosuchbase>]'))).toContain('bad_tag_base');
+    });
+
+    it('checks a tag inside a fallback', () => {
+        // :491-494. The fallback after `||` is an argument in its own right.
+        // MUTANT CAUGHT: ignoring the fallback.
+        expect(keys(checkTag('player.name||<nosuchbase>'))).toContain('bad_tag_base');
+    });
+});
+
+describe('checkSingleTag: the tracer diagnostics (ScriptChecker.cs:495-502)', () => {
+    it('raises tag_trace_failure from the tracer error callback', () => {
+        // Task 1 restored these callbacks; this is the wiring that turns them into diagnostics.
+        // `<player[x]>` -- the base takes no parameter -- is a tracer error, not a base error.
+        // MUTANT CAUGHT: not passing the error callback to traceTag.
+        const checker = checkTag('player[x]');
+        expect(keys(checker)).toContain('tag_trace_failure');
+        expect(checker.warnings.find(w => w.warningUniqueKey === 'tag_trace_failure')!.customMessageForm)
+            .toContain('Tag tracer:');
+    });
+
+    it('raises deprecated_tag_part as a MINOR warning', () => {
+        // :500 routes this to MinorWarnings, unlike every other key in this function.
+        // MUTANT CAUGHT: routing it to `warnings`.
+        const d = buildMetaDocs([
+            type('ObjectTag', 'none'),
+            type('ElementTag', 'ObjectTag'),
+            type('PlayerTag', 'ElementTag'),
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <player>', '@returns PlayerTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <PlayerTag.oldway>', '@returns ElementTag', '@deprecated Use something else.', '@description x', '@end_meta'] }
+        ]);
+        linkTypeGraph(d);
+        const checker = new ScriptChecker('- narrate placeholder');
+        checker.meta = d;
+        checkSingleTag(checker, 0, 0, 'player.oldway', null);
+        expect(checker.minorWarnings.map(w => w.warningUniqueKey)).toEqual(['deprecated_tag_part']);
+        expect(checker.warnings).toEqual([]);
+    });
+});
+
+describe('checkSingleTag: parse failure (ScriptChecker.cs:428-431)', () => {
+    it('raises tag_format_break over the WHOLE tag when the parse complains', () => {
+        // :430's range is the whole tag, not a part -- at parse-failure time there are no
+        // reliable part offsets to point at.
+        const checker = checkTag('player.name[unclosed', null, 5);
+        const parseWarns = checker.warnings.filter(w => w.warningUniqueKey === 'tag_format_break');
+        expect(parseWarns.length).toBeGreaterThan(0);
+        expect({ start: parseWarns[0].startChar, end: parseWarns[0].endChar })
+            .toEqual({ start: 5, end: 5 + 'player.name[unclosed'.length });
+    });
+});
+
+describe('checkSingleTag: cases the first draft of these tests missed', () => {
+    it('does NOT fold a non-ASCII definition name, so a Cyrillic name still resolves', () => {
+        // ScriptChecker.cs:436, :450 and :462 all use ToLowerFast(), which is ASCII-ONLY.
+        // `parseTag` has already ASCII-lowered the whole tag, so the only characters a Unicode
+        // fold could still change are non-ASCII uppercase ones -- and those are exactly the ones
+        // the C# leaves alone.
+        //
+        // This is not a technicality here. Definition names reach `defNames` through the same
+        // ToLowerFast, so `- define ИМЯ ...` is stored as ИМЯ. Folding the tag's parameter to
+        // "имя" would look it up under a name nothing ever stored and report def_of_nothing on a
+        // perfectly correct script -- in a codebase whose scripts are full of Cyrillic.
+        //
+        // The original implementation used toLowerCase() and this exact case was WRONG; the
+        // mutation audit surfaced it as a surviving "not lowercased" mutant, because with an
+        // ASCII-only fixture the call is a no-op either way.
+        // MUTANT CAUGHT: using toLowerCase() instead of an ASCII-only fold.
+        expect(keys(checkTag('[ИМЯ]', contextWith(['ИМЯ'])))).toEqual([]);
+        // And an ASCII name still folds, so the ASCII half is not lost.
+        expect(keys(checkTag('[KNOWN]', contextWith(['known'])))).toEqual([]);
+    });
+
+    it('offsets a diagnostic raised INSIDE a tag parameter past the part text and its "["', () => {
+        // ScriptChecker.cs:488 -- `startChar + part.StartChar + part.Text.Length + 1`. The `+ 1`
+        // steps over the opening bracket.
+        //
+        // The earlier recursion tests only asserted that the inner diagnostic APPEARED, never
+        // where, so dropping the `+ 1` survived. The offset is the whole point of the
+        // expression: it is what puts the squiggle on the nested tag rather than one character
+        // to its left.
+        //
+        // 'player.name[<nosuchbase>]': part 1 is `name`, startChar 7, length 4, so the parameter
+        // begins at 7 + 4 + 1 = 12. Inside it, checkSingleArgument finds `<` at 0 and hands the
+        // tag out at 12 + 0 + 1 = 13 -- the `n` of `nosuchbase`. bad_tag_base then covers the
+        // base part, 13 to 13 + 9 = 22.
+        // MUTANT CAUGHT: dropping the `+ 1`; every range moves one character left.
+        const checker = checkTag('player.name[<nosuchbase>]');
+        const bad = checker.warnings.find(w => w.warningUniqueKey === 'bad_tag_base')!;
+        expect({ start: bad.startChar, end: bad.endChar }).toEqual({ start: 13, end: 22 });
     });
 });
