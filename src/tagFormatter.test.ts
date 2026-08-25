@@ -95,8 +95,8 @@ describe('formatTag', () => {
     it('renders the user\'s real line readably', () => {
         expect(formatTag(REAL)).toBe([
             '<map[',
-            '    translation            = <[start].left[<element[<[lefted].mul[<[new_t]>]>]>]>;',
-            '    interpolation_start    = 0;',
+            '    translation = <[start].left[<element[<[lefted].mul[<[new_t]>]>]>]>;',
+            '    interpolation_start = 0;',
             '    interpolation_duration = 2t',
             ']>'
         ].join('\n'));
@@ -112,10 +112,19 @@ describe('formatTag', () => {
         expect(out[3].endsWith(';')).toBe(false);
     });
 
-    it('aligns the "=" across entries', () => {
+    it('does NOT pad keys to align the "=" across entries', () => {
+        // An earlier version aligned them. A short key beside a long one then became a corridor
+        // of spaces, and the user rejected it on sight -- so a single space it is.
+        // MUTANT CAUGHT: reintroducing padEnd on the key.
         const out = formatTag('<map[a=1;longer=2]>')!.split('\n');
-        expect(out[1]).toBe('    a      = 1;');
+        expect(out[1]).toBe('    a = 1;');
         expect(out[2]).toBe('    longer = 2');
+    });
+
+    it('still collapses a padded view, so one expanded by an older build is not stranded', () => {
+        // The padded form was shipped once. Anyone with a peek open across the upgrade must not
+        // have their edit rejected.
+        expect(collapseTag('<map[\n    a      = 1;\n    longer = 2\n]>')).toBe('<map[a=1;longer=2]>');
     });
 
     it('renders a list without keys', () => {

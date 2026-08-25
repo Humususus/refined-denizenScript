@@ -150,7 +150,6 @@ export function formatTag(tagText: string, indent: string = '    '): string | nu
     const lower = tagText.toLowerCase();
     const kind = FORMATTABLE.find(k => lower.startsWith(k.prefix))!;
     const opening = tagText.substring(0, kind.prefix.length);
-    const keyWidth = Math.max(0, ...entries.map(e => e.key.length));
     const lines: string[] = [opening];
     for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
@@ -158,7 +157,11 @@ export function formatTag(tagText: string, indent: string = '    '): string | nu
         // the real single-line tag without guessing where the `;` went.
         const tail = i < entries.length - 1 ? kind.separator : '';
         if (entry.key.length > 0) {
-            lines.push(`${indent}${entry.key.padEnd(keyWidth)} = ${entry.value}${tail}`);
+            // NO COLUMN ALIGNMENT. An earlier version padded the keys so the `=` lined up, which
+            // turns a short key next to a long one into a corridor of spaces -- and the user
+            // rejected it on sight. A single space reads fine and keeps the line close to what is
+            // actually in the file.
+            lines.push(`${indent}${entry.key} = ${entry.value}${tail}`);
         }
         else {
             lines.push(`${indent}${entry.value}${tail}`);
