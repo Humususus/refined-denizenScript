@@ -597,3 +597,55 @@ describe('checkSingleTag: cases the first draft of these tests missed', () => {
         expect({ start: bad.startChar, end: bad.endChar }).toEqual({ start: 13, end: 22 });
     });
 });
+
+/**
+ * Phase 2C-4 Task 5: the checker's `meta` field, and the COLD START.
+ *
+ * `runDiagnostics` in server.ts deliberately does not bail when meta is still null, unlike the
+ * completion and hover handlers. That is the whole point: a user who opens a `.dsc` file gets
+ * diagnostics immediately, before the meta download finishes. These tests pin what "immediately"
+ * is allowed to mean.
+ */
+describe('ScriptChecker.meta and the cold start', () => {
+    it('defaults to null', () => {
+        // Not undefined: `checkSingleTag` tests `=== null`, and an undefined would slip past it.
+        expect(new ScriptChecker('x:').meta).toBeNull();
+    });
+
+    it('runs the whole pipeline with NO meta, producing the meta-free diagnostics', () => {
+        // Every check ported before Phase 2C-4 needs no meta at all, so all of them must still
+        // fire on a cold start. This fixture draws one from each of the three layers:
+        //   line level  -> raw_tab_symbol (the tab on line 1)
+        //   structure   -> duplicate_key  (the repeated `nested`)
+        //   validity    -> wrong_type     (`nope` is not a script type)
+        // MUTANT CAUGHT: making run() bail early when meta is null, which would silently give a
+        // freshly opened file no diagnostics until the network came back.
+        const checker = new ScriptChecker(
+            'my_data:\n\ttype: nope\n  nested:\n    a: 1\n  nested:\n    b: 2'
+        );
+        expect(checker.meta).toBeNull();
+        expect(() => checker.run()).not.toThrow();
+        const allKeys = [...checker.errors, ...checker.warnings, ...checker.minorWarnings].map(w => w.warningUniqueKey);
+        expect(allKeys).toContain('raw_tab_symbol');
+        expect(allKeys).toContain('wrong_type');
+    });
+
+    it('converts containers with no meta, so the workspace data is still built', () => {
+        // `convertContainers` reads the type TABLE, which is a compiled-in constant, not meta.
+        // Phase 2C-6 will build tag-checking contexts from this, and it must not be empty just
+        // because the docs have not arrived.
+        const checker = new ScriptChecker('my_task:\n  type: task\n  script:\n  - define x 1');
+        checker.run();
+        expect(Array.from(checker.generatedWorkspace.scripts.keys())).toEqual(['my_task']);
+        expect(checker.generatedWorkspace.scripts.get('my_task')!.defNames.exactKnown.has('x')).toBe(true);
+    });
+
+    it('accepts meta once it is assigned, and then the tag checks work', () => {
+        // The other half: with meta present, the checks that need it start working on the same
+        // checker type. This is what server.ts does once loadedDocs resolves.
+        const checker = new ScriptChecker('- narrate placeholder');
+        checker.meta = TAG_DOCS;
+        checkSingleTag(checker, 0, 0, 'nosuchbase', null);
+        expect(checker.warnings.map(w => w.warningUniqueKey)).toContain('bad_tag_base');
+    });
+});
