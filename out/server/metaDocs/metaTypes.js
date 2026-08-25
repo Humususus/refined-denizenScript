@@ -747,6 +747,7 @@ function createEmptyMetaDocs() {
         loadErrors: [],
         // Seeded per MetaDocs.cs:79.
         tagBases: new Set(['context', 'entry']),
+        rawAdjustables: new Set(),
         tagParts: new Set(),
         tagDeprecations: new Map(),
         objectTagType: null,

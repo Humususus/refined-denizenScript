@@ -112,6 +112,23 @@ function linkTypeGraph(docs) {
         }
         tag.baseType = (_f = docs.objectTypes.get(tag.beforeDot.toLowerCase())) !== null && _f !== void 0 ? _f : null;
     }
+    // Step 6: the raw-adjustable type names (MetaDocsLoader.cs:177).
+    //
+    // An object type is "raw adjustable" when its own generated example adjusts ITSELF -- i.e.
+    // `@example_for_adjust` names the type -- and its clean name does not end in "tag". The
+    // `adjust` command checker (Phase 2C-5) uses this to tell a mechanism name from an object
+    // argument: anything in this set, written bare, is the OBJECT being adjusted rather than a
+    // mechanism that does not exist.
+    //
+    // Derived here rather than in the checker because it is meta, not policy, and because the
+    // C# derives it at load time too -- keeping it here means it is computed once per meta load
+    // instead of once per adjust command in the workspace.
+    docs.rawAdjustables = new Set();
+    for (const type of docs.objectTypes.values()) {
+        if (type.generatedExampleAdjust === type.name && !type.cleanName.endsWith('tag')) {
+            docs.rawAdjustables.add(type.name);
+        }
+    }
 }
 exports.linkTypeGraph = linkTypeGraph;
 //# sourceMappingURL=metaLinker.js.map

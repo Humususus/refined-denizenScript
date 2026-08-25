@@ -42,6 +42,7 @@ const serverEngineSelector_1 = require("./serverEngineSelector");
 const mutedDiagnostics_1 = require("./mutedDiagnostics");
 const entryTags_1 = require("./entryTags");
 const mapTagPeek_1 = require("./mapTagPeek");
+const denizenEvents_1 = require("./denizenEvents");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
 /** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
@@ -1583,6 +1584,32 @@ function getDenizenCompletions(document, position) {
         const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
         if (commandArgCompletions.length > 0) {
             return commandArgCompletions;
+        }
+    }
+    // Event lines inside a world container's `events:` key.
+    //
+    // Neither engine offers these -- CompletionItemService.cs has no event handling at all, and
+    // the TypeScript server's completion stops at commands, arguments and tags. So typing under
+    // `events:` offered nothing, which is what the user reported.
+    //
+    // Runs on BOTH engines, and only when the immediate parent key is `events:` on a `type:
+    // world` container, so 527 event lines never bury the ordinary suggestions elsewhere.
+    if (!/^\s*-/.test(linePrefix)) {
+        const eventPrefixMatch = /^\s*([A-Za-z0-9_<>'/ ]*)$/.exec(linePrefix);
+        if (eventPrefixMatch && (0, denizenEvents_1.isInWorldEvents)(document.getText().split(/\r?\n/), position.line)) {
+            const typed = eventPrefixMatch[1];
+            const range = getCompletionRange(document, position, typed.length);
+            return denizenEvents_1.DENIZEN_EVENTS.map(event => {
+                const item = new vscode.CompletionItem(event.name, vscode.CompletionItemKind.Event);
+                // A snippet, not plain text: `<block>` and friends become tabstops the author
+                // tabs through, and the optional `(...)` groups are dropped to leave the
+                // minimal valid form.
+                item.insertText = new vscode.SnippetString((0, denizenEvents_1.eventSnippet)(event.name) + ':');
+                item.detail = 'Denizen event';
+                item.documentation = new vscode.MarkdownString(event.trigger);
+                item.range = range;
+                return item;
+            });
         }
     }
     // `<entry[NAME].…>` -- the sub-tags of the command that saved NAME.
