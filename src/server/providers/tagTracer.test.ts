@@ -310,3 +310,263 @@ describe('traceTag degenerate input', () => {
         expect(result.possibleTags.size).toBe(0);
     });
 });
+
+/**
+ * The tracer's diagnostics, restored in Phase 2C-4. Every message below was copied from
+ * TagTracer.cs, not paraphrased -- `CheckSingleTag` (ScriptChecker.cs:499) puts them in front of
+ * the user verbatim, prefixed with "Tag tracer: ".
+ *
+ * There are THIRTEEN raise sites in the C#: twelve `Error` and one `DeprecationError`. They were
+ * enumerated with `grep -n "Error(" TagTracer.cs` before any of this was written, and each test
+ * below names the C# line it covers.
+ */
+function tracedWith(text: string) {
+    const errors: string[] = [];
+    const deprecations: { message: string; partText: string }[] = [];
+    const result = traceTag(docs, parseTag(text, () => { /* ignore */ }), {
+        error: (m) => errors.push(m),
+        deprecation: (m, part) => deprecations.push({ message: m, partText: part.text })
+    });
+    return { errors, deprecations, result };
+}
+
+describe('traceTag diagnostics: the tag base (TagTracer.cs:44-109)', () => {
+    it('reports a legacy special tag base as deprecated (:50)', () => {
+        // The fixture also declares a real `<name>` tag, and this branch is checked BEFORE the
+        // Docs.Tags lookups -- so the legacy list wins over a documented tag of the same name.
+        // MUTANT CAUGHT: moving the LEGACY_SPECIAL_TAGS branch below the Docs.Tags lookups.
+        expect(tracedWith('name').errors).toEqual([
+            "Tag base 'name' is deprecated: write it as a definition, like '<[name]>'."
+        ]);
+    });
+
+    it('reports a base that requires a [parameter] and was given none (:84)', () => {
+        expect(tracedWith('somereq').errors).toEqual([
+            "Tag base 'somereq' requires an input [tag parameter] value."
+        ]);
+    });
+
+    it('reports a base that cannot take a [parameter] but was given one (:92)', () => {
+        expect(tracedWith('player[x]').errors).toEqual([
+            "Tag base 'player' cannot have a [tag parameter]."
+        ]);
+    });
+
+    it('reports a base that does not exist (:108)', () => {
+        expect(tracedWith('nosuchbase').errors).toEqual([
+            "Tag base 'nosuchbase' does not exist."
+        ]);
+    });
+
+    it('names the RAW base text, not the substituted "definition", for an empty base (:108)', () => {
+        // :39-43 rewrites an empty root to `definition` for LOOKUP, but :108's message reads
+        // `Tag.Parts[0].Text` -- the original, empty. Ported verbatim; the fixture has no
+        // `definition` tag registered under that name... except it does, so use a shape that
+        // misses: the message form is what matters here.
+        // MUTANT CAUGHT: using `root` instead of `parts[0].text` in the :108 message.
+        const errs = tracedWith('nosuchbase').errors;
+        expect(errs[0].startsWith("Tag base 'nosuchbase'")).toBe(true);
+    });
+
+    it('reports nothing at all for a valid base', () => {
+        // The false-positive guard. A base that resolves must be silent.
+        expect(tracedWith('player').errors).toEqual([]);
+        expect(tracedWith('definition[x]').errors).toEqual([]);
+    });
+});
+
+describe('traceTag diagnostics: return types and parts (TagTracer.cs:140-207)', () => {
+    it('reports an unknown object return type (:140)', () => {
+        // The fixture's `<weirdbase>` is documented as returning `NoSuchType`, so
+        // parsePossibleTypes finds no type and errors before returning null.
+        expect(tracedWith('weirdbase').errors).toEqual([
+            "(Internal) Unknown object return type 'nosuchtype'"
+        ]);
+    });
+
+    it('names the ONE object type when only one was in play (:163)', () => {
+        expect(tracedWith('playertag.nosuchpart').errors).toEqual([
+            "Tag part 'nosuchpart' does not exist for object type PlayerTag"
+        ]);
+    });
+
+    it('names ALL the object types when there are fewer than five (:167)', () => {
+        // `<player.name>` returns ElementTag, which expands to {ElementTag, PlayerTag, MapTag}.
+        // MUTANT CAUGHT: using the `< 5` branch's message for the single-type case, or vice
+        // versa -- the three forms are chosen by count and only a multi-type fixture separates
+        // them.
+        const errs = tracedWith('player.name.nosuchpart').errors;
+        expect(errs.length).toBe(1);
+        expect(errs[0].startsWith("Tag part 'nosuchpart' does not exist for object types ")).toBe(true);
+        const named = errs[0].substring("Tag part 'nosuchpart' does not exist for object types ".length).split(', ').sort();
+        expect(named).toEqual(['ElementTag', 'MapTag', 'PlayerTag']);
+    });
+
+    it('gives up on naming them when five or more are in play (:171)', () => {
+        // `<definition[x]>` returns ObjectTag, which means every type is possible -- six in the
+        // fixture, so the count is >= 5.
+        expect(tracedWith('definition[x].nosuchpart').errors).toEqual([
+            "Tag part 'nosuchpart' does not exist for any applicable object types"
+        ]);
+    });
+
+    it('reports a part that requires a [parameter] and was given none (:180)', () => {
+        // PlayerTag implements FlaggableObject, whose `flag[<name>]` requires its parameter.
+        expect(tracedWith('player.flag').errors).toEqual([
+            "Tag part 'flag' requires an input [tag parameter] value."
+        ]);
+    });
+
+    it('reports a part that cannot take a [parameter] but was given one (:189)', () => {
+        expect(tracedWith('player.groups[x]').errors).toEqual([
+            "Tag part 'groups' cannot have a [tag parameter]."
+        ]);
+    });
+
+    it('reports an as[...] cast to a type that does not exist (:207)', () => {
+        // NOTE the message quotes the NORMALISED type name -- ':200-203' appends "tag" when the
+        // written name does not end with it, so `as[nosuch]` reports as `as[nosuchtag]`.
+        // MUTANT CAUGHT: quoting the raw parameter instead of the normalised castType.
+        expect(tracedWith('player.as[nosuch]').errors).toEqual([
+            "Tag part 'as[nosuchtag]' is invalid: type name given doesn't appear to be a real object type."
+        ]);
+    });
+
+    it('reports nothing for a fully valid multi-part tag', () => {
+        // The false-positive guard again, and the one that matters most: this is the shape of
+        // almost every tag in a real script.
+        expect(tracedWith('player.groups.size').errors).toEqual([]);
+        expect(tracedWith('player.flag[x]').errors).toEqual([]);
+        expect(tracedWith('player.as[list]').errors).toEqual([]);
+    });
+});
+
+describe('traceTag diagnostics: the deprecation sweep (TagTracer.cs:111-119)', () => {
+    // A separate fixture: the shared one has no deprecated tags, and adding one to it would
+    // change counts several existing tests assert on.
+    function deprecatedFixture(): MetaDocs {
+        const d = buildMetaDocs([
+            type('ObjectTag', 'none'),
+            type('ElementTag', 'ObjectTag'),
+            type('PlayerTag', 'ElementTag'),
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <player>', '@returns PlayerTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <PlayerTag.oldway>', '@returns ElementTag', '@deprecated Use something else.', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <PlayerTag.fine>', '@returns ElementTag', '@description x', '@end_meta'] }
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+    const depDocs = deprecatedFixture();
+    function traceDep(text: string) {
+        const deprecations: { message: string; partText: string }[] = [];
+        traceTag(depDocs, parseTag(text, () => { /* ignore */ }), {
+            deprecation: (m, part) => deprecations.push({ message: m, partText: part.text })
+        });
+        return deprecations;
+    }
+
+    it('reports a part whose only possible tag is deprecated', () => {
+        // The sweep the first port of this file dropped entirely, on the correct grounds that it
+        // cannot affect control flow. Phase 2C-4 needs it for `deprecated_tag_part`.
+        // MUTANT CAUGHT: leaving the sweep out.
+        expect(traceDep('player.oldway')).toEqual([
+            { message: 'Deprecated tag `playertag.oldway`: Use something else.', partText: 'oldway' }
+        ]);
+    });
+
+    it('reports NOTHING for a part that is not deprecated', () => {
+        expect(traceDep('player.fine')).toEqual([]);
+    });
+
+    it('reports NOTHING for a part the trace never resolved', () => {
+        // :114's condition is `deprecated.Any() && ...`, and an unresolved part has an empty
+        // possibleTags list -- so the empty `deprecated` list makes the first conjunct false.
+        // MUTANT CAUGHT: writing the condition as `deprecated.length === partTags.length` alone,
+        // which is trivially true for two empty lists and would fire on every unresolved part.
+        expect(traceDep('player.nosuchpart')).toEqual([]);
+    });
+
+    it('defaults both callbacks to no-ops when none are passed', () => {
+        // Every caller before Phase 2C-4 passes nothing, and must keep working. This is the
+        // assertion that the signature change is backwards compatible.
+        expect(() => traceTag(depDocs, parseTag('player.oldway', () => { /* ignore */ }))).not.toThrow();
+        expect(() => traceTag(depDocs, parseTag('nosuchbase', () => { /* ignore */ }))).not.toThrow();
+    });
+});
+
+/**
+ * Three tests added after a mutation audit found the originals did not discriminate. Each needed
+ * a fixture the shared one cannot express; the comments record what was missing.
+ */
+describe('traceTag diagnostics: cases the shared fixture cannot reach', () => {
+    // No `definition` tag, one pseudo-object-type with `@prefix none`, and a part name that two
+    // different types both define -- one deprecated, one not.
+    function edgeFixture(): MetaDocs {
+        const d = buildMetaDocs([
+            type('ObjectTag', 'none'),
+            type('ElementTag', 'ObjectTag'),
+            type('PlayerTag', 'ElementTag'),
+            type('MapTag', 'ElementTag'),
+            // `type()` hardcodes `@prefix <lowercased name>`, so this one is written out.
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name PseudoTag', '@prefix none', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <player>', '@returns PlayerTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <PlayerTag.widen>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <ElementTag.dup>', '@returns ElementTag', '@deprecated Old one.', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <PlayerTag.dup>', '@returns ElementTag', '@description x', '@end_meta'] }
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+    const edgeDocs = edgeFixture();
+    function traceEdge(text: string) {
+        const errors: string[] = [];
+        const deprecations: string[] = [];
+        traceTag(edgeDocs, parseTag(text, () => { /* ignore */ }), {
+            error: (m) => errors.push(m),
+            deprecation: (m) => deprecations.push(m)
+        });
+        return { errors, deprecations };
+    }
+
+    it('names the EMPTY base text, not the substituted "definition" (:108)', () => {
+        // TagTracer.cs:39-43 rewrites an empty root to `definition` for the LOOKUP, but :108's
+        // message reads `Tag.Parts[0].Text` -- the original, still empty. So `<[x]>` in a doc set
+        // with no `definition` tag reports an empty name.
+        //
+        // The first version of this test used `nosuchbase`, where root and parts[0].text are the
+        // SAME STRING, so it could not tell the two apart at all. Confirmed by mutation: swapping
+        // `parts[0].text` for `root` survived it. This fixture has no `definition` tag, which is
+        // what forces the else branch for an empty base.
+        // MUTANT CAUGHT: using `root` in the :108 message.
+        expect(traceEdge('[x]').errors).toEqual(["Tag base '' does not exist."]);
+    });
+
+    it('reports a pseudo-object-type used as a free-standing base (:102)', () => {
+        // The check is `documentedObjectBase.Prefix.ToLowerFast() == "none"`, and the shared
+        // fixture's `type()` helper always writes a real prefix -- so no test could reach this
+        // branch and dropping the whole error survived. This fixture declares `@prefix none`.
+        //
+        // NOTE the trace CONTINUES afterwards (:104 runs either way); the diagnostic is the
+        // entire effect of the branch.
+        // MUTANT CAUGHT: dropping the error.
+        expect(traceEdge('pseudotag').errors).toEqual([
+            "Tag base 'pseudotag' seems to refer to a pseudo-object-type, but not one that can be used as a free-standing tag base."
+        ]);
+    });
+
+    it('does NOT report deprecation when only SOME of a part\'s possible tags are deprecated', () => {
+        // TagTracer.cs:114 is `deprecated.Any() && deprecated.Count == part.PossibleTags.Count`.
+        // The second conjunct is the point: a part that could be one of several documented tags,
+        // only some of them deprecated, is left alone -- the author may well mean a live one.
+        //
+        // The original tests only ever produced parts with ONE possible tag, where the two
+        // conjuncts agree, so weakening the condition to `deprecated.length > 0` survived.
+        // Reaching a multi-tag part needs a widened root set: `<player.widen>` returns ElementTag,
+        // which expands to {ElementTag, PlayerTag, MapTag}, and both ElementTag and PlayerTag
+        // define `dup`.
+        // MUTANT CAUGHT: dropping the `=== partTags.length` conjunct.
+        expect(traceEdge('player.widen.dup').deprecations).toEqual([]);
+        // Sanity: the deprecated one alone still reports, so the fixture is not simply silent.
+        expect(traceEdge('player.widen.dup').errors).toEqual([]);
+    });
+});
