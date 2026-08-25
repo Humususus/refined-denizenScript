@@ -53,20 +53,23 @@ export function countPreSpaces(line: string): number {
 /**
  * The index of the first non-whitespace character of a line, or -1 if there is none.
  *
- * No C# counterpart -- it exists only to serve the `useless_invalid_line` deviation below.
+ * No C# counterpart -- it exists to serve the `useless_invalid_line` deviation below and, since
+ * the same user ruling was extended to it, `containerGather`'s `cleanStartCut`. Exported for
+ * that second caller only.
  *
  * `\S` is used rather than `countPreSpaces` on purpose. `countPreSpaces` is a literal port of
  * ScriptChecker.cs:1395 and counts the SPACE character only, so a tab terminates its count at 0;
  * using it here would put the warning's start back on the indent for every tab-indented script,
  * which is half of the very defect the deviation exists to fix.
  *
- * `\S` is also the exactly-right complement for this caller: `cleanedLines` is built with
+ * `\S` is also the exactly-right complement for both callers: `cleanedLines` is built with
  * `String.prototype.trim()` (scriptChecker.ts:69), and JS regex `\s` matches precisely the set
- * `trim()` strips. So under the `cleanedLines[i].length > 0` guard at the only call site, a
- * non-empty cleaned line guarantees a non-whitespace character exists in the raw line and this
- * cannot return -1.
+ * `trim()` strips. Both call sites are guarded by that same line's cleaned text being non-empty
+ * -- `cleanedLines[i].length > 0` here, `cleaned.length === 0 ? 0 : ...` in `containerGather` --
+ * and a non-empty cleaned line guarantees a non-whitespace character exists in the raw line, so
+ * neither caller can observe the -1.
  */
-function firstNonWhitespaceIndex(line: string): number {
+export function firstNonWhitespaceIndex(line: string): number {
     return line.search(/\S/);
 }
 

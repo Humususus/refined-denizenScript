@@ -139,21 +139,55 @@ describe('gatherActualContainers: structure', () => {
         expect(Array.from(root.keys())).toEqual(['my_task']);
         const container = valueOf(root, 'my_task');
         expect(container instanceof Map).toBe(true);
-        // cleanStartCut is measured on the EXPANDED line, so it is 4, not 1.
-        expect(keyOf(container, 'type')).toEqual(new LineTrackedString(1, 'type', 4));
-        expect(valueOf(container, 'type')).toEqual(new LineTrackedString(1, 'task', 8));
+        // `spaces` is measured on the EXPANDED line -- that is an indent WIDTH, and 4 is what
+        // makes the section open at all. `cleanStartCut` is measured on the RAW line, because it
+        // is a COLUMN and LSP counts a tab as one character. Part of the :1424 deviation.
+        // MUTANT CAUGHT: taking cleanStartCut from the expanded `line` would give 4 and 8, i.e.
+        // a squiggle starting three characters past the end of a tab-indented key.
+        expect(keyOf(container, 'type')).toEqual(new LineTrackedString(1, 'type', 1));
+        expect(valueOf(container, 'type')).toEqual(new LineTrackedString(1, 'task', 5));
     });
 
-    it('lowercases the key but keeps the value verbatim, and reproduces the IndexOf(-1) quirk', () => {
-        // C# QUIRK, ported verbatim (ScriptChecker.cs:1424): `cleanStartCut` is
-        // `line.IndexOf(cleaned[0])`, and `cleaned` is LOWERCASED while `line` is raw. For
-        // "    Type: Task" the search is for 't', which does not occur -- so cleanStartCut is
-        // -1 and endIndex is -1 + 4 = 3. Same defect family as `useless_invalid_line`'s start.
-        // MUTANT CAUGHT: "fixing" cleanStartCut to a first-non-space scan would give 4 and 8.
+    it('lowercases the key but keeps the value verbatim, and anchors a CAPITALISED key on its text', () => {
+        // DELIBERATE DEVIATION (ScriptChecker.cs:1424). The C# computes cleanStartCut as
+        // `line.IndexOf(cleaned[0])` with `cleaned` lowercased and `line` raw, so for
+        // "    Type: Task" it searches for 't' in "    Type: Task" and finds none: cleanStartCut
+        // is -1 and endIndex is -1 + 4 = 3. The port scans for the first non-whitespace instead.
+        // MUTANT CAUGHT: reverting to the C#'s IndexOf(cleaned[0]) would give -1 and 3 -- the
+        // key recorded before the start of the line, and the value's column inside the indent.
         const { root } = gather('my_task:\n    Type: Task');
         const container = valueOf(root, 'my_task');
-        expect(keyOf(container, 'type')).toEqual(new LineTrackedString(1, 'type', -1));
-        expect(valueOf(container, 'type')).toEqual(new LineTrackedString(1, 'Task', 3));
+        expect(keyOf(container, 'type')).toEqual(new LineTrackedString(1, 'type', 4));
+        // endIndex is still cleanStartCut + startofline.length, NOT + ": ".length -- that is a
+        // separate C# QUIRK (:1573) which this deviation deliberately leaves in place, so the
+        // value's column lands on the ':' rather than on 'T'.
+        expect(valueOf(container, 'type')).toEqual(new LineTrackedString(1, 'Task', 8));
+    });
+
+    it('anchors a capitalised key whose lowercase letter DOES occur later in the line', () => {
+        // The nastier half of the same defect, and the reason the deviation could not be
+        // narrowed to "guard against -1": for "    Test: 1" the C# searches raw "    Test: 1"
+        // for 't' and FINDS one -- the final 't' of "Test", at index 7. That is a positive,
+        // plausible-looking index that no clamp and no stderr note ever flags, so the squiggle
+        // would start three characters into the word.
+        // MUTANT CAUGHT: reverting to IndexOf(cleaned[0]) would give 7 here, not 4, and would
+        // still look correct in the -1 test above if that were "fixed" with `Math.max(0, ...)`.
+        const { root } = gather('my_data:\n    Test: 1');
+        const container = valueOf(root, 'my_data');
+        expect(keyOf(container, 'test')).toEqual(new LineTrackedString(1, 'test', 4));
+    });
+
+    it('anchors an ERROR-severity diagnostic on a capitalised duplicate key (:1629 -> warnAt)', () => {
+        // The user-visible half of the deviation. :1629 is where the LineTrackedString that all
+        // four Errors-severity diagnostics anchor to is built, and `warnAt` derives the range as
+        // startChar .. startChar + text.length. Under the C#, "Nested" makes that -1 .. 5, which
+        // DiagnosticProvider clamps to 0-5: a red squiggle over the indentation.
+        // MUTANT CAUGHT: reverting cleanStartCut -- start would be -1 (published as 0), not 4.
+        const { checker } = gather(
+            'my_data:\n' + '    type: data\n' + '    Nested:\n' + '        a: 1\n' + '    Nested:\n' + '        b: 2'
+        );
+        expect(shapes(checker.errors)).toEqual([{ line: 4, key: 'duplicate_key', start: 4, end: 10 }]);
+        expect(shapes(checker.warnings)).toEqual([]);
     });
 
     it('absorbs continuation lines after a non-":" command into that command (:1510-1528)', () => {

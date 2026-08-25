@@ -6,15 +6,21 @@
 // tracking how deep it is and what it is currently building, and it reports thirteen distinct
 // structural problems as it goes. Porting rule, as everywhere else in this directory: the C# is
 // the specification, warts included. Several behaviours below look like bugs; each is marked
-// with a `C# QUIRK` note and ported verbatim so the two checkers stay diffable. There are NO
-// deliberate deviations in this file.
+// with a `C# QUIRK` note and ported verbatim so the two checkers stay diffable.
+//
+// There is exactly ONE intentional exception to that rule, labelled DELIBERATE DEVIATION at its
+// site and taken as a USER RULING on a user-visible defect: `cleanStartCut` (:1424), whose
+// character search returned -1 -- or, worse, a silently wrong index -- on any key that starts
+// with a capital letter, putting the squiggle on the indentation and the stored structure's
+// columns out by an arbitrary amount. That is the only place this port knowingly disagrees with
+// the C#; anything else that differs is a bug in this file.
 //
 // The C#'s local variable names are preserved exactly (`spacedsections`, `spacedlists`,
 // `currentSection`, `currentRootSection`, `pspaces`, `secwaiting`, `clist`, `buildingSubList`)
 // so the correspondence can be checked line by line against the cited C# line numbers.
 
 import { LineTrackedString } from './scriptWarnings';
-import { countPreSpaces } from './lineChecks';
+import { countPreSpaces, firstNonWhitespaceIndex } from './lineChecks';
 // `import type` (not a plain import) is load-bearing: scriptChecker.ts imports this module for
 // real, so a value import here would close a require() cycle at runtime. Same pattern as
 // lineChecks.ts.
@@ -230,13 +236,50 @@ export function gatherActualContainers(checker: ScriptChecker): ScriptSection {
         // ScriptChecker.cs:1423
         const cleaned = cleanedLines[i];
         // ScriptChecker.cs:1424.
-        // C# QUIRK, ported verbatim: `cleaned` is trimmed AND lowercased (:145) while `line` is
-        // raw, and IndexOf is ordinal. On a line whose first non-space character is UPPERCASE the
-        // search is for a character that is not in `line` at all, so this is -1 and every
-        // startChar derived from it below is off. Same defect family as the `useless_invalid_line`
-        // range documented in lineChecks.ts -- but that one was corrected by user ruling and this
-        // one has had no ruling, so it stays.
-        const cleanStartCut = cleaned.length === 0 ? 0 : line.indexOf(cleaned[0]);
+        // -----------------------------------------------------------------
+        // DELIBERATE DEVIATION FROM ScriptChecker.cs -- NOT a porting mistake.
+        // -----------------------------------------------------------------
+        // The C# is `int cleanStartCut = line.IndexOf(cleaned[0]);`. `cleaned` is trimmed AND
+        // lowercased (:145) while `line` is raw, and C#'s IndexOf(char) is ordinal, so on a line
+        // whose first non-space character is UPPERCASE the search is for a character the line's
+        // key does not contain. Two ways that goes wrong, both measured against the faithful
+        // port before this change:
+        //
+        //   1. NO MATCH AT ALL -> -1. `MyTask:` searches raw "MyTask:" for 'm' and finds none.
+        //      Every startChar derived from `cleanStartCut` is then negative, the published
+        //      range is clamped to column 0 (DiagnosticProvider.cs:86-92), and the squiggle sits
+        //      on the indentation instead of the text. Measured: `duplicate_key` on a capitalised
+        //      key published as columns 0-5 instead of 4-10.
+        //
+        //   2. A MATCH IN THE WRONG PLACE -- worse, and not visible as a clamp. `Test:` searches
+        //      raw "Test:" for 't' and finds the one at index 3, so the range starts mid-word
+        //      with no anomaly reported anywhere.
+        //
+        // This is not only a range defect: `cleanStartCut` is also the column stored on every
+        // `LineTrackedString` this parser puts into the returned structure, which Phase 2C-3
+        // consumes. A container whose name is capitalised would be recorded at column -1.
+        //
+        // Blast radius, traced site by site: :1534/:1550/:1556 (the `cleanStartCut + 2` list
+        // pushes below) are IMMUNE either way, because a list line's `cleaned[0]` is '-', which
+        // has no case. :1565 (`endIndex`), :1629 and :1633 are affected, and :1629 is what all
+        // four ERROR-severity diagnostics anchor to through `warnAt`.
+        //
+        // Fixing it was a USER RULING, taken in preference to bug-for-bug fidelity and on the
+        // same grounds as the `useless_invalid_line` range in lineChecks.ts: a squiggle sitting
+        // on the indent instead of on the offending text is a defect the user can see and the C#
+        // cannot defend. Capitalised keys (`MyTask:`, `Type:`) are ordinary Denizen style.
+        //
+        // The corrected value is the first non-whitespace position, which is evidently what the
+        // C# expression was reaching for -- on lowercase keys, the only input the C# handles
+        // correctly, `line.indexOf(cleaned[0])` and this agree exactly.
+        //
+        // It is taken from `lines[i]`, the RAW line, NOT from `line`, the tab-expanded one the C#
+        // searches. LSP columns count a tab as one character, so on a tab-indented script the
+        // expanded index over-reports by three per tab and lands the squiggle past the text --
+        // the same visible symptom this deviation exists to remove, arriving by a second route.
+        // `spaces` below still comes from the expanded `line`, and rightly so: that one is an
+        // indent WIDTH used for comparisons, not a column.
+        const cleanStartCut = cleaned.length === 0 ? 0 : firstNonWhitespaceIndex(lines[i]);
         // ScriptChecker.cs:1425-1428: blank (and comment-blanked) lines are skipped WITHOUT
         // touching pspaces, so indentation comparisons span them.
         if (cleaned.length === 0) {
