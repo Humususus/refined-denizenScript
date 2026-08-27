@@ -25,20 +25,7 @@ import type { ScriptChecker } from './scriptChecker';
 import { parseTag } from '../providers/tagHelper';
 import { traceTag } from '../providers/tagTracer';
 import type { TagPart } from '../providers/tagHelper';
-
-/**
- * ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`.
- *
- * NOT `toLowerCase()`, which is Unicode-aware. `parseTag` has already ASCII-lowered the whole
- * tag (tagHelper.ts:62), so the only characters a Unicode fold could still touch are non-ASCII
- * uppercase ones -- and those are exactly the ones the C# leaves alone. A definition written
- * `<[ИМЯ]>` is stored in `defNames` as ИМЯ (harvested through ToLowerFast), so folding it to
- * "имя" here would look it up under a name nothing ever stored and report a false
- * `def_of_nothing` on a correct script. Same helper and same reasoning as containerGather.ts.
- */
-function toLowerFast(text: string): string {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
-}
+import { toLowerFast } from './frenetic';
 
 /** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
 function before(input: string, match: string): string {

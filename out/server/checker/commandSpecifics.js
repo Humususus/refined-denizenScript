@@ -12,6 +12,7 @@ exports.checkSingleCommand = exports.argHasPrefix = exports.BAD_EXECUTE_COMMANDS
 const containerConvert_1 = require("./containerConvert");
 const buildArgs_1 = require("./buildArgs");
 const tagChecks_1 = require("./tagChecks");
+const frenetic_1 = require("./frenetic");
 /**
  * Everything a per-command checker gets to look at.
  * Ported from ScriptCheckerCommandSpecifics.cs:17-67.
@@ -116,10 +117,6 @@ function argHasPrefix(arg) {
     return false;
 }
 exports.argHasPrefix = argHasPrefix;
-/** ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`. */
-function toLowerFast(text) {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
-}
 /** FreneticUtilities' `string.Before(char)`. */
 function before(input, match) {
     const index = input.indexOf(match);
@@ -177,7 +174,7 @@ register(['adjust'], (details) => {
     // :143-144. The C# reads the AMBIENT `MetaDocs.CurrentMeta` here while using
     // `details.Checker.Meta` twelve lines earlier; there is no such singleton in this repo, so
     // both go through the checker.
-    const mechanismName = toLowerFast(before(mechanism.text, ':'));
+    const mechanismName = (0, frenetic_1.toLowerFast)(before(mechanism.text, ':'));
     const possible = Array.from(meta.mechanisms.values()).filter(m => m.mechName === mechanismName);
     let mech = null;
     if (possible.length === 1) {
@@ -204,7 +201,7 @@ register(['adjust'], (details) => {
     // :176-184
     const defArg = details.arguments.find(s => s.text.startsWith('def:'));
     if (defArg !== undefined) {
-        const defName = toLowerFast(after(defArg.text, ':'));
+        const defName = (0, frenetic_1.toLowerFast)(after(defArg.text, ':'));
         if (!details.context.definitions.has(defName) && !details.context.hasUnknowableDefinitions) {
             details.warn(details.checker.errors, 'bad_adjust_unknown_def', 'Malformed adjust command. Definition name given is unrecognized.', defArg.startChar, defArg.startChar + defArg.text.length);
         }
@@ -214,10 +211,10 @@ register(['adjust'], (details) => {
 register(['execute'], (details) => {
     if (details.argCount >= 2) {
         // :191 -- `as_server`/`as_player`/... shift the real command to the second argument.
-        const bukkitCommandArg = toLowerFast(details.arguments[0].text).startsWith('as_')
+        const bukkitCommandArg = (0, frenetic_1.toLowerFast)(details.arguments[0].text).startsWith('as_')
             ? details.arguments[1].text
             : details.arguments[0].text;
-        const bukkitCommandName = toLowerFast(before(bukkitCommandArg, ' '));
+        const bukkitCommandName = (0, frenetic_1.toLowerFast)(before(bukkitCommandArg, ' '));
         if (exports.BAD_EXECUTE_COMMANDS.has(bukkitCommandName) || bukkitCommandName.startsWith('minecraft:') || bukkitCommandName.startsWith('bukkit:')) {
             details.warn(details.checker.warnings, 'bad_execute', "Inappropriate usage of the 'execute' command. Execute is for external plugin interop, and should never be used for vanilla commands. Use the relevant Denizen script command or mechanism instead.");
         }
@@ -230,7 +227,7 @@ register(['inject'], (details) => {
     // become unknowable. Without this, 2C-4's def_of_nothing would fire across the whole script.
     details.context.hasUnknowableDefinitions = true;
     details.context.hasUnknowableSaveEntries = true;
-    const scrName = (_a = details.arguments.map(a => toLowerFast(a.text)).find(a => a !== 'instantly' && !a.startsWith('path:'))) !== null && _a !== void 0 ? _a : null;
+    const scrName = (_a = details.arguments.map(a => (0, frenetic_1.toLowerFast)(a.text)).find(a => a !== 'instantly' && !a.startsWith('path:'))) !== null && _a !== void 0 ? _a : null;
     if (!(0, containerConvert_1.contextValidatedIsValidScriptName)(details.checker, scrName)) {
         details.warn(details.checker.errors, 'invalid_script_inject', `Script name \`${scrName}\` is invalid. Cannot be injected.`);
     }
@@ -240,7 +237,7 @@ const RUN_OTHER_ARGS = new Set(['instant', 'instantly', 'local', 'locally']);
 // ScriptCheckerCommandSpecifics.cs:210-217
 register(['run', 'runlater'], (details) => {
     var _a;
-    const scrName = (_a = details.arguments.map(a => toLowerFast(a.text))
+    const scrName = (_a = details.arguments.map(a => (0, frenetic_1.toLowerFast)(a.text))
         .find(a => !RUN_OTHER_ARGS.has(a) && !startsWithAny(a, 'path:', 'id:', 'speed:', 'delay:', 'def:', 'def.', 'defmap:'))) !== null && _a !== void 0 ? _a : null;
     if (!(0, containerConvert_1.contextValidatedIsValidScriptName)(details.checker, scrName)) {
         details.warn(details.checker.errors, 'invalid_script_run', `Script name \`${scrName}\` is invalid. Cannot be ran.`);
@@ -248,7 +245,7 @@ register(['run', 'runlater'], (details) => {
 });
 // ScriptCheckerCommandSpecifics.cs:218-224
 register(['queue'], (details) => {
-    if (details.argCount === 1 && (toLowerFast(details.arguments[0].text) === 'stop' || toLowerFast(details.arguments[0].text) === 'clear')) {
+    if (details.argCount === 1 && ((0, frenetic_1.toLowerFast)(details.arguments[0].text) === 'stop' || (0, frenetic_1.toLowerFast)(details.arguments[0].text) === 'clear')) {
         details.warn(details.checker.minorWarnings, 'queue_clear', "Old style 'queue clear'. Use the modern 'stop' command instead. Refer to <https://guide.denizenscript.com/guides/troubleshooting/updates-since-videos.html#stop-is-the-new-queue-clear> for more info.");
     }
 });
@@ -262,7 +259,7 @@ register(['define', 'definemap'], (details) => {
         // the same user ruling: the C# (:229) cuts at ':' and '.' but NOT at '[', so
         // `- define background[46]:x` records `background[46]` -- a name no tag can reference.
         // See the long note at the other site for the measurements behind the ruling.
-        const defName = before(before(toLowerFast(before(details.arguments[0].text, ':')), '.'), '[');
+        const defName = before(before((0, frenetic_1.toLowerFast)(before(details.arguments[0].text, ':')), '.'), '[');
         details.trackDefinition(defName);
     }
 });
@@ -270,9 +267,9 @@ register(['define', 'definemap'], (details) => {
 register(['foreach', 'repeat', 'while'], (details) => {
     var _a, _b;
     if (details.commandName !== 'while') {
-        const asArgumentRaw = (_b = (_a = details.arguments.find(s => toLowerFast(s.text).startsWith('as:'))) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : null;
+        const asArgumentRaw = (_b = (_a = details.arguments.find(s => (0, frenetic_1.toLowerFast)(s.text).startsWith('as:'))) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : null;
         const asArgument = asArgumentRaw === null ? 'value' : asArgumentRaw.substring('as:'.length);
-        details.trackDefinition(toLowerFast(asArgument));
+        details.trackDefinition((0, frenetic_1.toLowerFast)(asArgument));
     }
     if (details.commandName !== 'repeat') {
         details.trackDefinition('loop_index');
@@ -281,9 +278,9 @@ register(['foreach', 'repeat', 'while'], (details) => {
 // ScriptCheckerCommandSpecifics.cs:253-265
 register(['foreach'], (details) => {
     var _a, _b;
-    const keyArgumentRaw = (_b = (_a = details.arguments.find(s => toLowerFast(s.text).startsWith('key:'))) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : null;
+    const keyArgumentRaw = (_b = (_a = details.arguments.find(s => (0, frenetic_1.toLowerFast)(s.text).startsWith('key:'))) === null || _a === void 0 ? void 0 : _a.text) !== null && _b !== void 0 ? _b : null;
     const keyArgument = keyArgumentRaw === null ? 'key' : keyArgumentRaw.substring('key:'.length);
-    details.trackDefinition(toLowerFast(keyArgument));
+    details.trackDefinition((0, frenetic_1.toLowerFast)(keyArgument));
 });
 // ScriptCheckerCommandSpecifics.cs:266-287
 register(['give'], (details) => {
@@ -314,13 +311,13 @@ register(['take'], (details) => {
 });
 // ScriptCheckerCommandSpecifics.cs:295-301
 register(['case'], (details) => {
-    if (details.argCount === 1 && toLowerFast(details.arguments[0].text).replaceAll(':', '') === 'default') {
+    if (details.argCount === 1 && (0, frenetic_1.toLowerFast)(details.arguments[0].text).replaceAll(':', '') === 'default') {
         details.warn(details.checker.minorWarnings, 'case_default', "'- case default:' is a likely mistake - you probably meant '- default:'");
     }
 });
 // ScriptCheckerCommandSpecifics.cs:302-308
 register(['determine'], (details) => {
-    if (details.arguments.some(arg => toLowerFast(arg.text) === 'canceled')) {
+    if (details.arguments.some(arg => (0, frenetic_1.toLowerFast)(arg.text) === 'canceled')) {
         details.warn(details.checker.minorWarnings, 'typo_cancelled', "'- determine canceled' (one 'L') is a likely mistake - you probably meant '- determine cancelled' (two 'L's)");
     }
 });
@@ -345,7 +342,7 @@ function checkSingleCommand(checker, line, startChar, commandText, context, scri
     commandText = commandText.replaceAll('\n', ' ');
     const firstSpace = commandText.indexOf(' ');
     const rawName = firstSpace < 0 ? commandText : commandText.substring(0, firstSpace);
-    let commandName = toLowerFast(rawName);
+    let commandName = (0, frenetic_1.toLowerFast)(rawName);
     // :808 -- taken BEFORE the sigil is stripped, so `unknown_command`'s range covers the `~`.
     const cmdLen = commandName.length;
     // ScriptChecker.cs:809-812: `~` waits for the command, `^` runs it instantly. Neither is
@@ -429,7 +426,7 @@ function checkSingleCommand(checker, line, startChar, commandText, context, scri
     // is one of the four the filter drops.
     const saveArgument = (_a = args.find(s => s.text.startsWith('save:'))) === null || _a === void 0 ? void 0 : _a.text;
     if (saveArgument !== undefined) {
-        context.saveEntries.add(toLowerFast(saveArgument.substring('save:'.length)));
+        context.saveEntries.add((0, frenetic_1.toLowerFast)(saveArgument.substring('save:'.length)));
         if (saveArgument.includes('<')) {
             context.hasUnknowableSaveEntries = true;
         }

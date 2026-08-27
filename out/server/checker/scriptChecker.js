@@ -9,6 +9,7 @@ const lineChecks_1 = require("./lineChecks");
 const containerGather_1 = require("./containerGather");
 const containerConvert_1 = require("./containerConvert");
 const containerChecks_1 = require("./containerChecks");
+const frenetic_1 = require("./frenetic");
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
  * preparation (the constructor, ScriptChecker.cs:137-146), comment stripping
@@ -112,8 +113,16 @@ class ScriptChecker extends scriptWarnings_1.WarningCollector {
         }
         // ScriptChecker.cs:144
         this.lines = script.split('\n');
-        // ScriptChecker.cs:145
-        this.cleanedLines = this.lines.map((s) => s.trim().toLowerCase());
+        // ScriptChecker.cs:145: `Lines.Select(s => s.Trim().ToLowerFast())`.
+        //
+        // `toLowerFast`, not `toLowerCase`. This was the last of five copies of the ASCII fold to
+        // still be a Unicode one, and it is the most consequential: `cleanedLines` is what the
+        // gatherer reads, so it decides how EVERY container title and key in the file is spelled
+        // downstream. A Unicode fold rewrites Cyrillic, Greek and Turkish identifiers on the way
+        // in, while the raw `lines` keep their case -- and the two are compared against each
+        // other. The same slip in `tagChecks.ts` once made `- define ИМЯ` report a false
+        // `def_of_nothing`.
+        this.cleanedLines = this.lines.map((s) => (0, frenetic_1.toLowerFast)(s.trim()));
     }
     /**
      * Runs the full script check. Ported from ScriptChecker.cs:2020-2036.

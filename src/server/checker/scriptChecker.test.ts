@@ -140,3 +140,40 @@ describe('ScriptChecker.clearCommentsFromLines', () => {
         expect(checker.codeLines).toBe(0);
     });
 });
+
+describe('cleanedLines uses the ASCII fold, not the Unicode one', () => {
+    // ScriptChecker.cs:145 is ToLowerFast(), which lowercases A-Z ONLY. This was the last of the
+    // five copies of that fold in the checker to still be a plain toLowerCase().
+
+    it('leaves Cyrillic case alone while still folding ASCII', () => {
+        // MUTANT: toLowerFast -> toLowerCase. Denizen folds identifiers with an ASCII rule, so a
+        // Unicode fold here rewrites every non-English identifier on the way into the parser
+        // while the raw lines keep their case -- and the two get compared against each other.
+        const checker = new ScriptChecker('МойТаск: ABC');
+        expect(checker.cleanedLines).toEqual(['МойТаск: abc']);
+    });
+
+    it('keeps a non-ASCII container title spelled as written', () => {
+        // MUTANT: as above. The gatherer reads cleanedLines, so the fold decides how every
+        // container title is spelled downstream; with toLowerCase this key is "мойдлинныйтаск".
+        const checker = new ScriptChecker('МойДлинныйТаск:\n    type: task\n    script:\n    - narrate hi');
+        checker.run();
+        expect([...checker.generatedWorkspace.scripts.keys()]).toEqual(['МойДлинныйТаск']);
+    });
+
+    it('still folds an ASCII title, so the fold is not simply switched off', () => {
+        // MUTANT: drop the fold entirely and return the input unchanged. Every other test in this
+        // block still passes with that applied; this is the one that says the ASCII half works.
+        const checker = new ScriptChecker('MyLongTask:\n    type: task\n    script:\n    - narrate hi');
+        checker.run();
+        expect([...checker.generatedWorkspace.scripts.keys()]).toEqual(['mylongtask']);
+    });
+
+    it('resolves a Cyrillic definition used with the same case', () => {
+        // The user-visible payoff: a define and the tag reading it must agree on spelling.
+        // MUTANT: any fold that disagrees between the define site and the tag site.
+        const checker = new ScriptChecker('my_long_task:\n    type: task\n    script:\n    - define ИМЯ x\n    - narrate <[ИМЯ]>');
+        checker.run();
+        expect(checker.warnings.map(w => w.warningUniqueKey)).not.toContain('def_of_nothing');
+    });
+});

@@ -15,6 +15,7 @@ import type { ScriptContainerData } from './containerConvert';
 import { contextValidatedIsValidScriptName } from './containerConvert';
 import { buildArgs } from './buildArgs';
 import { containsObjectNotation, checkSingleArgument, checkSingleTag } from './tagChecks';
+import { toLowerFast } from './frenetic';
 
 /**
  * Everything a per-command checker gets to look at.
@@ -139,11 +140,6 @@ export function argHasPrefix(arg: string): boolean {
         }
     }
     return false;
-}
-
-/** ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`. */
-function toLowerFast(text: string): string {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
 /** FreneticUtilities' `string.Before(char)`. */

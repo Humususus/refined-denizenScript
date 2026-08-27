@@ -20,6 +20,7 @@ import type { ScriptSection, ScriptList, SectionValue } from './containerGather'
 // real, so a value import here would close a require() cycle at runtime. Same pattern as
 // lineChecks.ts and containerGather.ts.
 import type { ScriptChecker } from './scriptChecker';
+import { toLowerFast } from './frenetic';
 
 /**
  * The data of a script container. Ported from ScriptContainerData.cs:11-48.
@@ -76,18 +77,6 @@ export class ScriptingWorkspaceData {
             this.scripts.set(name, data);
         }
     }
-}
-
-/**
- * ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`.
- *
- * Same helper and same reasoning as containerGather.ts's copy: a plain `toLowerCase()` is
- * Unicode-aware and can CHANGE A STRING'S LENGTH ('İ' U+0130 lowercases to two code units).
- * Here that would corrupt a container's `name`, which is the key the whole workspace is
- * indexed by.
- */
-function toLowerFast(text: string): string {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
 /** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */

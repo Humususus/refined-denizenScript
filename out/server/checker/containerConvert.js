@@ -16,6 +16,7 @@ const scriptWarnings_1 = require("./scriptWarnings");
 const mixedKnowledgeSet_1 = require("./mixedKnowledgeSet");
 const scriptTypes_1 = require("./scriptTypes");
 const buildArgs_1 = require("./buildArgs");
+const frenetic_1 = require("./frenetic");
 /**
  * The data of a script container. Ported from ScriptContainerData.cs:11-48.
  *
@@ -76,17 +77,6 @@ class ScriptingWorkspaceData {
     }
 }
 exports.ScriptingWorkspaceData = ScriptingWorkspaceData;
-/**
- * ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`.
- *
- * Same helper and same reasoning as containerGather.ts's copy: a plain `toLowerCase()` is
- * Unicode-aware and can CHANGE A STRING'S LENGTH ('İ' U+0130 lowercases to two code units).
- * Here that would corrupt a container's `name`, which is the key the whole workspace is
- * indexed by.
- */
-function toLowerFast(text) {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
-}
 /** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
 function before(input, match) {
     const index = input.indexOf(match);
@@ -181,7 +171,7 @@ function convertContainers(checker, containers) {
                 continue;
             }
             // ScriptChecker.cs:1705
-            const cleanType = toLowerFast(typeString.text.trim());
+            const cleanType = (0, frenetic_1.toLowerFast)(typeString.text.trim());
             // ScriptChecker.cs:1706-1710
             const scriptType = scriptTypes_1.KNOWN_SCRIPT_TYPES.get(cleanType);
             if (scriptType === undefined) {
@@ -198,7 +188,7 @@ function convertContainers(checker, containers) {
             }
             // ScriptChecker.cs:1711-1718
             const container = new ScriptContainerData();
-            container.name = toLowerFast(title.text.trim());
+            container.name = (0, frenetic_1.toLowerFast)(title.text.trim());
             container.lineNumber = title.line;
             container.keys = map;
             container.type = cleanType;
@@ -213,7 +203,7 @@ function convertContainers(checker, containers) {
                     : valueToString(defs).split('|');
                 // ScriptChecker.cs:1722. NOTE the order -- lowercase, THEN cut at '[', THEN
                 // trim -- so `Target [Optional]` becomes `target`, not `target [optional]`.
-                container.defNames.addAll(...rawNames.map(d => before(toLowerFast(d), '[').trim()));
+                container.defNames.addAll(...rawNames.map(d => before((0, frenetic_1.toLowerFast)(d), '[').trim()));
             }
             // ScriptChecker.cs:1725-1726
             preprocContainer(container);
@@ -258,7 +248,7 @@ function preprocContainer(script) {
         const flagsEntry = script.keys.get(scriptWarnings_1.LineTrackedString.textKey('flags'));
         if (flagsEntry !== undefined && flagsEntry.value instanceof Map) {
             for (const flagEntry of flagsEntry.value.values()) {
-                script.objectFlags.addAll(before(toLowerFast(flagEntry.key.text.trim()), '.'));
+                script.objectFlags.addAll(before((0, frenetic_1.toLowerFast)(flagEntry.key.text.trim()), '.'));
             }
         }
         return;
@@ -267,7 +257,7 @@ function preprocContainer(script) {
     for (const entry of script.keys.values()) {
         const key = entry.key;
         const valueAtKey = entry.value;
-        const keyName = toLowerFast(key.text).trim();
+        const keyName = (0, frenetic_1.toLowerFast)(key.text).trim();
         if (keyName === 'data' || keyName === 'description') {
             continue;
         }
@@ -275,11 +265,11 @@ function preprocContainer(script) {
         const procSingleCommand = (cmd) => {
             // ScriptChecker.cs:1789
             const [cmdNameRaw, argTextRaw] = splitFirst(cmd.trim(), ' ');
-            const cmdName = toLowerFast(cmdNameRaw);
+            const cmdName = (0, frenetic_1.toLowerFast)(cmdNameRaw);
             // ScriptChecker.cs:1790. The NULL checker is deliberate: this tokenises every
             // command of every script in the file, and `bad_quotes`/`missing_quotes` from here
             // would fire with no useful position.
-            const fullArgs = (0, buildArgs_1.buildArgs)(key.line, 0, argTextRaw, null).map(a => toLowerFast(a.text));
+            const fullArgs = (0, buildArgs_1.buildArgs)(key.line, 0, argTextRaw, null).map(a => (0, frenetic_1.toLowerFast)(a.text));
             // ScriptChecker.cs:1791
             const cleanArgs = fullArgs.filter(a => !startsWithAny(a, 'save:', 'player:', 'npc:'));
             switch (cmdName) {
@@ -402,7 +392,7 @@ function preprocContainer(script) {
             for (const listEntry of list) {
                 if (listEntry instanceof scriptWarnings_1.LineTrackedString) {
                     // ScriptChecker.cs:1896: LOWERCASED here...
-                    procSingleCommand(toLowerFast(listEntry.text));
+                    procSingleCommand((0, frenetic_1.toLowerFast)(listEntry.text));
                 }
                 else if (listEntry instanceof Map) {
                     // ScriptChecker.cs:1900-1905. `subMap.First()` -- a command sub-section has
@@ -553,7 +543,7 @@ function contextValidatedGetScriptFor(checker, scriptName, requireType) {
         return null;
     }
     // ScriptChecker.cs:1970-1974
-    scriptName = before(toLowerFast(scriptName), '.');
+    scriptName = before((0, frenetic_1.toLowerFast)(scriptName), '.');
     if (scriptName.startsWith('script:')) {
         scriptName = after(scriptName, ':');
     }

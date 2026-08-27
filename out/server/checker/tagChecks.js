@@ -22,19 +22,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkSingleTag = exports.checkSingleDataLine = exports.checkSingleArgument = exports.containsObjectNotation = exports.ScriptCheckContext = void 0;
 const tagHelper_1 = require("../providers/tagHelper");
 const tagTracer_1 = require("../providers/tagTracer");
-/**
- * ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`.
- *
- * NOT `toLowerCase()`, which is Unicode-aware. `parseTag` has already ASCII-lowered the whole
- * tag (tagHelper.ts:62), so the only characters a Unicode fold could still touch are non-ASCII
- * uppercase ones -- and those are exactly the ones the C# leaves alone. A definition written
- * `<[ИМЯ]>` is stored in `defNames` as ИМЯ (harvested through ToLowerFast), so folding it to
- * "имя" here would look it up under a name nothing ever stored and report a false
- * `def_of_nothing` on a correct script. Same helper and same reasoning as containerGather.ts.
- */
-function toLowerFast(text) {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
-}
+const frenetic_1 = require("./frenetic");
 /** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
 function before(input, match) {
     const index = input.indexOf(match);
@@ -254,7 +242,7 @@ function checkSingleTag(checker, line, startChar, tag, context) {
     // and the checker has to be bound in.
     const recurse = (l, s, t, c) => checkSingleTag(checker, l, s, t, c);
     // ScriptChecker.cs:436
-    const tagName = toLowerFast(parsed.parts[0].text);
+    const tagName = (0, frenetic_1.toLowerFast)(parsed.parts[0].text);
     // ScriptChecker.cs:437-444. NOTE the `else if`: a base that is not known at all gets
     // bad_tag_base and NOTHING else, even when its name ends in "tag".
     // The `tagName.length > 0` guard is what exempts `<[definition]>`, whose base is empty.
@@ -270,7 +258,7 @@ function checkSingleTag(checker, line, startChar, tag, context) {
         if (param !== null) {
             // `.Before('.')` -- `<[map.key]>` reads INTO a definition called `map`, so only the
             // part before the first dot is the name being looked up.
-            const name = before(toLowerFast(param), '.');
+            const name = before((0, frenetic_1.toLowerFast)(param), '.');
             if (context !== null && !context.definitions.has(name) && !context.hasUnknowableDefinitions) {
                 warnPart(parsed.parts[0], 'def_of_nothing', 'Definition tag points to non-existent definition (typo, or bad copypaste?).');
             }
@@ -286,7 +274,7 @@ function checkSingleTag(checker, line, startChar, tag, context) {
         if (param !== null) {
             // NOTE: lowercased but NOT cut at '.', where the definition branch above IS cut.
             // An asymmetry in the C#, ported as-is.
-            const name = toLowerFast(param);
+            const name = (0, frenetic_1.toLowerFast)(param);
             if (context !== null && !context.saveEntries.has(name) && !context.hasUnknowableSaveEntries) {
                 warnPart(parsed.parts[0], 'entry_of_nothing', 'entry[...] tag points to non-existent save entry (typo, or bad copypaste?).');
             }

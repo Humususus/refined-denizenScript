@@ -19,6 +19,7 @@ import type { ScriptChecker } from './scriptChecker';
 import type { ScriptSection, ScriptList } from './containerGather';
 import type { ScriptContainerData } from './containerConvert';
 import type { ScriptWarning } from './scriptWarnings';
+import { toLowerFast } from './frenetic';
 
 /** Characters a script title may contain. Ported from ScriptChecker.cs:910. */
 const SCRIPT_TITLE_CHARACTERS_ALLOWED = 'abcdefghijklmnopqrstuvwxyz0123456789_';
@@ -31,11 +32,6 @@ function isOnlyTitleCharacters(text: string): boolean {
         }
     }
     return true;
-}
-
-/** ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`. */
-function toLowerFast(text: string): string {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
 /** FreneticUtilities' `string.Before(char)`. */

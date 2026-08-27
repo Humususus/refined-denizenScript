@@ -17,6 +17,7 @@ const scriptWarnings_1 = require("./scriptWarnings");
 const scriptTypes_1 = require("./scriptTypes");
 const tagChecks_1 = require("./tagChecks");
 const commandSpecifics_1 = require("./commandSpecifics");
+const frenetic_1 = require("./frenetic");
 /** Characters a script title may contain. Ported from ScriptChecker.cs:910. */
 const SCRIPT_TITLE_CHARACTERS_ALLOWED = 'abcdefghijklmnopqrstuvwxyz0123456789_';
 /** Whether every character of `text` is an allowed script-title character. */
@@ -27,10 +28,6 @@ function isOnlyTitleCharacters(text) {
         }
     }
     return true;
-}
-/** ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()`. */
-function toLowerFast(text) {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 /** FreneticUtilities' `string.Before(char)`. */
 function before(input, match) {
@@ -139,7 +136,7 @@ function checkOneContainer(checker, script, warnScript) {
             // omits. That asymmetry is what deviation 9 corrected at the other site.
             const defsEntry = scriptSection.get(scriptWarnings_1.LineTrackedString.textKey('definitions'));
             if (defsEntry !== undefined && defsEntry.value instanceof scriptWarnings_1.LineTrackedString) {
-                for (const name of toLowerFast(defsEntry.value.text).split('|')) {
+                for (const name of (0, frenetic_1.toLowerFast)(defsEntry.value.text).split('|')) {
                     ctx.definitions.add(before(name, '[').trim());
                 }
             }

@@ -23,19 +23,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.gatherActualContainers = exports.canWarnAboutCommandMissingDash = void 0;
 const scriptWarnings_1 = require("./scriptWarnings");
 const lineChecks_1 = require("./lineChecks");
+const frenetic_1 = require("./frenetic");
 /** ScriptChecker.cs:51-54 (`CommandsWithColonsAndArguments`). */
 const COMMANDS_WITH_COLONS_AND_ARGUMENTS = new Set(['if', 'else', 'foreach', 'while', 'repeat', 'choose', 'case']);
 /** ScriptChecker.cs:57-60 (`CommandsWithColonsButNoArguments`). */
 const COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS = new Set(['else', 'default', 'random']);
-/**
- * ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()` (which walks the chars and
- * maps only 'A'-'Z'). A plain `toLowerCase()` is Unicode-aware and can CHANGE THE STRING'S
- * LENGTH ('İ' U+0130 lowercases to two code units), which would shift the `startChar` offsets
- * this module hands to `warnAt`. Same helper and same reasoning as providers/tagHelper.ts:62.
- */
-function toLowerFast(text) {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
-}
 /**
  * FreneticUtilities' `string.BeforeAndAfter(match, out after)`: everything before the first
  * occurrence of `match`, and everything after it. If `match` is absent the whole input is
@@ -89,7 +81,7 @@ function lastKey(section) {
  */
 function canWarnAboutCommandMissingDash(args, currentRootSection) {
     // ScriptChecker.cs:1643
-    const cmdName = toLowerFast(args[0]);
+    const cmdName = (0, frenetic_1.toLowerFast)(args[0]);
     // ScriptChecker.cs:1644-1647: NOTE which set goes with which arity. A key with exactly one
     // word is checked against the NO-ARGUMENTS set; anything longer against the WITH-ARGUMENTS
     // set. So `while:` is not flagged (one word, and "while" is not in the no-args set) but
@@ -115,7 +107,7 @@ function canWarnAboutCommandMissingDash(args, currentRootSection) {
     if (!(typeValue instanceof scriptWarnings_1.LineTrackedString)) {
         return true;
     }
-    const typeText = toLowerFast(typeValue.text);
+    const typeText = (0, frenetic_1.toLowerFast)(typeValue.text);
     // ScriptChecker.cs:1660-1663
     if (typeText === 'data') {
         return false;
@@ -322,7 +314,7 @@ function gatherActualContainers(checker) {
             }
             // ScriptChecker.cs:1506-1507: `lines[i]` RAW, so the entry keeps its original case.
             let textRaw = lines[i].trim().slice('- '.length);
-            let textLow = toLowerFast(textRaw);
+            let textLow = (0, frenetic_1.toLowerFast)(textRaw);
             // ScriptChecker.cs:1508-1529: a command that does not end in ':' owns every
             // following line that is indented deeper and is not itself a list entry -- those are
             // its argument block, not lines of their own.
@@ -477,12 +469,12 @@ function gatherActualContainers(checker) {
             }
             // ScriptChecker.cs:1629. NOTE this OVERWRITES the abandoned key rather than storing
             // it, which is why an empty section leaves no trace in the returned map.
-            secwaiting = new scriptWarnings_1.LineTrackedString(i, toLowerFast(startofline), cleanStartCut);
+            secwaiting = new scriptWarnings_1.LineTrackedString(i, (0, frenetic_1.toLowerFast)(startofline), cleanStartCut);
         }
         else {
             // ScriptChecker.cs:1631-1634: key and value on one line. No duplicate check here --
             // only the two section/list paths above get one.
-            setEntry(currentSection, new scriptWarnings_1.LineTrackedString(i, toLowerFast(startofline), cleanStartCut), new scriptWarnings_1.LineTrackedString(i, endofline, endIndex));
+            setEntry(currentSection, new scriptWarnings_1.LineTrackedString(i, (0, frenetic_1.toLowerFast)(startofline), cleanStartCut), new scriptWarnings_1.LineTrackedString(i, endofline, endIndex));
         }
         // ScriptChecker.cs:1635
         pspaces = spaces;

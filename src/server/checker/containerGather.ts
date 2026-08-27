@@ -25,6 +25,7 @@ import { countPreSpaces, firstNonWhitespaceIndex } from './lineChecks';
 // real, so a value import here would close a require() cycle at runtime. Same pattern as
 // lineChecks.ts.
 import type { ScriptChecker } from './scriptChecker';
+import { toLowerFast } from './frenetic';
 
 /**
  * One key/value pair of a script section.
@@ -80,16 +81,6 @@ const COMMANDS_WITH_COLONS_AND_ARGUMENTS = new Set<string>(['if', 'else', 'forea
 
 /** ScriptChecker.cs:57-60 (`CommandsWithColonsButNoArguments`). */
 const COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS = new Set<string>(['else', 'default', 'random']);
-
-/**
- * ASCII-only lowercasing, matching FreneticUtilities' `ToLowerFast()` (which walks the chars and
- * maps only 'A'-'Z'). A plain `toLowerCase()` is Unicode-aware and can CHANGE THE STRING'S
- * LENGTH ('İ' U+0130 lowercases to two code units), which would shift the `startChar` offsets
- * this module hands to `warnAt`. Same helper and same reasoning as providers/tagHelper.ts:62.
- */
-function toLowerFast(text: string): string {
-    return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
-}
 
 /**
  * FreneticUtilities' `string.BeforeAndAfter(match, out after)`: everything before the first
