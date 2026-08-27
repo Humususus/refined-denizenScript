@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildMetaDocs } from './metaDocsManager';
-import { linkTypeGraph } from './metaLinker';
+import { linkTypeGraph, linkEventMatchers } from './metaLinker';
+import { MetaDocs, MetaEvent, createEmptyMetaDocs } from './metaTypes';
+import { ExtraData, createEmptyExtraData } from './extraData';
 import type { MetaBlock } from './metaLoader';
 
 function linked(...blocks: MetaBlock[]) {
@@ -165,5 +167,81 @@ describe('linkTypeGraph: rawAdjustables (MetaDocsLoader.cs:177)', () => {
         d.objectTypes.get('material')!.generatedExampleAdjust = '<something.else>';
         linkTypeGraph(d);
         expect(Array.from(d.rawAdjustables)).toEqual([]);
+    });
+});
+
+describe('linkEventMatchers (MetaEvent.cs:147)', () => {
+    function docsWithEvent(...formats: string[]): MetaDocs {
+        const docs = createEmptyMetaDocs();
+        const evt = new MetaEvent();
+        evt.applyValue('events', formats.join('\n'));
+        evt.addTo(docs);
+        return docs;
+    }
+
+    function extra(): ExtraData {
+        const data = createEmptyExtraData();
+        data.blocks.add('stone');
+        data.entities.add('zombie');
+        return data;
+    }
+
+    it('leaves couldMatchers empty until it has run', () => {
+        // A field, not a computed property: nothing builds these during meta parsing, because the
+        // Minecraft enum data arrives on its own promise and may not be there yet.
+        const docs = docsWithEvent('player breaks <block>');
+        expect([...docs.events.values()][0].couldMatchers).toEqual([]);
+    });
+
+    it('compiles each format line into a matcher', () => {
+        const docs = docsWithEvent('player breaks <block>');
+        linkEventMatchers(docs, extra());
+        const matchers = [...docs.events.values()][0].couldMatchers;
+        expect(matchers.map(m => m.format)).toEqual(['player breaks <block>']);
+        expect(matchers[0].tryMatch(['player', 'breaks', 'stone'], false, false)).toBe(10);
+    });
+
+    it('expands optional parts, so one format line can yield several matchers', () => {
+        const docs = docsWithEvent('player breaks <block> (with <entity>)');
+        linkEventMatchers(docs, extra());
+        expect([...docs.events.values()][0].couldMatchers.length).toBe(2);
+    });
+
+    it('compiles EVERY format line of a multi-name event', () => {
+        // MUTANT CAUGHT: reading only event.events[0].
+        const docs = docsWithEvent('player breaks <block>', 'player smashes <block>');
+        linkEventMatchers(docs, extra());
+        expect([...docs.events.values()][0].couldMatchers.map(m => m.format))
+            .toEqual(['player breaks <block>', 'player smashes <block>']);
+    });
+
+    it('is idempotent -- a second run does not double the matchers', () => {
+        // Load-bearing, not tidiness: whichever of the meta and enum-data promises finishes second
+        // calls this, so on a cold start it can run twice.
+        // MUTANT CAUGHT: pushing into event.couldMatchers instead of replacing it.
+        const docs = docsWithEvent('player breaks <block> (with <entity>)');
+        linkEventMatchers(docs, extra());
+        const first = [...docs.events.values()][0].couldMatchers.length;
+        linkEventMatchers(docs, extra());
+        expect([...docs.events.values()][0].couldMatchers.length).toBe(first);
+    });
+
+    it('sends a malformed format to loadErrors and costs only that event', () => {
+        // MetaEvent.cs:147 routes errors to docs.LoadErrors. One bad line must not fail the load.
+        const docs = docsWithEvent('player breaks <nonsense_type>');
+        linkEventMatchers(docs, extra());
+        expect(docs.loadErrors.length).toBe(1);
+        expect(docs.loadErrors[0]).toContain("unrecognized input type 'nonsense_type'");
+    });
+
+    it('builds matchers against the enum data it is given', () => {
+        // The registry is rebuilt per call from the ExtraData passed in, so a later, fuller enum
+        // load produces stricter matchers than an early empty one.
+        const empty = docsWithEvent('player breaks <block>');
+        linkEventMatchers(empty, createEmptyExtraData());
+        expect([...empty.events.values()][0].couldMatchers[0].tryMatch(['player', 'breaks', 'stone'], false, true)).toBe(0);
+        const full = docsWithEvent('player breaks <block>');
+        linkEventMatchers(full, extra());
+        expect([...full.events.values()][0].couldMatchers[0].tryMatch(['player', 'breaks', 'stone'], false, true)).toBe(10);
     });
 });

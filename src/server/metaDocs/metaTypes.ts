@@ -18,6 +18,10 @@ import type { SingleTag } from '../providers/tagHelper';
 // toLowerCase(): meta names are ASCII today, but these folds also process script text, and a
 // Unicode fold rewrites Cyrillic, Greek and Turkish identifiers.
 import { toLowerFast } from '../checker/frenetic';
+// Type-only, like the SingleTag import above and for the same reason: MetaEvent.couldMatchers needs
+// the shape to declare its field, but the parseMatchers() CALL that fills it lives in metaLinker.ts,
+// not here. See that file's header.
+import type { ScriptEventCouldMatcher } from '../checker/scriptEventCouldMatcher';
 
 export interface MetaType {
     name: string;
@@ -347,6 +351,16 @@ export class MetaEvent extends MetaObject {
     hasLocation: boolean = false;
     examples: string[] = [];
 
+    /**
+     * Could-Matchers for this event. (MetaEvent.cs:60, `CouldMatchers`)
+     *
+     * One per combination of the optional `(...)` parts across all of this event's format lines,
+     * so 490 documented format lines expand to 547 matchers across the meta. Empty until an
+     * `events` key has been applied, and empty forever if the docs were loaded without a validator
+     * registry -- see `applyValue`.
+     */
+    couldMatchers: ScriptEventCouldMatcher[] = [];
+
     get name(): string {
         return this.events[0] ?? '';
     }
@@ -399,6 +413,42 @@ export class MetaEvent extends MetaObject {
             default:
                 return super.applyValue(key, value);
         }
+    }
+
+    /**
+     * Whether the switch name given is valid for this event. (MetaEvent.cs:93-120)
+     *
+     * `docs` is a parameter because the C# reads an ambient `Meta` singleton at :115 and this port
+     * has none -- the same injection the script checker uses for its own meta.
+     *
+     * THE ORDER IS A FALLTHROUGH CHAIN, and the five special names in the middle are not
+     * duplicates of the checks in part B of CheckAllContainers. This answers "is this switch
+     * allowed here"; those report WHY it is not. A switch listed in the event's own `@switch` docs
+     * wins outright, before any of the special cases -- so an event that documents `flagged`
+     * itself is not then second-guessed about having a linked player.
+     */
+    isValidSwitch(docs: MetaDocs, switchName: string): boolean {
+        if (this.switchNames.has(switchName)) {
+            return true;
+        }
+        else if (switchName === 'flagged' || switchName === 'permission') {
+            return this.player.trim().length > 0;
+        }
+        else if (switchName === 'assigned') {
+            return this.npc.trim().length > 0;
+        }
+        else if (switchName === 'in' || switchName === 'location_flagged') {
+            return this.hasLocation;
+        }
+        else if (switchName === 'cancelled' || switchName === 'ignorecancelled') {
+            return this.cancellable;
+        }
+        // MetaEvent.cs:115. `global_switches` is meta DATA, so Denizen can add a universally
+        // available switch without a checker release.
+        else if (isInDataValueSet(docs, 'global_switches', switchName)) {
+            return true;
+        }
+        return false;
     }
 
     addTo(docs: MetaDocs): void {
@@ -553,6 +603,15 @@ export class MetaAction extends MetaObject {
     context: string[] = [];
     determinations: string[] = [];
 
+    /**
+     * A hacked-in regex matcher. (MetaAction.cs:36, and the C#'s own description of it)
+     *
+     * Assignment script action lines are matched against this when an exact name lookup misses,
+     * which is how `on click` finds the documented `on <block> click`. Null until an `actions` key
+     * has been applied.
+     */
+    regexMatcher: RegExp | null = null;
+
     get name(): string {
         return this.actions[0] ?? '';
     }
@@ -566,6 +625,46 @@ export class MetaAction extends MetaObject {
             case 'actions':
                 this.actions = value.split('\n').filter(s => s.length > 0);
                 this.cleanActions = this.actions.map(toLowerFast);
+                // MetaAction.cs:53-69. Each documented action becomes one alternation arm, with any
+                // `<...>` fill-in replaced by `[^\s]+` -- one or more non-space characters, so a
+                // fill-in stands for exactly one word.
+                //
+                // ONLY THE FIRST FILL-IN IS REPLACED. The C# takes `IndexOf('<')` and `IndexOf('>')`
+                // once, not in a loop, so an action documented with two fill-ins keeps its second
+                // one as literal `<...>` text in the pattern. That is a C# defect, and porting it
+                // faithfully is deliberate: "fixing" it here would make this checker accept action
+                // lines the real Denizen does not.
+                //
+                // Note also `IndexOf('>')` is unanchored -- it finds the FIRST `>` in the whole
+                // string, not the first after `start`. For a well-formed single fill-in the two are
+                // the same.
+                let outRegex = '';
+                for (const action of this.actions) {
+                    let regexable = action;
+                    if (regexable.includes('<')) {
+                        const start = regexable.indexOf('<');
+                        const end = regexable.indexOf('>');
+                        regexable = regexable.substring(0, start) + '[^\\s]+' + regexable.substring(end + 1);
+                    }
+                    outRegex += `(${regexable})|`;
+                }
+                if (outRegex.endsWith('|')) {
+                    outRegex = outRegex.substring(0, outRegex.length - 1);
+                }
+                // Case-SENSITIVE: the C# passes only RegexOptions.Compiled, no IgnoreCase. Callers
+                // fold the action name themselves before testing.
+                //
+                // THE ANCHORS ONLY BIND THE OUTER ARMS, and that is a C# defect ported on purpose.
+                // For a two-name action this builds
+                //     ^(on )?(mob enter proximity)|([^\s]+ enter proximity)$
+                // and `|` has lower precedence than the anchors in .NET exactly as in JavaScript,
+                // so it reads as `(^(on )?(a))` or `((b)$)` -- the first arm is not anchored at the
+                // end, the last is not anchored at the start, and any middle arm is not anchored at
+                // all. The practical effect is that `action_missing` accepts more than it appears
+                // to. Wrapping the alternation would be a real behaviour change -- this checker
+                // would start reporting action lines the C# accepts -- so it stays, documented,
+                // until there is a reason to diverge deliberately.
+                this.regexMatcher = new RegExp(`^(on )?${outRegex}$`);
                 return true;
             case 'triggers':
                 this.triggers = value;

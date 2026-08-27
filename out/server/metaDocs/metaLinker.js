@@ -22,8 +22,10 @@
  * call into metaTypes.ts.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.linkTypeGraph = void 0;
+exports.linkEventMatchers = exports.linkTypeGraph = void 0;
 const tagHelper_1 = require("../providers/tagHelper");
+const scriptEventCouldMatcher_1 = require("../checker/scriptEventCouldMatcher");
+const eventValidators_1 = require("../checker/eventValidators");
 /**
  * Resolves the object-type graph in docs: baseType, implementsTypes,
  * extendedBy, and subTags on every MetaObjectType, plus docs.objectTagType
@@ -131,4 +133,33 @@ function linkTypeGraph(docs) {
     }
 }
 exports.linkTypeGraph = linkTypeGraph;
+/**
+ * Compiles every documented event's format lines into could-matchers.
+ * Ported from the `CouldMatchers = ...` half of MetaEvent.cs:147.
+ *
+ * A SEPARATE STEP, not part of MetaEvent.applyValue as the C# has it, for two reasons that both
+ * point the same way. First, this needs the Minecraft enum data, and the C# reaches it through
+ * `docs.Data` -- an ambient link this port does not have, because `loadExtraData` is its own
+ * promise that may resolve before or after `loadMetaDocs`. Second, `applyValue(key, value)` here
+ * takes no `docs`, so threading the validator registry into it would mean changing that signature
+ * for every meta type to serve one of them. This is the same seam `linkTypeGraph` already uses,
+ * and the same reason: work that needs the whole docs object does not belong in the model layer.
+ *
+ * IDEMPOTENT, and that is load-bearing rather than merely tidy: whichever of the two loads finishes
+ * second calls this, so on a cold start it may well run twice. It rebuilds from scratch each time.
+ *
+ * Errors go to `docs.loadErrors`, matching MetaEvent.cs:147's `docs.LoadErrors.Add(s)`. A malformed
+ * format line costs that one event its matcher and nothing else.
+ */
+function linkEventMatchers(docs, extra) {
+    const types = (0, eventValidators_1.knownValidatorTypes)(extra);
+    for (const event of docs.events.values()) {
+        const matchers = [];
+        for (const format of event.events) {
+            matchers.push(...(0, scriptEventCouldMatcher_1.parseMatchers)(format, types, (message) => docs.loadErrors.push(message)));
+        }
+        event.couldMatchers = matchers;
+    }
+}
+exports.linkEventMatchers = linkEventMatchers;
 //# sourceMappingURL=metaLinker.js.map

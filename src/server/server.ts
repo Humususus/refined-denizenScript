@@ -14,6 +14,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { loadMetaDocs, DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
 import { MetaDocs } from './metaDocs/metaTypes';
+import { linkEventMatchers } from './metaDocs/metaLinker';
 import { ExtraData, createEmptyExtraData, loadExtraData } from './metaDocs/extraData';
 import { provideCompletions } from './providers/completionProvider';
 import { provideHover } from './providers/hoverProvider';
@@ -173,6 +174,29 @@ export function buildDiagnostics(checker: ScriptChecker): Diagnostic[] {
     ];
 }
 
+/**
+ * Compiles the event could-matchers once BOTH loads have landed, and reports what it built.
+ *
+ * The meta and the Minecraft enum data are two independent promises and either may finish first,
+ * so this is called from both handlers and does nothing until it has the pair. `linkEventMatchers`
+ * is idempotent, but a null here is not a "not yet" to paper over -- without the enum data every
+ * `<block>`/`<item>`/`<entity>` fill-in would have no validator, and every such event would end up
+ * with no matchers at all rather than with permissive ones.
+ *
+ * Exported for the same reason as `buildDiagnostics`: testable without a live connection.
+ */
+export function linkMatchersWhenReady(docs: MetaDocs | null, extra: ExtraData | null): number | null {
+    if (docs === null || extra === null) {
+        return null;
+    }
+    linkEventMatchers(docs, extra);
+    let total = 0;
+    for (const event of docs.events.values()) {
+        total += event.couldMatchers.length;
+    }
+    return total;
+}
+
 export function createServer(): Connection {
     const connection = createConnection(ProposedFeatures.all);
     const documents = new TextDocuments(TextDocument);
@@ -195,6 +219,10 @@ export function createServer(): Connection {
                     `${docs.actions.size} actions, ${docs.languages.size} languages, ${docs.objectTypes.size} object types. ` +
                     `${docs.loadErrors.length} load error(s).`
                 );
+                const matchers = linkMatchersWhenReady(loadedDocs, loadedExtra);
+                if (matchers !== null) {
+                    connection.console.log(`Event could-matchers built: ${matchers}.`);
+                }
                 for (const err of docs.loadErrors.slice(0, 20)) {
                     connection.console.warn(`Meta load error: ${err}`);
                 }
@@ -216,6 +244,10 @@ export function createServer(): Connection {
             .then(extra => {
                 loadedExtra = extra;
                 connection.console.log(`Minecraft enum data loaded: ${extra.sounds.size} sounds, ${extra.materials.size} materials, ${extra.entities.size} entities. ${extra.loadErrors.length} load error(s).`);
+                const matchers = linkMatchersWhenReady(loadedDocs, loadedExtra);
+                if (matchers !== null) {
+                    connection.console.log(`Event could-matchers built: ${matchers}.`);
+                }
                 for (const err of extra.loadErrors.slice(0, 20)) {
                     connection.console.warn(`Extra data load error: ${err}`);
                 }

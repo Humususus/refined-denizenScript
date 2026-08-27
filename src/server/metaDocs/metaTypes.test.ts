@@ -387,3 +387,152 @@ describe('isInDataValueSet (MetaDocs.cs:134-137)', () => {
         expect(isInDataValueSet(docs, 'regex', 'not_switches')).toBe(false);
     });
 });
+
+describe('MetaEvent.isValidSwitch (MetaEvent.cs:93-120)', () => {
+    function event(apply: (e: MetaEvent) => void = () => {}): MetaEvent {
+        const evt = new MetaEvent();
+        evt.applyValue('events', 'player does thing');
+        apply(evt);
+        return evt;
+    }
+
+    function docsWithGlobals(...values: string[]): MetaDocs {
+        const docs = createEmptyMetaDocs();
+        const data = new MetaDataValue();
+        data.applyValue('name', 'global_switches');
+        data.applyValue('values', values.join(','));
+        data.addTo(docs);
+        return docs;
+    }
+
+    it('accepts a switch the event documents itself', () => {
+        const evt = event(e => e.applyValue('switch', 'my_switch:value to do a thing'));
+        expect(evt.isValidSwitch(createEmptyMetaDocs(), 'my_switch')).toBe(true);
+    });
+
+    it('rejects an unknown switch', () => {
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'nonsense')).toBe(false);
+    });
+
+    it('ties flagged and permission to having a linked PLAYER', () => {
+        // MUTANT CAUGHT: checking npc, or dropping either name.
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'flagged')).toBe(false);
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'permission')).toBe(false);
+        const withPlayer = event(e => e.applyValue('player', 'When the player does the thing.'));
+        expect(withPlayer.isValidSwitch(createEmptyMetaDocs(), 'flagged')).toBe(true);
+        expect(withPlayer.isValidSwitch(createEmptyMetaDocs(), 'permission')).toBe(true);
+    });
+
+    it('ties assigned to having a linked NPC', () => {
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'assigned')).toBe(false);
+        expect(event(e => e.applyValue('npc', 'When the NPC is involved.')).isValidSwitch(createEmptyMetaDocs(), 'assigned')).toBe(true);
+    });
+
+    it('treats a WHITESPACE-ONLY player or npc line as absent', () => {
+        // MetaEvent.cs:101 and :105 are `!string.IsNullOrWhiteSpace(...)`, not IsNullOrEmpty.
+        // BOTH need a case: an earlier draft covered only the player, and the audit duly reported
+        // the npc mutant surviving.
+        // MUTANT CAUGHT: `this.player.length > 0` / `this.npc.length > 0`.
+        expect(event(e => e.applyValue('player', '   ')).isValidSwitch(createEmptyMetaDocs(), 'flagged')).toBe(false);
+        expect(event(e => e.applyValue('npc', '   ')).isValidSwitch(createEmptyMetaDocs(), 'assigned')).toBe(false);
+    });
+
+    it('ties in and location_flagged to hasLocation', () => {
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'in')).toBe(false);
+        const located = event(e => e.applyValue('location', 'true'));
+        expect(located.isValidSwitch(createEmptyMetaDocs(), 'in')).toBe(true);
+        expect(located.isValidSwitch(createEmptyMetaDocs(), 'location_flagged')).toBe(true);
+    });
+
+    it('ties cancelled and ignorecancelled to cancellable', () => {
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'cancelled')).toBe(false);
+        const cancellable = event(e => e.applyValue('cancellable', 'true'));
+        expect(cancellable.isValidSwitch(createEmptyMetaDocs(), 'cancelled')).toBe(true);
+        expect(cancellable.isValidSwitch(createEmptyMetaDocs(), 'ignorecancelled')).toBe(true);
+    });
+
+    it('accepts anything listed in the global_switches data set', () => {
+        // MetaEvent.cs:115. Data rather than code, so Denizen can add a universal switch without
+        // a checker release. MUTANT CAUGHT: hardcoding the list, or dropping this arm.
+        expect(event().isValidSwitch(docsWithGlobals('bukkit_priority'), 'bukkit_priority')).toBe(true);
+        expect(event().isValidSwitch(createEmptyMetaDocs(), 'bukkit_priority')).toBe(false);
+    });
+
+    it('lets the events OWN switch list win over the special cases', () => {
+        // The own-list test is first, so an event documenting `flagged` itself is not then
+        // second-guessed about having a linked player.
+        // MUTANT CAUGHT: moving the switchNames test below the special cases.
+        const evt = event(e => e.applyValue('switch', 'flagged:name to do a thing'));
+        expect(evt.player).toBe('');
+        expect(evt.isValidSwitch(createEmptyMetaDocs(), 'flagged')).toBe(true);
+    });
+});
+
+describe('MetaAction.regexMatcher (MetaAction.cs:53-69)', () => {
+    function action(actions: string): MetaAction {
+        const act = new MetaAction();
+        act.applyValue('actions', actions);
+        return act;
+    }
+
+    it('is null until an actions key is applied', () => {
+        expect(new MetaAction().regexMatcher).toBeNull();
+    });
+
+    it('anchors a single action and allows an optional "on " prefix', () => {
+        const re = action('spawn').regexMatcher!;
+        expect(re.source).toBe('^(on )?(spawn)$');
+        expect(re.test('spawn')).toBe(true);
+        expect(re.test('on spawn')).toBe(true);
+        expect(re.test('despawn')).toBe(false);
+    });
+
+    it('replaces a fill-in with a one-word wildcard', () => {
+        // MUTANT CAUGHT: `.+` or `[^\s]*` instead of `[^\s]+` -- the first would let a fill-in
+        // swallow spaces, the second would let it match nothing.
+        const re = action('<entity> enter proximity').regexMatcher!;
+        expect(re.test('zombie enter proximity')).toBe(true);
+        expect(re.test(' enter proximity')).toBe(false);
+        expect(re.test('two words enter proximity')).toBe(false);
+    });
+
+    it('is case SENSITIVE -- the C# passes no IgnoreCase', () => {
+        // Callers fold the action name before testing. MUTANT CAUGHT: adding the 'i' flag.
+        expect(action('spawn').regexMatcher!.test('Spawn')).toBe(false);
+    });
+
+    it('joins several action names with a pipe', () => {
+        const re = action('spawn\ndespawn').regexMatcher!;
+        expect(re.source).toBe('^(on )?(spawn)|(despawn)$');
+    });
+
+    it('leaves the anchors binding only the OUTER arms, as the C# does', () => {
+        // A ported C# defect, not a slip here: `|` outranks the anchors, so the pattern reads as
+        // `(^(on )?(spawn))` or `((despawn)$)`. The first arm is therefore not anchored at the end
+        // and the second not at the start, which makes action_missing accept more than it looks.
+        // MUTANT CAUGHT: wrapping the alternation in a group -- which would be a real behaviour
+        // change, rejecting action lines the C# accepts.
+        const re = action('spawn\ndespawn').regexMatcher!;
+        expect(re.test('spawn trailing junk')).toBe(true);
+        expect(re.test('leading junk despawn')).toBe(true);
+    });
+
+    it('replaces ONLY the first fill-in in a line, as the C# does', () => {
+        // MetaAction.cs:56-62 takes IndexOf('<') and IndexOf('>') once, not in a loop. No real
+        // action has two fill-ins (checked: 0 of the 39 documented actions), so this is latent --
+        // but porting it faithfully keeps this checker from accepting lines Denizen rejects.
+        // MUTANT CAUGHT: looping the replacement.
+        const re = action('<entity> hits <entity>').regexMatcher!;
+        expect(re.source).toBe('^(on )?([^\\s]+ hits <entity>)$');
+    });
+
+    it('takes the first ">" from the whole string, not from after the "<"', () => {
+        // The other half of the same C# shortcut: `end` is the FIRST '>' ANYWHERE, so a stray '>'
+        // before the fill-in makes the tail slice start too early and DUPLICATE the text between
+        // them. For `a > b <entity> c`: start is 6, end is 2, so the result is
+        // `a > b ` + `[^\s]+` + ` b <entity> c` -- ` b ` appears twice and the fill-in is left in.
+        // Documented rather than fixed, for the same reason as the single-replacement limit above.
+        // MUTANT CAUGHT: `regexable.indexOf('>', start)`, which would give `a > b [^\s]+ c`.
+        expect(action('a > b <entity> c').regexMatcher!.source).toBe('^(on )?(a > b [^\\s]+ b <entity> c)$');
+    });
+});

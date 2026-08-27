@@ -27,12 +27,13 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = exports.buildDiagnostics = exports.buildCapabilities = exports.combineSources = void 0;
+exports.createServer = exports.linkMatchersWhenReady = exports.buildDiagnostics = exports.buildCapabilities = exports.combineSources = void 0;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
 const metaDocsManager_1 = require("./metaDocs/metaDocsManager");
+const metaLinker_1 = require("./metaDocs/metaLinker");
 const extraData_1 = require("./metaDocs/extraData");
 const completionProvider_1 = require("./providers/completionProvider");
 const hoverProvider_1 = require("./providers/hoverProvider");
@@ -182,6 +183,29 @@ function buildDiagnostics(checker) {
     ];
 }
 exports.buildDiagnostics = buildDiagnostics;
+/**
+ * Compiles the event could-matchers once BOTH loads have landed, and reports what it built.
+ *
+ * The meta and the Minecraft enum data are two independent promises and either may finish first,
+ * so this is called from both handlers and does nothing until it has the pair. `linkEventMatchers`
+ * is idempotent, but a null here is not a "not yet" to paper over -- without the enum data every
+ * `<block>`/`<item>`/`<entity>` fill-in would have no validator, and every such event would end up
+ * with no matchers at all rather than with permissive ones.
+ *
+ * Exported for the same reason as `buildDiagnostics`: testable without a live connection.
+ */
+function linkMatchersWhenReady(docs, extra) {
+    if (docs === null || extra === null) {
+        return null;
+    }
+    (0, metaLinker_1.linkEventMatchers)(docs, extra);
+    let total = 0;
+    for (const event of docs.events.values()) {
+        total += event.couldMatchers.length;
+    }
+    return total;
+}
+exports.linkMatchersWhenReady = linkMatchersWhenReady;
 function createServer() {
     const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
     const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
@@ -200,6 +224,10 @@ function createServer() {
                 `${docs.events.size} events, ${docs.mechanisms.size} mechanisms, ${docs.properties.size} properties, ` +
                 `${docs.actions.size} actions, ${docs.languages.size} languages, ${docs.objectTypes.size} object types. ` +
                 `${docs.loadErrors.length} load error(s).`);
+            const matchers = linkMatchersWhenReady(loadedDocs, loadedExtra);
+            if (matchers !== null) {
+                connection.console.log(`Event could-matchers built: ${matchers}.`);
+            }
             for (const err of docs.loadErrors.slice(0, 20)) {
                 connection.console.warn(`Meta load error: ${err}`);
             }
@@ -221,6 +249,10 @@ function createServer() {
             .then(extra => {
             loadedExtra = extra;
             connection.console.log(`Minecraft enum data loaded: ${extra.sounds.size} sounds, ${extra.materials.size} materials, ${extra.entities.size} entities. ${extra.loadErrors.length} load error(s).`);
+            const matchers = linkMatchersWhenReady(loadedDocs, loadedExtra);
+            if (matchers !== null) {
+                connection.console.log(`Event could-matchers built: ${matchers}.`);
+            }
             for (const err of extra.loadErrors.slice(0, 20)) {
                 connection.console.warn(`Extra data load error: ${err}`);
             }

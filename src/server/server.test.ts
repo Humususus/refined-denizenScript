@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { DiagnosticSeverity } from 'vscode-languageserver';
-import { combineSources, buildCapabilities, buildDiagnostics } from './server';
+import { combineSources, buildCapabilities, buildDiagnostics, linkMatchersWhenReady } from './server';
+import { MetaDocs, MetaEvent, createEmptyMetaDocs } from './metaDocs/metaTypes';
+import { createEmptyExtraData } from './metaDocs/extraData';
 import { ScriptChecker } from './checker/scriptChecker';
 
 describe('combineSources', () => {
@@ -246,5 +248,50 @@ describe('buildDiagnostics', () => {
         const checker = new ScriptChecker('my_script:\n    type: task\n    script:\n    - narrate hi\n');
         checker.run();
         expect(buildDiagnostics(checker)).toEqual([]);
+    });
+});
+
+describe('linkMatchersWhenReady', () => {
+    function docsWithEvent(): MetaDocs {
+        const docs = createEmptyMetaDocs();
+        const evt = new MetaEvent();
+        evt.applyValue('events', 'player breaks <block> (with <entity>)');
+        evt.addTo(docs);
+        return docs;
+    }
+
+    it('does nothing and reports null while the meta is still loading', () => {
+        expect(linkMatchersWhenReady(null, createEmptyExtraData())).toBeNull();
+    });
+
+    it('does nothing and reports null while the enum data is still loading', () => {
+        // NOT a "not yet" to paper over: without the enum data every <block>/<item>/<entity>
+        // fill-in has no validator, so the events would end up with NO matchers rather than
+        // permissive ones -- and every event line in the workspace would be reported missing.
+        // MUTANT CAUGHT: linking against createEmptyExtraData() when the real data is absent.
+        const docs = docsWithEvent();
+        expect(linkMatchersWhenReady(docs, null)).toBeNull();
+        expect([...docs.events.values()][0].couldMatchers).toEqual([]);
+    });
+
+    it('links once both have landed, and reports the total matcher count', () => {
+        const docs = docsWithEvent();
+        expect(linkMatchersWhenReady(docs, createEmptyExtraData())).toBe(2);
+        expect([...docs.events.values()][0].couldMatchers.length).toBe(2);
+    });
+
+    it('is safe to call twice, which is what happens on a cold start', () => {
+        // Both load handlers call it; whichever finishes second is the one that does the work.
+        const docs = docsWithEvent();
+        expect(linkMatchersWhenReady(docs, createEmptyExtraData())).toBe(2);
+        expect(linkMatchersWhenReady(docs, createEmptyExtraData())).toBe(2);
+    });
+
+    it('counts matchers across every event, not just the first', () => {
+        const docs = docsWithEvent();
+        const second = new MetaEvent();
+        second.applyValue('events', 'player places <block>');
+        second.addTo(docs);
+        expect(linkMatchersWhenReady(docs, createEmptyExtraData())).toBe(3);
     });
 });
