@@ -737,11 +737,19 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
         // the key-line path return unconditionally, so `display name: <&b`, `format: <[text]`
         // and every other tag written on a key line silently offered nothing.
         //
-        // The `:` requirement is the C#'s and is kept: a line with neither a dash nor a colon is
-        // prose as far as the C# is concerned, and completing there would be a deviation.
-        if (!ctx.trimmed.includes(':')) {
-            return [];
-        }
+        // DELIBERATE DEVIATION #10 FROM TextDocumentService.cs:421 -- USER RULING, 2026-08-27.
+        //
+        // The C# guards this branch with `StartsWithFast('-') || Contains(':')`, so a line with
+        // neither offers nothing at all. That rule exists to avoid completing in prose, but it
+        // uses the shape of the LINE to answer a question about the CURSOR, and it gets that
+        // question wrong wherever a tag is written outside those two shapes: a continuation line
+        // of a multi-line tag, and the expanded map-tag buffer, whose lines read `key = value`.
+        // The user reported the second case directly.
+        //
+        // The guard is dropped rather than widened, because `completeTagAt` already answers the
+        // right question: it returns null unless the cursor sits inside an unclosed `<`, which is
+        // exactly the condition the C# was reaching for. A line with no open tag still yields
+        // nothing, so the ONLY inputs whose behaviour changes are those already inside a tag.
         const argStart = lastTopLevelArgStart(ctx.trimmed);
         // `null` means "no open tag at the cursor" -- on a key line there is nothing else left
         // to offer, so it becomes the empty list rather than falling through to the

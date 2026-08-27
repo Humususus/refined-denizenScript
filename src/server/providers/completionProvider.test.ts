@@ -1332,13 +1332,24 @@ describe('tag completion on key lines (TextDocumentService.cs:408-421)', () => {
         expect(labels).not.toContain('player');
     });
 
-    it('offers nothing on a line with neither a dash nor a colon', () => {
-        // MUTANT: drop the `if (!ctx.trimmed.includes(':')) return [];` guard. That guard is the
-        // C#'s condition at :421 (`StartsWithFast('-') || Contains(':')`), and removing it is a
-        // DEVIATION, not a fix -- it would start completing inside prose and inside the expanded
-        // map-tag buffer, whose lines are `key = value`. Kept faithful pending a user ruling.
+    it('completes inside an open tag even with no dash and no colon (DEVIATION #10)', () => {
+        // USER RULING 2026-08-27. The C# guards this branch with
+        // `StartsWithFast('-') || Contains(':')` (:421) and so offers nothing here; this port
+        // deliberately lets `completeTagAt` decide instead. `key = value` is the shape of every
+        // line in the expanded map-tag buffer, which is where the user hit it.
+        // MUTANT: restore the `if (!ctx.trimmed.includes(':')) return [];` guard.
         const docs = narrowingDocs();
-        expect(labelsAt(docs, '  translation = <player.')).toEqual([]);
+        expect(labelsAt(docs, '  translation = <player.'))
+            .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
+    });
+
+    it('still offers nothing on such a line when the cursor is NOT inside a tag', () => {
+        // The other half of deviation #10, and the reason it is narrow: dropping the guard must
+        // not start completing in prose. `completeTagAt` returns null with no open tag.
+        // MUTANT: make completeTagAt fall back to the flat tag list instead of returning null.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  translation = someplaintext')).toEqual([]);
+        expect(labelsAt(docs, '  just some prose about player')).toEqual([]);
     });
 
     it('keeps the argument under the cursor intact when a tag contains spaces', () => {
