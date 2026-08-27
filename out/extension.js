@@ -1972,6 +1972,20 @@ function isDialogScriptDiagnostic(uri, diagnostic) {
     return false;
 }
 function isDenizenMDiagnostic(uri, diagnostic) {
+    // The sixth hardcoded DenizenM branch, and the one that was missed when the other five were
+    // gated (commits 8388e5d, 64625a5, fc78e5b). It is also the most damaging to leave on: the
+    // other five only ADD suggestions, whereas this one DROPS diagnostics, and it matches on
+    // substrings as generic as " teleport ", " playeffect ", " async" and " forced". Any real
+    // error on a line containing one of those disappears without trace.
+    //
+    // On the TypeScript engine the checker knows DenizenM's own commands and tags for real,
+    // whenever DenizenM's meta is listed in `denizenscript.server.extra_sources` -- so guessing
+    // from a hardcoded word list is not just lossy, it is answering a question the engine can
+    // already answer properly. Measured on the user's corpus: one genuine `unknown_command` on
+    // `- async-while` was being swallowed by the " async" entry.
+    if (usingTypeScriptServer) {
+        return false;
+    }
     const document = vscode.workspace.textDocuments.filter(doc => pathKey(doc.uri) == pathKey(uri))[0];
     const message = diagnostic.message.toLowerCase();
     const lineText = document && diagnostic.range.start.line < document.lineCount ? document.lineAt(diagnostic.range.start.line).text.toLowerCase() : "";

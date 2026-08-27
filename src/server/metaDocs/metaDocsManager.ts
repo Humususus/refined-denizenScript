@@ -118,7 +118,20 @@ export interface LoadMetaDocsOptions {
     downloadFn?: (sources: string[]) => Promise<{ blocks: MetaBlock[]; loadErrors: string[] }>;
 }
 
-/** Loads MetaDocs, using a disk-cached copy of the extracted blocks when it exists and is within ttlMs, otherwise re-downloading and refreshing the cache. */
+/**
+ * Whether a cached source list is the same list, in the same order, as the one being asked for.
+ *
+ * Order is treated as significant because it is: `downloadAllBlocks` merges the archives in the
+ * order given, and later blocks can override earlier ones, so two orderings of the same URLs can
+ * legitimately produce different docs.
+ */
+function sameSources(cached: unknown, wanted: string[]): boolean {
+    return Array.isArray(cached)
+        && cached.length === wanted.length
+        && cached.every((s, i) => s === wanted[i]);
+}
+
+/** Loads MetaDocs, using a disk-cached copy of the extracted blocks when it exists, is within ttlMs, and was built from the same source list; otherwise re-downloading and refreshing the cache. */
 export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDocs> {
     const sources = options.sources ?? DEFAULT_META_SOURCES;
     const download = options.downloadFn ?? downloadAllBlocks;
@@ -127,7 +140,20 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
         const age = Date.now() - fs.statSync(options.cacheFile).mtimeMs;
         if (age < options.ttlMs) {
             try {
-                blocks = JSON.parse(fs.readFileSync(options.cacheFile, 'utf-8'));
+                const cached = JSON.parse(fs.readFileSync(options.cacheFile, 'utf-8'));
+                // The cache is keyed by the SOURCE LIST as well as by age. Without this the
+                // cache was identified by file path alone, so adding or removing an entry in
+                // `denizenscript.server.extra_sources` changed nothing until the 12-hour TTL
+                // happened to lapse -- which is exactly how the setting came to look broken.
+                //
+                // A bare array is the pre-2026-08-27 format. It needs no special case: it has no
+                // `sources` property, so `sameSources` sees undefined and rejects it, and the
+                // file is re-downloaded once on upgrade. An explicit `!Array.isArray` guard here
+                // was measured to be an equivalent mutant and removed rather than left as dead
+                // belt-and-braces.
+                if (sameSources(cached?.sources, sources)) {
+                    blocks = cached.blocks;
+                }
             }
             catch {
                 blocks = null;
@@ -141,7 +167,7 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
         loadErrors = result.loadErrors;
         if (blocks.length > 0) {
             fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
-            fs.writeFileSync(options.cacheFile, JSON.stringify(blocks));
+            fs.writeFileSync(options.cacheFile, JSON.stringify({ sources, blocks }));
         }
     }
     const docs = buildMetaDocs(blocks);
