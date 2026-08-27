@@ -47,11 +47,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.activateMapTagPeek = void 0;
+exports.activateMapTagPeek = exports.SCHEME = void 0;
 const vscode = __importStar(require("vscode"));
 const tagFormatter_1 = require("./tagFormatter");
 /** The URI scheme the expanded views live under. */
-const SCHEME = 'denizen-maptag';
+exports.SCHEME = 'denizen-maptag';
 /**
  * A minimal in-memory file system, just enough for VS Code to open an editable document.
  *
@@ -145,7 +145,7 @@ function expandTag(target) {
             vscode.window.showInformationMessage('That tag has nothing to expand - only <map[...]> and <list[...]> with more than one entry can be.');
             return;
         }
-        const uri = vscode.Uri.parse(`${SCHEME}:/tag-${++counter}.dsc`);
+        const uri = vscode.Uri.parse(`${exports.SCHEME}:/tag-${++counter}.dsc`);
         fileSystem.writeFile(uri, Buffer.from(pretty, 'utf8'));
         const range = new vscode.Range(position.line, found.start, position.line, found.end);
         expansions.set(uri.toString(), { sourceUri: editor.document.uri, range, lastWritten: found.text, syncing: false, pending: false });
@@ -233,6 +233,12 @@ class ExpandTagLensProvider {
         if (!vscode.workspace.getConfiguration().get('refinedDenizenscript.mapTag.showExpandLens', true)) {
             return [];
         }
+        // No expanding an expansion: this provider is registered by language, which matches every
+        // scheme, so without this an expanded buffer containing a nested map would offer its own
+        // "Expand tag" lens and open a second peek that writes back into the first.
+        if (document.uri.scheme === exports.SCHEME) {
+            return [];
+        }
         const lenses = [];
         for (let i = 0; i < document.lineCount; i++) {
             const text = document.lineAt(i).text;
@@ -261,15 +267,15 @@ class ExpandTagLensProvider {
 }
 /** Wires up the expanded-tag view. Call from `activate`. */
 function activateMapTagPeek(context) {
-    context.subscriptions.push(vscode.workspace.registerFileSystemProvider(SCHEME, fileSystem, { isCaseSensitive: true }));
+    context.subscriptions.push(vscode.workspace.registerFileSystemProvider(exports.SCHEME, fileSystem, { isCaseSensitive: true }));
     context.subscriptions.push(vscode.commands.registerCommand('refinedDenizenscript.expandMapTag', (target) => expandTag(target)));
     context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(event => {
-        if (event.document.uri.scheme === SCHEME) {
+        if (event.document.uri.scheme === exports.SCHEME) {
             void syncBack(event.document);
         }
     }));
     context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(document => {
-        if (document.uri.scheme === SCHEME) {
+        if (document.uri.scheme === exports.SCHEME) {
             expansions.delete(document.uri.toString());
             fileSystem.delete(document.uri);
         }

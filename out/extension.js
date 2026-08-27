@@ -92,6 +92,17 @@ function buildSharedMiddleware() {
             return next(document, position, context, token);
         },
         handleDiagnostics: (uri, diagnostics, next) => {
+            // An expanded-tag buffer is a FRAGMENT, not a script: its whole content is one
+            // `<map[ ... ]>` spread over several lines. Both servers happily lint it anyway,
+            // because they gate on the URI ending in ".dsc" and the virtual document is named
+            // "tag-N.dsc" - so every line comes back as a warning and the entire block goes
+            // yellow. Dropping them here rather than in either server is deliberate: it is one
+            // place, it covers the C# engine too (which this repo cannot change), and it leaves
+            // real files completely untouched.
+            if (uri.scheme === mapTagPeek_1.SCHEME) {
+                next(uri, []);
+                return;
+            }
             // Remember what the server actually said, unfiltered. Muting has to be
             // able to repaint a file the user isn't typing in, and the server may
             // never republish for such a file - see repaintDiagnostics.
@@ -1744,6 +1755,13 @@ function activateWorkspaceCompletions(context) {
     context.subscriptions.push(watcher);
 }
 function isDenizenUri(uri) {
+    // An expanded-tag buffer is named "tag-N.dsc" so that it gets Denizen syntax highlighting,
+    // which means it passes the extension test below. It must NOT be indexed: its content is a
+    // bare `<map[ ... ]>` fragment, and parsing that as a script files nonsense container and
+    // definition names into the merged index that real completions are drawn from.
+    if (uri.scheme === mapTagPeek_1.SCHEME) {
+        return false;
+    }
     return uri.fsPath.toLowerCase().endsWith(".dsc");
 }
 function getDenizenFileKind(name) {

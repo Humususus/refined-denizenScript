@@ -18,7 +18,7 @@ import * as vscode from 'vscode';
 import { findTagAt, formatTag, collapseTag, isCollapsible } from './tagFormatter';
 
 /** The URI scheme the expanded views live under. */
-const SCHEME = 'denizen-maptag';
+export const SCHEME = 'denizen-maptag';
 
 /** One open expansion: which document and range it came from, and what the peek shows. */
 interface Expansion {
@@ -237,6 +237,12 @@ async function syncOnce(document: vscode.TextDocument, expansion: Expansion): Pr
 class ExpandTagLensProvider implements vscode.CodeLensProvider {
     provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
         if (!vscode.workspace.getConfiguration().get<boolean>('refinedDenizenscript.mapTag.showExpandLens', true)) {
+            return [];
+        }
+        // No expanding an expansion: this provider is registered by language, which matches every
+        // scheme, so without this an expanded buffer containing a nested map would offer its own
+        // "Expand tag" lens and open a second peek that writes back into the first.
+        if (document.uri.scheme === SCHEME) {
             return [];
         }
         const lenses: vscode.CodeLens[] = [];
