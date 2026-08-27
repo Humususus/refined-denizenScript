@@ -18,9 +18,16 @@ function run(script: string): ScriptChecker {
     return checker;
 }
 
-/** Every warning key produced, across all four severities. */
+/**
+ * Every DIAGNOSTIC key produced.
+ *
+ * `infos` excluded since Phase 2D: `collectStatisticInfos` puts four or five `stat_*` entries on
+ * every file, and `server.ts` never publishes infos as diagnostics -- per-file line counts in the
+ * Problems panel would be noise. The "produces nothing at all" assertions below mean nothing the
+ * user would see, so counting statistics as findings would make them permanently red.
+ */
 function keys(checker: ScriptChecker): string[] {
-    return [...checker.errors, ...checker.warnings, ...checker.minorWarnings, ...checker.infos]
+    return [...checker.errors, ...checker.warnings, ...checker.minorWarnings]
         .map((w) => w.warningUniqueKey);
 }
 

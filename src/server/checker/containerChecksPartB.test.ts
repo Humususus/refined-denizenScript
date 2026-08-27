@@ -94,8 +94,13 @@ function run(script: string, docs: MetaDocs | null = metaFixture()): ScriptCheck
     return checker;
 }
 
+/**
+ * Every DIAGNOSTIC. `infos` excluded since Phase 2D -- see the matching note in
+ * containerChecks.test.ts. The fixture's "completely clean script" assertion below is about what
+ * the user would see, and every file carries `stat_*` infos.
+ */
 function all(checker: ScriptChecker): ScriptWarning[] {
-    return [...checker.errors, ...checker.warnings, ...checker.minorWarnings, ...checker.infos];
+    return [...checker.errors, ...checker.warnings, ...checker.minorWarnings];
 }
 
 function keys(checker: ScriptChecker): string[] {

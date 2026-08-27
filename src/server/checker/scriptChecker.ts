@@ -19,14 +19,13 @@ import { checkAllContainers } from './containerChecks';
 import type { ScriptSection } from './containerGather';
 import type { MetaDocs } from '../metaDocs/metaTypes';
 import type { ExtraData } from '../metaDocs/extraData';
-import { toLowerFast } from './frenetic';
+import { before, toLowerFast } from './frenetic';
 
 /**
- * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
- * preparation (the constructor, ScriptChecker.cs:137-146), comment stripping
- * (ClearCommentsFromLines, ScriptChecker.cs:183-215) and the five line-level checks (see
- * ./lineChecks, ScriptChecker.cs:313-419). The rest of the C# class (CheckYAML, LoadInjects,
- * the container checks, statistic infos) is still out of scope and lands in later tasks.
+ * Checks a script's validity. Ported from ScriptChecker.cs. `run()` now covers every step of the
+ * C#'s own `Run()` (:2020-2036) except `CheckYAML` (:2025), which needs a YAML parser and so
+ * conflicts with this port's no-new-dependencies rule; it is tracked in the backlog rather than
+ * silently skipped.
  *
  * `ScriptChecker` extends `WarningCollector` (rather than composing it) so that `errors`,
  * `warnings`, `minorWarnings`, `infos`, `ignoredWarnings`, `ignoredWarningTypes` and `warn(...)`
@@ -115,9 +114,9 @@ export class ScriptChecker extends WarningCollector {
     /**
      * Script names known to be injected into. (ScriptChecker.cs:124, `Injects`)
      *
-     * DORMANT: populated by `LoadInjects` in the C#, which is not ported, so this stays empty and
-     * the branch reading it in `checkAllContainers` never fires. Declared anyway so that code
-     * keeps the C#'s shape instead of becoming a stub to reconstruct later.
+     * Populated by `loadInjects` during `run()`. A name here (or the wildcard `'*'`) exempts that
+     * container from definition checking, because an injected script inherits definitions the
+     * checker cannot see from this file alone.
      */
     injects: string[] = [];
 
@@ -165,6 +164,13 @@ export class ScriptChecker extends WarningCollector {
     run(): void {
         // ScriptChecker.cs:2024
         this.clearCommentsFromLines();
+        // ScriptChecker.cs:2026. Position kept for diffability, and it is NOT load-bearing:
+        // running this before `clearCommentsFromLines` instead is an equivalent mutant, measured.
+        // The only lines the strip changes are `#`-prefixed ones, which it blanks to `''` -- and
+        // neither `#...` nor `''` starts with `- inject `, so no line can be seen as an inject on
+        // one side of the strip and not the other. 0 differences across every combination of
+        // comment prefix and line body tried.
+        this.loadInjects();
         // ScriptChecker.cs:2027-2030, in this exact order.
         basicLineFormatCheck(this);
         // Not in the C# Run() -- this scan is inline in BasicLineFormatCheck there
@@ -191,7 +197,82 @@ export class ScriptChecker extends WarningCollector {
         // ScriptChecker.cs:2034. Runs after conversion, since it reads what preprocContainer
         // harvested onto each container.
         mergeData(this);
-        // Still out of scope: CollectStatisticInfos (:2035).
+        // ScriptChecker.cs:2035. Last, so it counts the ignored warnings that every earlier step
+        // accumulated. Being last is the C#'s order but not a requirement: swapping it with
+        // `mergeData` is an equivalent mutant, since `mergeData` only unions MixedKnowledgeSets --
+        // it emits no warning and touches none of the four line counters.
+        this.collectStatisticInfos();
+    }
+
+    /**
+     * Finds the scripts this file injects into. Ported from ScriptChecker.cs:279-310.
+     *
+     * WHAT `injects` IS FOR. A script that is injected into gains whatever definitions the
+     * injecting script had, and there is no way to know which those are from the injected script
+     * alone. So a container named here is exempted from definition checking entirely
+     * (`hasUnknowableDefinitions`, containerChecks.ts) rather than drowned in false
+     * `def_of_nothing` warnings.
+     *
+     * TWO FORMS, and they are not symmetrical:
+     *   - `- inject locally <something>` injects into a script in THIS file, so the target is
+     *     found by walking BACKWARDS to the nearest top-level container title.
+     *   - `- inject some_script` names the target directly.
+     *
+     * `'*'` means "every script", and is added when the target is tag-built and therefore
+     * unknowable -- the same "exempt rather than guess" reflex as MixedKnowledgeSet's empty
+     * prefix.
+     */
+    loadInjects(): void {
+        for (let i = 0; i < this.cleanedLines.length; i++) {
+            // ScriptChecker.cs:283
+            if (this.cleanedLines[i].startsWith('- inject ')) {
+                const line = this.cleanedLines[i].substring('- inject '.length);
+                // ScriptChecker.cs:286. `Contains`, not `StartsWith`: `locally` may follow other
+                // arguments, as in `- inject locally instantly`.
+                if (line.includes('locally')) {
+                    for (let x = i; x >= 0; x--) {
+                        // ScriptChecker.cs:290. THREE conditions, and the third is the one doing
+                        // the real work: a top-level container title is a non-empty line ending
+                        // in ':' that starts at column zero. Tabs are expanded to four spaces
+                        // first, so a tab-indented key is not mistaken for a title -- note that
+                        // test is against the RAW line, since `cleanedLines` is trimmed and would
+                        // never start with a space.
+                        if (this.cleanedLines[x].length > 0 && this.cleanedLines[x].endsWith(':')
+                            && !this.lines[x].replaceAll('\t', '    ').startsWith(' ')) {
+                            this.injects.push(this.cleanedLines[x].slice(0, -1));
+                            break;
+                        }
+                    }
+                }
+                else {
+                    // ScriptChecker.cs:301-307
+                    const target = before(line, ' ');
+                    this.injects.push(before(target, '.'));
+                    if (target.includes('<')) {
+                        this.injects.push('*');
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Reports the per-file line statistics. Ported from ScriptChecker.cs:1676-1687.
+     *
+     * LINE -1, deliberately: these describe the file, not any line in it. `server.ts` does not
+     * publish `infos` as diagnostics at all -- statistics in the Problems panel would be noise --
+     * so this exists for the verify scripts and for any future consumer that wants a summary.
+     */
+    collectStatisticInfos(): void {
+        this.warn(this.infos, -1, 'stat_structural', `(Statistics) Total structural lines: ${this.structureLines}`, 0, 0);
+        this.warn(this.infos, -1, 'stat_livecode', `(Statistics) Total live code lines: ${this.codeLines}`, 0, 0);
+        this.warn(this.infos, -1, 'stat_comment', `(Statistics) Total comment lines: ${this.commentLines}`, 0, 0);
+        this.warn(this.infos, -1, 'stat_blank', `(Statistics) Total blank lines: ${this.blankLines}`, 0, 0);
+        // ScriptChecker.cs:1682-1685. Conditional, unlike the four above: a file that ignored
+        // nothing should not carry a line saying so.
+        if (this.ignoredWarnings > 0) {
+            this.warn(this.infos, -1, 'stat_ignore_warnings', `(Statistics) Total ignored warnings: ${this.ignoredWarnings}`, 0, 0);
+        }
     }
 
     /**

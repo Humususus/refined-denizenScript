@@ -139,7 +139,9 @@ async function main() {
                 if (events && events.value instanceof Map) { eventLines += events.value.size; }
             }
         }
-        for (const w of [...checker.errors, ...checker.warnings, ...checker.minorWarnings, ...checker.infos]) {
+        // Diagnostics only; `infos` are the per-file statistics and are never published. See the
+        // matching note in verify-phase2c6.js.
+        for (const w of [...checker.errors, ...checker.warnings, ...checker.minorWarnings]) {
             findings++;
             byKey.set(w.warningUniqueKey, (byKey.get(w.warningUniqueKey) || 0) + 1);
         }
