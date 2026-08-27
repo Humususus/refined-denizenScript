@@ -26,6 +26,10 @@ import { parseTag } from '../providers/tagHelper';
 import { traceTag } from '../providers/tagTracer';
 import type { TagPart } from '../providers/tagHelper';
 import { before, toLowerFast } from './frenetic';
+// checkTagParam only. No cycle: containerConvert does not import this module, and eventValidators
+// imports nothing from checker/ but ./frenetic and ./advancedMatcher.
+import { contextValidatedGetScriptFor } from './containerConvert';
+import { INVENTORY_MATCHERS } from './eventValidators';
 
 /**
  * Context for checking a single script container. Ported from ScriptChecker.cs:772-785.
@@ -363,7 +367,7 @@ export function checkSingleTag(
     }
     // ScriptChecker.cs:495-502. The tracer's two diagnostics; its callbacks were restored in
     // Phase 2C-4 Task 1 specifically for this.
-    traceTag(meta, parsed, {
+    const trace = traceTag(meta, parsed, {
         error: (s) => {
             checker.warn(checker.warnings, line, 'tag_trace_failure', `Tag tracer: ${s}`, startChar, startChar + tag.length);
         },
@@ -373,8 +377,134 @@ export function checkSingleTag(
             checker.warn(checker.minorWarnings, line, 'deprecated_tag_part', s, startChar + part.startChar, startChar + part.startChar + part.text.length);
         }
     });
-    // ScriptChecker.cs:503-524 is gated on `SurroundingWorkspace is not null`, which stays null
-    // until Phase 2D -- so `CheckTagParam` (:531-567) is unreachable and is NOT ported here.
-    // Porting 37 lines that nothing can run would be 37 lines of untested guesswork; it lands
-    // with the workspace scanning that makes it reachable.
+    // ScriptChecker.cs:503-524. GATED ON THE WORKSPACE, and that is the whole point: every check
+    // in `checkTagParam` asks "is this a real item/entity/procedure OR a script in this workspace
+    // that defines one", so without cross-file data it would report every script-defined item as
+    // invalid. Before Phase 2D `surroundingWorkspace` was always null and this was unreachable.
+    if (checker.surroundingWorkspace !== null) {
+        for (let i = 0; i < parsed.parts.length; i++) {
+            const part = parsed.parts[i];
+            const possible = trace.possibleTags.get(i) ?? [];
+            // ONLY WHEN EXACTLY ONE tag matched. With two or more candidates the parameter's
+            // required type is ambiguous, and guessing would invent warnings on valid scripts.
+            if (possible.length !== 1) {
+                continue;
+            }
+            const actualTag = possible[0];
+            const format = actualTag.parsedFormat;
+            // `Parts.Count <= 2` restricts this to simple tags -- a base plus at most one part --
+            // where the last documented part is unambiguously the one carrying the parameter.
+            if (format !== null && format.parts.length <= 2 && part.parameter !== null && part.parameter.length > 0) {
+                const metaPart = format.parts[format.parts.length - 1];
+                // A documented parameter starting with '<' names a TYPE, e.g. `<material>`. One
+                // spelled out literally is prose, not a type to check against.
+                //
+                // EQUIVALENT MUTANT, and expected to survive: dropping this test changes nothing,
+                // because every `case` in `checkTagParam` is a string beginning with '<', so a
+                // literal parameter falls through the switch and does nothing anyway. Kept for the
+                // C#'s shape and because it says the intent out loud.
+                if (metaPart.parameter !== null && metaPart.parameter.startsWith('<')) {
+                    // ANOTHER EQUIVALENT MUTANT: the fold is a second application. `parseTag`
+                    // already folds the whole tag (tagHelper.ts:62), exactly as `TagHelper.Parse`
+                    // does at TagHelper.cs:21, and toLowerFast is idempotent -- so `material[STONE]`
+                    // arrives here spelled `stone`. The C# is in the same position at :515.
+                    const input = toLowerFast(before(part.parameter, '['));
+                    // A tag-built parameter is unknowable; skip rather than guess.
+                    if (!input.includes('<')) {
+                        checkTagParam(checker, part, metaPart, input, warnPart);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Characters allowed in a simple note name. (ScriptChecker.cs:528, `AllowedSimpleNoteName`) */
+const ALLOWED_SIMPLE_NOTE_NAME = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+
+/** Whether every character of `text` is allowed in a simple note name. Vacuously true when empty. */
+function isOnlySimpleNoteName(text: string): boolean {
+    for (const ch of text) {
+        if (!ALLOWED_SIMPLE_NOTE_NAME.includes(ch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Checks a single tag parameter against the type its documentation demands.
+ * Ported from ScriptChecker.cs:531-566.
+ *
+ * Every arm has the same shape: the value is valid if it is a known Minecraft name OR a script in
+ * the workspace that defines one. The second half is why this needs Phase 2D -- `- define x
+ * my_custom_sword` is perfectly valid when `my_custom_sword` is an item script two files away.
+ *
+ * THE RANGE COMES FROM THE WRONG PART, and that is a C# defect ported as-is. `warnPart` is called
+ * with `metaPart` -- a part of the DOCUMENTED tag syntax -- while the message quotes `part`, the
+ * one in the user's script. So the offsets are indices into the documentation string, added to the
+ * script tag's start, and the underline lands wherever that arithmetic happens to point. Only the
+ * highlight is affected; line, key and message are all correct. Correcting it would be a
+ * deliberate deviation and needs a ruling, so it is documented instead.
+ *
+ * `extraData` null is a real cold-start state, as everywhere else: the C# reads `Meta.Data`
+ * unguarded, but this port loads the enum data on its own promise and must degrade to checking
+ * nothing rather than reporting every material as invalid while it downloads.
+ */
+function checkTagParam(checker: ScriptChecker, part: TagPart, metaPart: TagPart, input: string, warnPart: (part: TagPart, key: string, message: string) => void): void {
+    const data = checker.extraData;
+    if (data === null) {
+        return;
+    }
+    const safeText = part.text.replaceAll('`', "'");
+    const safeParam = (part.parameter ?? '').replaceAll('`', "'");
+    switch (metaPart.parameter) {
+        // ScriptChecker.cs:535-540. NOTE `book` as well as `item`: a book script is an item.
+        case '<material>':
+            if (!data.items.has(input) && !data.blocks.has(input)
+                && contextValidatedGetScriptFor(checker, input, 'item') === null
+                && contextValidatedGetScriptFor(checker, input, 'book') === null) {
+                warnPart(metaPart, 'invalid_tag_material', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Material, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:541-546. Items only -- a block name is NOT accepted here, which is the
+        // one difference from the material case above.
+        case '<item>':
+            if (!data.items.has(input)
+                && contextValidatedGetScriptFor(checker, input, 'item') === null
+                && contextValidatedGetScriptFor(checker, input, 'book') === null) {
+                warnPart(metaPart, 'invalid_tag_item', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Item, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:547-552
+        case '<entity>':
+            if (!data.entities.has(input) && contextValidatedGetScriptFor(checker, input, 'entity') === null) {
+                warnPart(metaPart, 'invalid_tag_entity', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Entity, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:553-558. The third disjunct has no equivalent in the other arms: any
+        // plain alphanumeric word is accepted, because an inventory can be a NOTED one whose name
+        // the checker cannot see. It makes this check very weak, and deliberately so.
+        //
+        // WEAK ENOUGH THAT THE LABEL SET IS DEAD: all 34 entries of INVENTORY_MATCHERS are
+        // themselves valid simple note names, so `isOnlySimpleNoteName` accepts every one of them
+        // and the first disjunct can never be the deciding factor. Measured, and an equivalent
+        // mutant. The check that remains is really "is this a simple word, or an inventory script".
+        // Kept because the C# has it and because a future narrowing of the note alphabet would
+        // make it live again.
+        case '<inventory>':
+            if (!INVENTORY_MATCHERS.has(input)
+                && contextValidatedGetScriptFor(checker, input, 'inventory') === null
+                && !isOnlySimpleNoteName(input)) {
+                warnPart(metaPart, 'invalid_tag_inventory', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Inventory, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:559-564. The only arm with no enum half at all -- a procedure is always
+        // a script, so the workspace lookup is the entire check.
+        case '<procedure_script_name>':
+            if (contextValidatedGetScriptFor(checker, input, 'procedure') === null) {
+                warnPart(metaPart, 'invalid_tag_procedure', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Procedure script name, but is not.`);
+            }
+            break;
+    }
 }

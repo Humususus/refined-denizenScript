@@ -7,6 +7,9 @@ import type { MetaDocs } from '../metaDocs/metaTypes';
 import type { MetaBlock } from '../metaDocs/metaLoader';
 
 import type { ScriptWarning } from './scriptWarnings';
+import { ScriptingWorkspaceData, ScriptContainerData } from './containerConvert';
+import { createEmptyExtraData } from '../metaDocs/extraData';
+import type { ExtraData } from '../metaDocs/extraData';
 
 /** Fixture builder, same shape as tagTracer.test.ts's. */
 function type(name: string, base: string, extra: string[] = []): MetaBlock {
@@ -647,5 +650,286 @@ describe('ScriptChecker.meta and the cold start', () => {
         checker.meta = TAG_DOCS;
         checkSingleTag(checker, 0, 0, 'nosuchbase', null);
         expect(checker.warnings.map(w => w.warningUniqueKey)).toContain('bad_tag_base');
+    });
+});
+
+describe('checkTagParam (ScriptChecker.cs:503-524, :531-566)', () => {
+    /**
+     * A fixture with one tag per checkable parameter type. Each is a BASE tag with a parameter,
+     * so `parsedFormat.parts.length` is 1 and the `<= 2` gate lets it through.
+     */
+    function paramDocs(): MetaDocs {
+        const d = buildMetaDocs([
+            type('ObjectTag', 'none'),
+            type('ElementTag', 'ObjectTag'),
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <material[<material>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <item[<item>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <entity[<entity>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <inventory[<inventory>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <proc[<procedure_script_name>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            // A parameter that is NOT a type name -- prose in angle brackets is still a type by
+            // the port's test, so this one uses a literal instead.
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <plain[name]>', '@returns ElementTag', '@description x', '@end_meta'] }
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+    const PARAM_DOCS = paramDocs();
+
+    function extra(): ExtraData {
+        const data = createEmptyExtraData();
+        data.blocks.add('stone');
+        data.items.add('stick');
+        data.entities.add('zombie');
+        for (const v of [...data.blocks, ...data.items, ...data.entities]) {
+            data.all.add(v);
+            data.materials.add(v);
+        }
+        return data;
+    }
+
+    /** A workspace containing one container of the given name and type. */
+    function workspaceWith(name: string, scriptType: string): ScriptingWorkspaceData {
+        const data = new ScriptingWorkspaceData();
+        const container = new ScriptContainerData();
+        container.name = name;
+        container.type = scriptType;
+        data.scripts.set(name, container);
+        return data;
+    }
+
+    /** Checks one tag with a workspace attached, and returns the warning keys. */
+    function checkWith(tag: string, workspace: ScriptingWorkspaceData | null, hasExtraData = true): string[] {
+        const checker = new ScriptChecker('- narrate placeholder');
+        checker.meta = PARAM_DOCS;
+        checker.extraData = hasExtraData ? extra() : null;
+        checker.surroundingWorkspace = workspace;
+        checkSingleTag(checker, 0, 0, tag, null);
+        return [...checker.errors, ...checker.warnings, ...checker.minorWarnings]
+            .map(w => w.warningUniqueKey);
+    }
+
+    const EMPTY = () => new ScriptingWorkspaceData();
+
+    it('checks NOTHING when there is no surrounding workspace', () => {
+        // THE GATE. Every arm below asks "is this a real name OR a script in the workspace", so
+        // without cross-file data it would report every script-defined item as invalid. This is
+        // the state the whole port was in before Phase 2D.
+        // MUTANT CAUGHT: dropping the `surroundingWorkspace !== null` gate.
+        expect(checkWith('material[not_a_real_material]', null)).toEqual([]);
+    });
+
+    it('accepts a real material and rejects an invented one', () => {
+        expect(checkWith('material[stone]', EMPTY())).toEqual([]);
+        expect(checkWith('material[not_a_real_material]', EMPTY())).toContain('invalid_tag_material');
+    });
+
+    it('accepts a BLOCK name for <material> but not for <item>', () => {
+        // ScriptChecker.cs:537 checks Items OR Blocks; :543 checks Items only. That difference is
+        // the only thing separating the two arms.
+        // MUTANT CAUGHT: adding a Blocks test to the item arm, or removing it from the material arm.
+        expect(checkWith('material[stone]', EMPTY())).toEqual([]);
+        expect(checkWith('item[stone]', EMPTY())).toContain('invalid_tag_item');
+    });
+
+    it('accepts an item name for both', () => {
+        expect(checkWith('material[stick]', EMPTY())).toEqual([]);
+        expect(checkWith('item[stick]', EMPTY())).toEqual([]);
+    });
+
+    it('lets an ITEM script in the workspace rescue an unknown material', () => {
+        // THE POINT OF PHASE 2D. `my_custom_thing` is in no Minecraft enum, and is still valid.
+        // MUTANT CAUGHT: dropping the contextValidatedGetScriptFor half of the condition.
+        expect(checkWith('material[my_custom_thing]', workspaceWith('my_custom_thing', 'item'))).toEqual([]);
+    });
+
+    it('lets a BOOK script rescue it too', () => {
+        // ScriptChecker.cs:537 checks `item` and `book` -- a book script is an item.
+        // MUTANT CAUGHT: dropping the `book` lookup from either arm.
+        expect(checkWith('material[my_custom_book]', workspaceWith('my_custom_book', 'book'))).toEqual([]);
+        expect(checkWith('item[my_custom_book]', workspaceWith('my_custom_book', 'book'))).toEqual([]);
+    });
+
+    it('does not let a script of the WRONG type rescue it', () => {
+        // MUTANT CAUGHT: passing null as requireType, which would accept any container at all.
+        expect(checkWith('material[my_task]', workspaceWith('my_task', 'task'))).toContain('invalid_tag_material');
+    });
+
+    it('accepts a real entity and rejects an invented one', () => {
+        expect(checkWith('entity[zombie]', EMPTY())).toEqual([]);
+        expect(checkWith('entity[not_a_real_entity]', EMPTY())).toContain('invalid_tag_entity');
+    });
+
+    it('lets an ENTITY script rescue an unknown entity', () => {
+        expect(checkWith('entity[my_custom_mob]', workspaceWith('my_custom_mob', 'entity'))).toEqual([]);
+    });
+
+    it('reports a procedure that is not in the workspace', () => {
+        // The one arm with no enum half -- a procedure is always a script.
+        expect(checkWith('proc[no_such_proc]', EMPTY())).toContain('invalid_tag_procedure');
+    });
+
+    it('accepts a procedure that IS in the workspace', () => {
+        expect(checkWith('proc[my_proc]', workspaceWith('my_proc', 'procedure'))).toEqual([]);
+    });
+
+    it('accepts any plain alphanumeric word as an inventory', () => {
+        // ScriptChecker.cs:555's third disjunct: an inventory may be a NOTED one whose name the
+        // checker cannot see, so any simple name passes. It makes this check very weak on purpose.
+        // MUTANT CAUGHT: dropping the AllowedSimpleNoteName test, which would report every noted
+        // inventory in every script as invalid.
+        expect(checkWith('inventory[some_note_name]', EMPTY())).toEqual([]);
+        expect(checkWith('inventory[chest]', EMPTY())).toEqual([]);
+    });
+
+    it('rejects an inventory name containing a character a note cannot have', () => {
+        // The note-name alphabet is letters, digits, '_' and '-'. A '.' is not in it -- but the
+        // parameter is cut at '[' only, so a dotted name reaches the check intact.
+        // MUTANT CAUGHT: widening ALLOWED_SIMPLE_NOTE_NAME.
+        expect(checkWith('inventory[not a note]', EMPTY())).toContain('invalid_tag_inventory');
+    });
+
+    it('ignores a tag whose documented parameter is not a type', () => {
+        // ScriptChecker.cs:513 requires the documented parameter to start with '<'. A literal
+        // parameter name is prose, and there is nothing to check it against.
+        // MUTANT CAUGHT: dropping the startsWith('<') test, which would fall through the switch
+        // and do nothing anyway -- so this pins the intent rather than a message.
+        expect(checkWith('plain[anything_at_all]', EMPTY())).toEqual([]);
+    });
+
+    it('ignores a tag-built parameter, which is unknowable', () => {
+        // ScriptChecker.cs:516. MUTANT CAUGHT: dropping the `!input.includes('<')` guard, which
+        // would report every dynamically-built material name as invalid.
+        //
+        // `not.toContain` rather than `toEqual([])`: the nested `<[some_def]>` is itself checked as
+        // a tag and the fixture documents no definition tag, so the tracer raises its own
+        // `tag_trace_failure`. That is the tracer's business, not this check's.
+        expect(checkWith('material[<[some_def]>]', EMPTY())).not.toContain('invalid_tag_material');
+    });
+
+    it('cuts the parameter at the first bracket before checking', () => {
+        // ScriptChecker.cs:515 is `Before('[')`. A parameter with its own sub-parameter must be
+        // checked on its head only.
+        // MUTANT CAUGHT: dropping the `before(part.parameter, '[')`.
+        expect(checkWith('material[stone[data=1]]', EMPTY())).toEqual([]);
+    });
+
+    it('folds the parameter with the ASCII rule before looking it up', () => {
+        // MUTANT CAUGHT: dropping the toLowerFast, which would reject `STONE`.
+        expect(checkWith('material[STONE]', EMPTY())).toEqual([]);
+    });
+
+    it('checks NOTHING when the enum data has not loaded yet', () => {
+        // Cold start: the C# reads Meta.Data unguarded, but this port loads the enum data on its
+        // own promise. Reporting every material as invalid while it downloads would be worse than
+        // reporting nothing.
+        // MUTANT CAUGHT: dropping the extraData null guard -- which also throws rather than
+        // merely over-reporting.
+        expect(checkWith('material[not_a_real_material]', EMPTY(), false)).toEqual([]);
+    });
+});
+
+describe('checkTagParam: the gates the audit found untested', () => {
+    /**
+     * A richer fixture than the one above: deep tags, and two sub-tags with the SAME part name on
+     * two sibling types, which is what makes a part ambiguous.
+     */
+    function deepDocs(): MetaDocs {
+        const d = buildMetaDocs([
+            type('ObjectTag', 'none'),
+            type('ElementTag', 'ObjectTag'),
+            type('OtherTag', 'ObjectTag'),
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <thing>', '@returns ObjectTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <elem>', '@returns ElementTag', '@description x', '@end_meta'] },
+            // Two-part: the documented parameter is on the LAST part.
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <ElementTag.two[<material>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            // Three-part: too deep for the `<= 2` gate.
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <ElementTag.a>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <ElementTag.a.deep[<material>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            // Same part name on two sibling types, so a base returning ObjectTag matches both.
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <ElementTag.ambig[<material>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <OtherTag.ambig[<entity>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 'src#L1', data: ['@attribute <proc[<procedure_script_name>]>', '@returns ElementTag', '@description x', '@end_meta'] }
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+    const DEEP_DOCS = deepDocs();
+
+    function deepExtra(): ExtraData {
+        const data = createEmptyExtraData();
+        data.blocks.add('stone');
+        data.entities.add('zombie');
+        for (const v of [...data.blocks, ...data.entities]) {
+            data.all.add(v);
+            data.materials.add(v);
+        }
+        return data;
+    }
+
+    function checkDeep(tag: string): string[] {
+        const checker = new ScriptChecker('- narrate placeholder');
+        checker.meta = DEEP_DOCS;
+        checker.extraData = deepExtra();
+        checker.surroundingWorkspace = new ScriptingWorkspaceData();
+        checkSingleTag(checker, 0, 0, tag, null);
+        return [...checker.errors, ...checker.warnings, ...checker.minorWarnings]
+            .map(w => w.warningUniqueKey);
+    }
+
+    it('checks a parameter on the LAST part of a two-part tag', () => {
+        // ScriptChecker.cs:512 takes `Parts[^1]`. Every tag in the block above is a one-part base,
+        // where the last part and the first are the same object -- so nothing there could tell the
+        // two apart, and the audit duly reported the mutant alive.
+        // MUTANT CAUGHT: `format.parts[0]`, which has no parameter and so checks nothing.
+        expect(checkDeep('elem.two[nope]')).toContain('invalid_tag_material');
+        expect(checkDeep('elem.two[stone]')).not.toContain('invalid_tag_material');
+    });
+
+    it('does NOT check a tag deeper than two parts', () => {
+        // ScriptChecker.cs:511's `Parts.Count <= 2`. Beyond that the last documented part is not
+        // reliably the one carrying the script's parameter, so the C# declines to guess.
+        // MUTANT CAUGHT: dropping the `<= 2` restriction, which would report this bad material.
+        expect(checkDeep('elem.a.deep[nope]')).not.toContain('invalid_tag_material');
+    });
+
+    it('does NOT check a part that matched more than one documented tag', () => {
+        // ScriptChecker.cs:507's `PossibleTags.Count == 1`. `thing` returns ObjectTag, so both
+        // sibling `ambig` tags match -- one wanting a material, one an entity. Neither is knowably
+        // the right one, and checking against either would invent a warning on a valid script.
+        // MUTANT CAUGHT: `possible.length === 0`, i.e. checking whenever anything matched.
+        const keys = checkDeep('thing.ambig[zombie]');
+        expect(keys).not.toContain('invalid_tag_material');
+        expect(keys).not.toContain('invalid_tag_entity');
+    });
+
+    it('still checks the unambiguous sibling of that same part name', () => {
+        // The other half: with a base that pins the type, the part IS unambiguous and is checked.
+        // Without this, the test above would pass just as well if checking were switched off.
+        expect(checkDeep('elem.ambig[nope]')).toContain('invalid_tag_material');
+    });
+
+    it('does not check an EMPTY parameter', () => {
+        // ScriptChecker.cs:511's `Parameter.Length > 0`. `material[]` parses to a parameter of ''
+        // -- not null -- so only the length test stops it being looked up as a material name.
+        // MUTANT CAUGHT: dropping `part.parameter.length > 0`.
+        expect(checkDeep('elem.two[]')).not.toContain('invalid_tag_material');
+    });
+
+    it('requires the workspace container to be of the REQUIRED type for a procedure', () => {
+        // `contextValidatedGetScriptFor(input, 'procedure')` -- passing null there would accept any
+        // container at all, so a task named like the procedure would silence the check.
+        // MUTANT CAUGHT: passing null as requireType in the procedure arm.
+        const checker = new ScriptChecker('- narrate placeholder');
+        checker.meta = DEEP_DOCS;
+        checker.extraData = createEmptyExtraData();
+        const workspace = new ScriptingWorkspaceData();
+        const container = new ScriptContainerData();
+        container.name = 'my_proc';
+        container.type = 'task';
+        workspace.scripts.set('my_proc', container);
+        checker.surroundingWorkspace = workspace;
+        checkSingleTag(checker, 0, 0, 'proc[my_proc]', null);
+        expect([...checker.warnings].map(w => w.warningUniqueKey)).toContain('invalid_tag_procedure');
     });
 });
