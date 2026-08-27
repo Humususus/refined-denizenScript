@@ -12,11 +12,13 @@ import {
 } from './lineChecks';
 import { gatherActualContainers } from './containerGather';
 import { convertContainers, mergeData, ScriptingWorkspaceData } from './containerConvert';
+import { checkAllContainers } from './containerChecks';
 // `import type`: ScriptSection is a type alias, used only in type position below. A value
 // import would be redundant with the line above; keeping it type-only makes the emitted JS
 // carry exactly one require() for this module.
 import type { ScriptSection } from './containerGather';
 import type { MetaDocs } from '../metaDocs/metaTypes';
+import type { ExtraData } from '../metaDocs/extraData';
 
 /**
  * Checks a script's validity. Ported from ScriptChecker.cs. So far this covers line
@@ -100,6 +102,25 @@ export class ScriptChecker extends WarningCollector {
     meta: MetaDocs | null = null;
 
     /**
+     * The loaded Minecraft enum data, or null. (ScriptChecker.cs:63's `Meta.Data`)
+     *
+     * Separate from `meta` here because this repo loads it separately, where the C# hangs it off
+     * the MetaDocs object. Only `enumerated_script_name` reads it, and that check is guarded --
+     * the C# guards the same spot with `Meta.Data is not null` -- so a null is a real, harmless
+     * cold-start state rather than a stub.
+     */
+    extraData: ExtraData | null = null;
+
+    /**
+     * Script names known to be injected into. (ScriptChecker.cs:124, `Injects`)
+     *
+     * DORMANT: populated by `LoadInjects` in the C#, which is not ported, so this stays empty and
+     * the branch reading it in `checkAllContainers` never fires. Declared anyway so that code
+     * keeps the C#'s shape instead of becoming a stub to reconstruct later.
+     */
+    injects: string[] = [];
+
+    /**
      * Constructs the checker from a script string.
      * Ported from ScriptChecker.cs:137-146.
      */
@@ -153,10 +174,15 @@ export class ScriptChecker extends WarningCollector {
         // ScriptChecker.cs:2032. The C# passes the gather's result straight in as a local; it
         // is parked on `this.containers` first because 2C-2's tests assert on it directly.
         convertContainers(this, this.containers);
+        // ScriptChecker.cs:2033. THE STEP THAT MAKES TAG AND COMMAND CHECKING VISIBLE: its
+        // nested `checkAsScript` is the only caller of `checkSingleCommand` in the whole port,
+        // and that in turn is what reaches `checkSingleArgument` and `checkSingleTag`. Note it
+        // runs BEFORE mergeData, so the cross-file merge cannot influence this file's own checks.
+        checkAllContainers(this);
         // ScriptChecker.cs:2034. Runs after conversion, since it reads what preprocContainer
         // harvested onto each container.
         mergeData(this);
-        // Still out of scope: CheckAllContainers (:2033) and CollectStatisticInfos (:2035).
+        // Still out of scope: CollectStatisticInfos (:2035).
     }
 
     /**

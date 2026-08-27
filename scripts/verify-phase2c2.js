@@ -119,7 +119,12 @@ Promise.all([
         'my_data_holder:',
         '  type: data',
         '  data:',
-        '    greeting_prefix: "[Server]"',
+        // Unquoted since Phase 2C-6: `CheckSingleDataLine` (ScriptChecker.cs:632-634) warns
+        // `invalid_data_line_quotes` on any data line containing a double quote, because Denizen
+        // does not strip them -- `"[Server]"` would literally include the quote characters. The
+        // check was correct and this fixture was not; it only looked clean while Part A was
+        // unported and nothing drove the data-line layer.
+        '    greeting_prefix: [Server]',
         '    max_uses: 5'
     ].join('\n');
     const realistic = diagnose(realisticScript);

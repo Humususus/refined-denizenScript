@@ -107,7 +107,8 @@ Promise.all([
         'my_data_holder:',
         '  type: data',
         '  data:',
-        '    greeting_prefix: "[Server]"',
+        // Unquoted since Phase 2C-6 -- see the identical note in verify-phase2c2.js.
+        '    greeting_prefix: [Server]',
         '    max_uses: 5'
     ].join('\n');
     const realistic = diagnose(realisticScript);
@@ -237,7 +238,10 @@ Promise.all([
         '      script:',
         '      - define name_regex sometext',
         '      - flag server dialogs.seen:true',
-        '      - narrate "done"'
+        // Unquoted since Phase 2C-6: `"done"` contains no spaces, so the command layer's
+        // `bad_quotes` check fires ("Pointless quotes"). Correct, and again only invisible before
+        // Part A existed to drive it.
+        '      - narrate done'
     ].join('\n');
     const dialog = diagnose(dialogScript);
     failures += check('a dialog container yields ZERO diagnostics (it used to be an ERROR)',
