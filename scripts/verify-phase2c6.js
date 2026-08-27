@@ -23,6 +23,8 @@ const path = require('path');
 const os = require('os');
 const { loadMetaDocs, DEFAULT_META_SOURCES } = require('../out/server/metaDocs/metaDocsManager');
 const { ScriptChecker } = require('../out/server/checker/scriptChecker');
+const { loadExtraData } = require('../out/server/metaDocs/extraData');
+const { linkEventMatchers } = require('../out/server/metaDocs/metaLinker');
 
 function check(label, condition, detail) {
     console.log(`${condition ? 'PASS' : 'FAIL'}  ${label}${detail ? ` -- ${detail}` : ''}`);
@@ -31,6 +33,7 @@ function check(label, condition, detail) {
 
 const CORPUS = 'D:/..........backup/.arukutest/plugins/Denizen/scripts';
 let META = null;
+let EXTRA = null;
 
 /**
  * Runs the full checker over a script with live meta and returns every DIAGNOSTIC key.
@@ -42,6 +45,7 @@ let META = null;
 function keysOf(script) {
     const checker = new ScriptChecker(script);
     checker.meta = META;
+    checker.extraData = EXTRA;
     checker.run();
     return [...checker.errors, ...checker.warnings, ...checker.minorWarnings]
         .map((w) => w.warningUniqueKey);
@@ -148,6 +152,7 @@ function main() {
         try {
             const checker = new ScriptChecker(text);
             checker.meta = META;
+            checker.extraData = EXTRA;
             checker.run();
             // DIAGNOSTICS ONLY -- `infos` is excluded on purpose. Since Phase 2D,
             // `collectStatisticInfos` emits four or five per file (line counts), and `server.ts`
@@ -191,18 +196,29 @@ function main() {
     // which does not nudge the rate, it multiplies it.
     const rate = findings / lines * 100;
     failures += check('8. corpus finding rate stays in the reviewed band',
-        rate <= 6, `${rate.toFixed(2)}% of lines (${findings} findings across ${lines}); reviewed snapshots ran 3.44-5.10%`);
+        rate <= 6, `${rate.toFixed(2)}% of lines (${findings} findings across ${lines}); reviewed snapshots ran 3.44-4.10%`);
 
     console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} CHECK(S) FAILED.`);
     process.exit(failures === 0 ? 0 : 1);
 }
 
-loadMetaDocs({
-    cacheFile: path.join(os.tmpdir(), 'denizen-phase2c5-verify-cache.json'),
-    ttlMs: 12 * 60 * 60 * 1000,
-    sources: DEFAULT_META_SOURCES
-}).then((docs) => {
+// THE ENUM DATA AND THE EVENT MATCHERS ARE BOTH REQUIRED HERE, even though this phase predates
+// them. Since Phase 2C-7 the checker runs Part B, and an event line whose event has no
+// could-matchers reads as `event_missing` -- so a script that skipped `linkEventMatchers` reported
+// 13 false findings on this corpus and quietly inflated the rate ceiling below. That is exactly the
+// failure `linkMatchersWhenReady` exists to prevent in the server, and this script has to do the
+// same thing rather than measure a configuration nothing ever runs in.
+Promise.all([
+    loadMetaDocs({
+        cacheFile: path.join(os.tmpdir(), 'denizen-phase2c5-verify-cache.json'),
+        ttlMs: 12 * 60 * 60 * 1000,
+        sources: DEFAULT_META_SOURCES
+    }),
+    loadExtraData({ cacheFile: path.join(os.tmpdir(), 'denizen-extradata-verify-cache.json'), ttlMs: 12 * 60 * 60 * 1000 })
+]).then(([docs, extra]) => {
+    linkEventMatchers(docs, extra);
     META = docs;
+    EXTRA = extra;
     console.log(`Loaded meta: ${docs.tags.size} tags, ${docs.commands.size} commands.\n`);
     main();
 }).catch((err) => {

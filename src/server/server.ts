@@ -5,6 +5,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import * as url from 'url';
 import {
     createConnection, ProposedFeatures, TextDocuments, TextDocumentSyncKind,
     InitializeParams, InitializeResult, Connection, ServerCapabilities,
@@ -15,6 +16,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { loadMetaDocs, DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
 import { MetaDocs } from './metaDocs/metaTypes';
 import { linkEventMatchers } from './metaDocs/metaLinker';
+import { WorkspaceTracker } from './workspaceTracker';
 import { ExtraData, createEmptyExtraData, loadExtraData } from './metaDocs/extraData';
 import { provideCompletions } from './providers/completionProvider';
 import { provideHover } from './providers/hoverProvider';
@@ -197,15 +199,78 @@ export function linkMatchersWhenReady(docs: MetaDocs | null, extra: ExtraData | 
     return total;
 }
 
+/**
+ * Converts a `file://` URI to a filesystem path.
+ *
+ * The C# does this by hand in 24 lines (`WorkspaceTracker.FixPath`), including a heuristic OS check
+ * on the first three characters to decide whether to strip Windows' leading slash. `fileURLToPath`
+ * is the same job done by the platform, and gets the escaping right too.
+ *
+ * Exported for testing; a non-`file:` URI (an unsaved buffer, or the map-tag peek scheme) has no
+ * path at all and yields null rather than a guess.
+ */
+export function uriToPath(uri: string): string | null {
+    try {
+        return url.fileURLToPath(uri);
+    }
+    catch {
+        return null;
+    }
+}
+
 export function createServer(): Connection {
     const connection = createConnection(ProposedFeatures.all);
     const documents = new TextDocuments(TextDocument);
+    const tracker = new WorkspaceTracker();
 
-    connection.onInitialize((_params: InitializeParams): InitializeResult => {
+    connection.onInitialize((params: InitializeParams): InitializeResult => {
+        // The workspace root, taken from whichever of the two the client sent. `workspaceFolders`
+        // is the modern form and may hold several; the C# tracks exactly one (`WorkspacePath`), so
+        // the first is used and the rest ignored rather than silently merged into one namespace.
+        const folder = params.workspaceFolders?.[0]?.uri ?? params.rootUri ?? null;
+        tracker.root = folder === null ? null : uriToPath(folder);
         return { capabilities: buildCapabilities() };
     });
 
+    /**
+     * Runs the first-time workspace scan, once, when both loads have landed.
+     *
+     * WAITING FOR THE META IS THE POINT. The scan checks every file and publishes what it finds, so
+     * running it early would publish a workspace full of diagnostics produced with no meta -- every
+     * command unknown, every tag untraced -- and then never correct them, because the scan only
+     * happens once. Both load handlers call this and it no-ops until it has the pair, the same
+     * shape as `linkMatchersWhenReady`.
+     *
+     * Synchronous, and deliberately: it runs once at startup, and the alternative -- yielding
+     * between files -- would mean the workspace data is half-built while diagnostics are already
+     * being answered against it, which is worse than a pause nobody is typing through.
+     */
+    function scanWorkspace(): void {
+        if (tracker.everScanned || loadedDocs === null || loadedExtra === null || tracker.root === null || !tracker.enabled) {
+            return;
+        }
+        const started = Date.now();
+        const results = tracker.firstScan({ meta: loadedDocs, extra: loadedExtra });
+        for (const [filePath, checker] of results) {
+            // Publish for every file, not only open ones -- that is what makes a fresh window show
+            // problems in files the user has not touched (WorkspaceTracker.cs:131).
+            connection.sendDiagnostics({ uri: url.pathToFileURL(filePath).toString(), diagnostics: buildDiagnostics(checker) });
+        }
+        const scripts = tracker.workspaceData === null ? 0 : tracker.workspaceData.scripts.size;
+        connection.console.log(`Workspace scanned: ${results.size} file(s), ${scripts} script container(s), in ${Date.now() - started}ms.`);
+    }
+
     connection.onInitialized(() => {
+        connection.workspace.getConfiguration('denizenscript.behaviors.track_full_workspace')
+            .then((track: boolean | undefined) => {
+                tracker.enabled = track !== false;
+                connection.console.log(`Workspace tracking (denizenscript.behaviors.track_full_workspace): ${tracker.enabled ? 'on' : 'off'}.`);
+                scanWorkspace();
+            })
+            .catch(err => {
+                connection.console.error(`Reading denizenscript.behaviors.track_full_workspace failed, leaving it on: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            });
+
         connection.workspace.getConfiguration('denizenscript.server.extra_sources')
             .then((extraSources: string[] | undefined) => {
                 const sources = combineSources(DEFAULT_META_SOURCES, extraSources);
@@ -226,6 +291,7 @@ export function createServer(): Connection {
                 for (const err of docs.loadErrors.slice(0, 20)) {
                     connection.console.warn(`Meta load error: ${err}`);
                 }
+                scanWorkspace();
             })
             .catch(err => {
                 connection.console.error(`Denizen meta load failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
@@ -251,6 +317,7 @@ export function createServer(): Connection {
                 for (const err of extra.loadErrors.slice(0, 20)) {
                     connection.console.warn(`Extra data load error: ${err}`);
                 }
+                scanWorkspace();
             })
             .catch(err => {
                 connection.console.error(`Minecraft enum data load failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
@@ -333,8 +400,25 @@ export function createServer(): Connection {
             // running. Bailing here would mean a freshly opened file shows no diagnostics at all
             // until the network came back.
             checker.meta = loadedDocs;
+            // THIS WAS MISSING UNTIL PHASE 2D, and it made two checks dead in the shipped server:
+            // `enumerated_script_name` (containerChecks.ts) and, once it existed, every arm of
+            // `checkTagParam`. Both read `checker.extraData` and both degrade to checking nothing
+            // when it is null -- so the effect was silence, not a crash, which is why it went
+            // unnoticed. Null here is still a real cold-start state; this only makes the data
+            // reach the checker once it has loaded.
+            checker.extraData = loadedExtra;
+            // The other files around this one. Null until the first workspace scan finishes, or
+            // for good if the user turned tracking off -- both of which every consumer treats as
+            // "no cross-file knowledge", never as "nothing exists".
+            checker.surroundingWorkspace = tracker.dataFor();
             checker.run();
             connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(checker) });
+            // Feed this file's own containers back in, so the NEXT file checked sees the edit.
+            // The C# does the same at DiagnosticProvider.cs:134.
+            const filePath = uriToPath(uri);
+            if (filePath !== null) {
+                tracker.replace(filePath, checker);
+            }
         }
         catch (err) {
             // A malformed script is an ordinary thing for a user to be holding mid-edit; a dead

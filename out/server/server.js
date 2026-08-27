@@ -27,13 +27,15 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = exports.linkMatchersWhenReady = exports.buildDiagnostics = exports.buildCapabilities = exports.combineSources = void 0;
+exports.createServer = exports.uriToPath = exports.linkMatchersWhenReady = exports.buildDiagnostics = exports.buildCapabilities = exports.combineSources = void 0;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
+const url = __importStar(require("url"));
 const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
 const metaDocsManager_1 = require("./metaDocs/metaDocsManager");
 const metaLinker_1 = require("./metaDocs/metaLinker");
+const workspaceTracker_1 = require("./workspaceTracker");
 const extraData_1 = require("./metaDocs/extraData");
 const completionProvider_1 = require("./providers/completionProvider");
 const hoverProvider_1 = require("./providers/hoverProvider");
@@ -206,13 +208,76 @@ function linkMatchersWhenReady(docs, extra) {
     return total;
 }
 exports.linkMatchersWhenReady = linkMatchersWhenReady;
+/**
+ * Converts a `file://` URI to a filesystem path.
+ *
+ * The C# does this by hand in 24 lines (`WorkspaceTracker.FixPath`), including a heuristic OS check
+ * on the first three characters to decide whether to strip Windows' leading slash. `fileURLToPath`
+ * is the same job done by the platform, and gets the escaping right too.
+ *
+ * Exported for testing; a non-`file:` URI (an unsaved buffer, or the map-tag peek scheme) has no
+ * path at all and yields null rather than a guess.
+ */
+function uriToPath(uri) {
+    try {
+        return url.fileURLToPath(uri);
+    }
+    catch (_a) {
+        return null;
+    }
+}
+exports.uriToPath = uriToPath;
 function createServer() {
     const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
     const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
-    connection.onInitialize((_params) => {
+    const tracker = new workspaceTracker_1.WorkspaceTracker();
+    connection.onInitialize((params) => {
+        var _a, _b, _c, _d;
+        // The workspace root, taken from whichever of the two the client sent. `workspaceFolders`
+        // is the modern form and may hold several; the C# tracks exactly one (`WorkspacePath`), so
+        // the first is used and the rest ignored rather than silently merged into one namespace.
+        const folder = (_d = (_c = (_b = (_a = params.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.uri) !== null && _c !== void 0 ? _c : params.rootUri) !== null && _d !== void 0 ? _d : null;
+        tracker.root = folder === null ? null : uriToPath(folder);
         return { capabilities: buildCapabilities() };
     });
+    /**
+     * Runs the first-time workspace scan, once, when both loads have landed.
+     *
+     * WAITING FOR THE META IS THE POINT. The scan checks every file and publishes what it finds, so
+     * running it early would publish a workspace full of diagnostics produced with no meta -- every
+     * command unknown, every tag untraced -- and then never correct them, because the scan only
+     * happens once. Both load handlers call this and it no-ops until it has the pair, the same
+     * shape as `linkMatchersWhenReady`.
+     *
+     * Synchronous, and deliberately: it runs once at startup, and the alternative -- yielding
+     * between files -- would mean the workspace data is half-built while diagnostics are already
+     * being answered against it, which is worse than a pause nobody is typing through.
+     */
+    function scanWorkspace() {
+        if (tracker.everScanned || loadedDocs === null || loadedExtra === null || tracker.root === null || !tracker.enabled) {
+            return;
+        }
+        const started = Date.now();
+        const results = tracker.firstScan({ meta: loadedDocs, extra: loadedExtra });
+        for (const [filePath, checker] of results) {
+            // Publish for every file, not only open ones -- that is what makes a fresh window show
+            // problems in files the user has not touched (WorkspaceTracker.cs:131).
+            connection.sendDiagnostics({ uri: url.pathToFileURL(filePath).toString(), diagnostics: buildDiagnostics(checker) });
+        }
+        const scripts = tracker.workspaceData === null ? 0 : tracker.workspaceData.scripts.size;
+        connection.console.log(`Workspace scanned: ${results.size} file(s), ${scripts} script container(s), in ${Date.now() - started}ms.`);
+    }
     connection.onInitialized(() => {
+        connection.workspace.getConfiguration('denizenscript.behaviors.track_full_workspace')
+            .then((track) => {
+            tracker.enabled = track !== false;
+            connection.console.log(`Workspace tracking (denizenscript.behaviors.track_full_workspace): ${tracker.enabled ? 'on' : 'off'}.`);
+            scanWorkspace();
+        })
+            .catch(err => {
+            var _a;
+            connection.console.error(`Reading denizenscript.behaviors.track_full_workspace failed, leaving it on: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+        });
         connection.workspace.getConfiguration('denizenscript.server.extra_sources')
             .then((extraSources) => {
             const sources = combineSources(metaDocsManager_1.DEFAULT_META_SOURCES, extraSources);
@@ -231,6 +296,7 @@ function createServer() {
             for (const err of docs.loadErrors.slice(0, 20)) {
                 connection.console.warn(`Meta load error: ${err}`);
             }
+            scanWorkspace();
         })
             .catch(err => {
             var _a;
@@ -256,6 +322,7 @@ function createServer() {
             for (const err of extra.loadErrors.slice(0, 20)) {
                 connection.console.warn(`Extra data load error: ${err}`);
             }
+            scanWorkspace();
         })
             .catch(err => {
             var _a;
@@ -337,8 +404,25 @@ function createServer() {
             // running. Bailing here would mean a freshly opened file shows no diagnostics at all
             // until the network came back.
             checker.meta = loadedDocs;
+            // THIS WAS MISSING UNTIL PHASE 2D, and it made two checks dead in the shipped server:
+            // `enumerated_script_name` (containerChecks.ts) and, once it existed, every arm of
+            // `checkTagParam`. Both read `checker.extraData` and both degrade to checking nothing
+            // when it is null -- so the effect was silence, not a crash, which is why it went
+            // unnoticed. Null here is still a real cold-start state; this only makes the data
+            // reach the checker once it has loaded.
+            checker.extraData = loadedExtra;
+            // The other files around this one. Null until the first workspace scan finishes, or
+            // for good if the user turned tracking off -- both of which every consumer treats as
+            // "no cross-file knowledge", never as "nothing exists".
+            checker.surroundingWorkspace = tracker.dataFor();
             checker.run();
             connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(checker) });
+            // Feed this file's own containers back in, so the NEXT file checked sees the edit.
+            // The C# does the same at DiagnosticProvider.cs:134.
+            const filePath = uriToPath(uri);
+            if (filePath !== null) {
+                tracker.replace(filePath, checker);
+            }
         }
         catch (err) {
             // A malformed script is an ordinary thing for a user to be holding mid-edit; a dead
