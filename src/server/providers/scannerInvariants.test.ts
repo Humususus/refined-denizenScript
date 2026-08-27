@@ -415,7 +415,11 @@ describe('tokenizeSyntax against real @Syntax values from the local meta cache',
         return;
     }
     it('reconstructs every real command syntax from the cached meta', () => {
-        const blocks: MetaBlock[] = JSON.parse(fs.readFileSync(META_CACHE_FILE, 'utf-8'));
+        // The cache gained a wrapper on 2026-08-27 so that it could be keyed by source list as
+        // well as by age; a bare array is the older format. Accept either, since this test just
+        // wants real blocks and does not care which shape produced them.
+        const cached = JSON.parse(fs.readFileSync(META_CACHE_FILE, 'utf-8'));
+        const blocks: MetaBlock[] = Array.isArray(cached) ? cached : cached.blocks;
         const docs = buildMetaDocs(blocks);
         let checked = 0;
         for (const command of docs.commands.values()) {

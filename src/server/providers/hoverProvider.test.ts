@@ -112,3 +112,44 @@ describe('provideHover', () => {
         expect(valueOf(hover)).toContain('### Task Script Containers');
     });
 });
+
+describe("provideHover for commands added by extra_sources", () => {
+    // Reported by the user 2026-08-27: commands from an add-on meta archive completed but
+    // never hovered. A /^[a-z0-9_]+$/ whitelist on the command name -- a port artifact, not
+    // anything TextDocumentService.cs does -- was rejecting every hyphenated name.
+
+    function addonDocs(): MetaDocs {
+        const docs = testDocs();
+        const cmd = new MetaCommand();
+        cmd.type = META_TYPE_COMMAND;
+        cmd.commandName = "bm-state";
+        cmd.syntax = "bm-state [<name>]";
+        cmd.short = "Sets a model state.";
+        cmd.addTo(docs);
+        return docs;
+    }
+
+    it("describes a hyphenated command name", () => {
+        // MUTANT: restore the COMMAND_NAME_PATTERN guard.
+        const docs = addonDocs();
+        const text = "  - bm-state walk";
+        const hover = provideHover(docs, text, 6, 0)!;
+        expect(valueOf(hover)).toContain("bm-state");
+    });
+
+    it("anchors the hover range over the whole hyphenated name", () => {
+        // MUTANT: cut the range at the hyphen. "  - bm-state" puts the name at 4..12.
+        const docs = addonDocs();
+        const hover = provideHover(docs, "  - bm-state walk", 6, 0)!;
+        expect(hover.range).toEqual({ start: { line: 0, character: 4 }, end: { line: 0, character: 12 } });
+    });
+
+    it("still returns nothing for a name that is in no meta at all", () => {
+        // The lookup, not a character whitelist, is what rejects nonsense -- so removing the
+        // whitelist must not start hovering over junk.
+        // MUTANT: return a hover when docs.commands.get() misses.
+        const docs = addonDocs();
+        expect(provideHover(docs, "  - not-a-real-command x", 6, 0)).toBeNull();
+        expect(provideHover(docs, "  - <player.name> x", 6, 0)).toBeNull();
+    });
+});

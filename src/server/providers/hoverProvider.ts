@@ -14,8 +14,18 @@ import { parseCommandLine } from './cursorContext';
 
 const TYPE_PREFIX = 'type: ';
 
-/** Characters that can appear in a Denizen command name. */
-const COMMAND_NAME_PATTERN = /^[a-z0-9_]+$/;
+// A `COMMAND_NAME_PATTERN = /^[a-z0-9_]+$/` guard used to sit here, and it was a PORT ARTIFACT
+// rather than anything the C# does. TextDocumentService.cs:101-118 derives hover from the
+// completion list -- it asks GetCompletionsFor and matches each returned label against the line,
+// so any command the completer can offer is hoverable, with no character whitelist anywhere.
+//
+// The whitelist silently excluded every command name containing a hyphen. That costs nothing on
+// the official meta (measured: 0 of 184 command names fall outside it) but breaks exactly the
+// commands users add through `denizenscript.server.extra_sources`, where hyphenated names are
+// common -- reported by the user 2026-08-27 as add-on commands completing but never hovering.
+//
+// The `docs.commands.get(...)` lookup below already answers the only question that matters, and
+// answers it correctly for names the pattern could never have anticipated.
 
 /**
  * Describes whatever meta object sits under the cursor, or null if there is nothing to say.
@@ -37,9 +47,6 @@ export function provideHover(docs: MetaDocs, text: string, offset: number, line:
     const trimmed = trimmedRaw.toLowerCase();
     const cmdCtx = parseCommandLine(trimmed, indent);
     if (cmdCtx !== null) {
-        if (!COMMAND_NAME_PATTERN.test(cmdCtx.name)) {
-            return null;
-        }
         if (character < cmdCtx.nameStart || character > cmdCtx.nameEnd) {
             return null;
         }
