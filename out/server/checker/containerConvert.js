@@ -77,22 +77,6 @@ class ScriptingWorkspaceData {
     }
 }
 exports.ScriptingWorkspaceData = ScriptingWorkspaceData;
-/** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
-function before(input, match) {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
-/**
- * FreneticUtilities' `string.After(char)`: everything after the first occurrence.
- *
- * Returns `''` when the character is absent, matching the "after" half of `beforeAndAfter` in
- * containerGather.ts. Every call site below guards on `startsWith('as:')` or `startsWith('key:')`
- * first, so the absent case is unreachable in practice.
- */
-function after(input, match) {
-    const index = input.indexOf(match);
-    return index < 0 ? '' : input.slice(index + match.length);
-}
 /** ScriptChecker.cs:1958-1961's `StartsWithAny`. */
 function startsWithAny(input, ...checks) {
     return checks.some(s => input.startsWith(s));
@@ -203,7 +187,7 @@ function convertContainers(checker, containers) {
                     : valueToString(defs).split('|');
                 // ScriptChecker.cs:1722. NOTE the order -- lowercase, THEN cut at '[', THEN
                 // trim -- so `Target [Optional]` becomes `target`, not `target [optional]`.
-                container.defNames.addAll(...rawNames.map(d => before((0, frenetic_1.toLowerFast)(d), '[').trim()));
+                container.defNames.addAll(...rawNames.map(d => (0, frenetic_1.before)((0, frenetic_1.toLowerFast)(d), '[').trim()));
             }
             // ScriptChecker.cs:1725-1726
             preprocContainer(container);
@@ -248,7 +232,7 @@ function preprocContainer(script) {
         const flagsEntry = script.keys.get(scriptWarnings_1.LineTrackedString.textKey('flags'));
         if (flagsEntry !== undefined && flagsEntry.value instanceof Map) {
             for (const flagEntry of flagsEntry.value.values()) {
-                script.objectFlags.addAll(before((0, frenetic_1.toLowerFast)(flagEntry.key.text.trim()), '.'));
+                script.objectFlags.addAll((0, frenetic_1.before)((0, frenetic_1.toLowerFast)(flagEntry.key.text.trim()), '.'));
             }
         }
         return;
@@ -299,14 +283,14 @@ function preprocContainer(script) {
                         // sfx.dsc. Nothing there breaks either way, because that script also
                         // defines `background` plainly -- the fix closes the class of failure
                         // rather than a live one.
-                        script.defNames.add(before(before(before(cleanArgs[0], ':'), '.'), '['));
+                        script.defNames.add((0, frenetic_1.before)((0, frenetic_1.before)((0, frenetic_1.before)(cleanArgs[0], ':'), '.'), '['));
                     }
                     break;
                 // ScriptChecker.cs:1801-1809
                 case 'inject': {
                     const arg = cleanArgs.find(a => a !== 'instantly' && !a.startsWith('path:'));
                     if (arg !== undefined) {
-                        script.injectedPaths.add(before(arg, '.'));
+                        script.injectedPaths.add((0, frenetic_1.before)(arg, '.'));
                     }
                     break;
                 }
@@ -320,12 +304,12 @@ function preprocContainer(script) {
                         script.defNames.add('loop_index');
                         const keyArg = cleanArgs.find(a => a.startsWith('key:'));
                         if (keyArg !== undefined) {
-                            script.defNames.add(before(after(keyArg, ':'), '.'));
+                            script.defNames.add((0, frenetic_1.before)((0, frenetic_1.after)(keyArg, ':'), '.'));
                         }
                     }
                     const asArg = cleanArgs.find(a => a.startsWith('as:'));
                     if (asArg !== undefined) {
-                        script.defNames.add(before(after(asArg, ':'), '.'));
+                        script.defNames.add((0, frenetic_1.before)((0, frenetic_1.after)(asArg, ':'), '.'));
                     }
                     else {
                         script.defNames.add('value');
@@ -336,7 +320,7 @@ function preprocContainer(script) {
                 // literally `server` counts as an object flag.
                 case 'flag':
                     if (cleanArgs.length >= 2) {
-                        const flag = before(before(before(cleanArgs[1], ':'), '.'), '[');
+                        const flag = (0, frenetic_1.before)((0, frenetic_1.before)((0, frenetic_1.before)(cleanArgs[1], ':'), '.'), '[');
                         if (cleanArgs[0] === 'server') {
                             script.serverFlags.add(flag);
                         }
@@ -350,7 +334,7 @@ function preprocContainer(script) {
                     if (cleanArgs.includes('flag')) {
                         const flag = cleanArgs.find(a => !startsWithAny(a, ...INVENTORY_ARG_ALIASES));
                         if (flag !== undefined) {
-                            script.objectFlags.add(before(before(flag, ':'), '.'));
+                            script.objectFlags.add((0, frenetic_1.before)((0, frenetic_1.before)(flag, ':'), '.'));
                         }
                     }
                     break;
@@ -362,7 +346,7 @@ function preprocContainer(script) {
             if (specialFlag !== -1) {
                 let flagData = cmd.slice(specialFlag + 'flag='.length);
                 for (const cut of [' ', ';', ']', ':', '.']) {
-                    flagData = before(flagData, cut);
+                    flagData = (0, frenetic_1.before)(flagData, cut);
                 }
                 if (flagData !== '') {
                     script.objectFlags.add(flagData);
@@ -372,7 +356,7 @@ function preprocContainer(script) {
             // one of the three prefixes :1791 strips, so looking in cleanArgs would find nothing.
             const save = fullArgs.find(a => a.startsWith('save:'));
             if (save !== undefined) {
-                script.saveEntryNames.add(after(save, ':'));
+                script.saveEntryNames.add((0, frenetic_1.after)(save, ':'));
             }
         };
         /** ScriptChecker.cs:1879-1908. */
@@ -543,14 +527,14 @@ function contextValidatedGetScriptFor(checker, scriptName, requireType) {
         return null;
     }
     // ScriptChecker.cs:1970-1974
-    scriptName = before((0, frenetic_1.toLowerFast)(scriptName), '.');
+    scriptName = (0, frenetic_1.before)((0, frenetic_1.toLowerFast)(scriptName), '.');
     if (scriptName.startsWith('script:')) {
-        scriptName = after(scriptName, ':');
+        scriptName = (0, frenetic_1.after)(scriptName, ':');
     }
     let res = null;
     if (scriptName.includes('<')) {
         // ScriptChecker.cs:1976-1984: a tagged name can only be matched by prefix.
-        const partial = before(scriptName, '<');
+        const partial = (0, frenetic_1.before)(scriptName, '<');
         const matches = (from) => {
             for (const [key, value] of from) {
                 if (key.startsWith(partial) && (requireType === null || value.type === requireType)) {

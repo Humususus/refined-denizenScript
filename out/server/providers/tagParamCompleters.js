@@ -16,16 +16,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = void 0;
-/** Text before the first `sep`; the whole string when absent (FreneticExtensions' `Before`). */
-function before(text, sep) {
-    const index = text.indexOf(sep);
-    return index === -1 ? text : text.substring(0, index);
-}
-/** Text after the first `sep`; the whole string when absent (FreneticExtensions' `After`). */
-function after(text, sep) {
-    const index = text.indexOf(sep);
-    return index === -1 ? text : text.substring(index + sep.length);
-}
+const frenetic_1 = require("../checker/frenetic");
 /** Text after the last `sep`; the whole string when absent (FreneticExtensions' `AfterLast`). */
 function afterLast(text, sep) {
     const index = text.lastIndexOf(sep);
@@ -188,18 +179,18 @@ function completeParam(docs, extra, docParam, prefix, typed, tag) {
             const lastArg = givenPairs[givenPairs.length - 1];
             if (lastArg.includes('=')) {
                 // The key is settled; complete its value against that key's own spec (:152-159).
-                const expected = before(lastArg, '=');
-                const docMatch = docPairs.find(p => before(p, '=') === expected);
+                const expected = (0, frenetic_1.before)(lastArg, '=');
+                const docMatch = docPairs.find(p => (0, frenetic_1.before)(p, '=') === expected);
                 if (docMatch !== undefined) {
-                    return completeParam(docs, extra, after(docMatch, '='), `${expected}=`, after(lastArg, '='), tag);
+                    return completeParam(docs, extra, (0, frenetic_1.after)(docMatch, '='), `${expected}=`, (0, frenetic_1.after)(lastArg, '='), tag);
                 }
                 return results;
             }
             // Still naming a key: offer the documented keys not already supplied (:162-170).
-            const givenKeys = new Set(givenPairs.filter(s => s.includes('=')).map(s => before(s, '=')));
+            const givenKeys = new Set(givenPairs.filter(s => s.includes('=')).map(s => (0, frenetic_1.before)(s, '=')));
             for (const docPair of docPairs) {
-                const key = before(docPair, '=');
-                const value = after(docPair, '=');
+                const key = (0, frenetic_1.before)(docPair, '=');
+                const value = (0, frenetic_1.after)(docPair, '=');
                 if (!givenKeys.has(key) && key.startsWith(lastArg)) {
                     results.push({ label: key, detail: `**${key}**=\`${value}\``, kind: 'tagPiece' });
                 }

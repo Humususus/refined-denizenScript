@@ -17,6 +17,7 @@
 import { MetaDocs, MetaTag } from '../metaDocs/metaTypes';
 import { ExtraData } from '../metaDocs/extraData';
 import { EnumCompleter } from './argumentCompleters';
+import { after, before } from '../checker/frenetic';
 
 /**
  * Which C# construction site a candidate came from. There are exactly three, and the
@@ -66,18 +67,6 @@ export interface ParamCandidate { label: string; detail: string; kind: ParamCand
  * all use the empty prefix (:80-95), so the prefix dimension collapses away here.
  */
 export type TagParamCompleter = (docs: MetaDocs, extra: ExtraData, typed: string) => ParamCandidate[];
-
-/** Text before the first `sep`; the whole string when absent (FreneticExtensions' `Before`). */
-function before(text: string, sep: string): string {
-    const index = text.indexOf(sep);
-    return index === -1 ? text : text.substring(0, index);
-}
-
-/** Text after the first `sep`; the whole string when absent (FreneticExtensions' `After`). */
-function after(text: string, sep: string): string {
-    const index = text.indexOf(sep);
-    return index === -1 ? text : text.substring(index + sep.length);
-}
 
 /** Text after the last `sep`; the whole string when absent (FreneticExtensions' `AfterLast`). */
 function afterLast(text: string, sep: string): string {

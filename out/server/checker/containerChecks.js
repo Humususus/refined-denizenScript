@@ -29,11 +29,6 @@ function isOnlyTitleCharacters(text) {
     }
     return true;
 }
-/** FreneticUtilities' `string.Before(char)`. */
-function before(input, match) {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
 /** Escapes a backtick for a message, as the C# does with `Replace('`', '\'')`. */
 function safe(text) {
     return text.replaceAll('`', "'");
@@ -137,7 +132,7 @@ function checkOneContainer(checker, script, warnScript) {
             const defsEntry = scriptSection.get(scriptWarnings_1.LineTrackedString.textKey('definitions'));
             if (defsEntry !== undefined && defsEntry.value instanceof scriptWarnings_1.LineTrackedString) {
                 for (const name of (0, frenetic_1.toLowerFast)(defsEntry.value.text).split('|')) {
-                    ctx.definitions.add(before(name, '[').trim());
+                    ctx.definitions.add((0, frenetic_1.before)(name, '[').trim());
                 }
             }
             // ScriptChecker.cs:986-995. The same unconditional seeding preprocContainer does --

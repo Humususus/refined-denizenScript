@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MetaCommand, MetaTag, MetaEvent, MetaMechanism, MetaProperty, MetaAction, MetaLanguage, MetaObjectType, MetaDocs, createEmptyMetaDocs, cleanTag } from './metaTypes';
+import { MetaCommand, MetaTag, MetaEvent, MetaMechanism, MetaProperty, MetaAction, MetaLanguage, MetaObjectType, MetaDocs, MetaDataValue, createEmptyMetaDocs, cleanTag, isInDataValueSet } from './metaTypes';
 
 describe('createEmptyMetaDocs', () => {
     it('creates empty maps for every meta type', () => {
@@ -305,5 +305,85 @@ describe('tag lookup sets', () => {
         tag.addTo(docs);
         expect(docs.tagBases.has('')).toBe(false);
         expect(docs.tagParts.has('')).toBe(false);
+    });
+});
+
+describe('MetaDataValue and the data value sets (MetaDocs.cs:97, MetaDataValue.cs:24-38)', () => {
+    function value(name: string, values: string): MetaDataValue {
+        const data = new MetaDataValue();
+        data.applyValue('name', name);
+        data.applyValue('values', values);
+        return data;
+    }
+
+    it('lowercases and trims each value, splitting on commas', () => {
+        // MetaDataValue.cs:38: `value.Split(',').Select(s => s.Trim().ToLowerFast())`.
+        expect(value('not_switches', ' Regex , Item_Flagged ,mythic_mob').values)
+            .toEqual(['regex', 'item_flagged', 'mythic_mob']);
+    });
+
+    it('lowercases the key name too', () => {
+        expect(value('NOT_SWITCHES', 'regex').dataKeyName).toBe('not_switches');
+    });
+
+    it('folds ASCII only, in both the name and the values', () => {
+        // MUTANT CAUGHT: toLowerFast -> toLowerCase. These are the folds that decide whether a
+        // lookup finds anything at all, and a Unicode fold would rewrite non-English entries.
+        const data = value('КЛЮЧ', 'ЗНАЧЕНИЕ, ASCII_VALUE');
+        expect(data.dataKeyName).toBe('КЛЮЧ');
+        expect(data.values).toEqual(['ЗНАЧЕНИЕ', 'ascii_value']);
+    });
+
+    it('files its values into the named set on addTo', () => {
+        const docs = createEmptyMetaDocs();
+        value('not_switches', 'regex,item_flagged').addTo(docs);
+        expect([...docs.dataValueSets.get('not_switches')!].sort()).toEqual(['item_flagged', 'regex']);
+    });
+
+    it('UNIONS with an existing set rather than replacing it', () => {
+        // MetaDataValue.cs:26 is GetOrCreate(...).UnionWith(...). Several <--[data] blocks may
+        // share a key name, and each contributes.
+        // MUTANT CAUGHT: `docs.dataValueSets.set(name, new Set(values))`, which would leave only
+        // whichever block happened to load last.
+        const docs = createEmptyMetaDocs();
+        value('not_switches', 'regex').addTo(docs);
+        value('not_switches', 'item_flagged').addTo(docs);
+        expect([...docs.dataValueSets.get('not_switches')!].sort()).toEqual(['item_flagged', 'regex']);
+    });
+
+    it('starts empty on a fresh docs object', () => {
+        expect(createEmptyMetaDocs().dataValueSets.size).toBe(0);
+    });
+});
+
+describe('isInDataValueSet (MetaDocs.cs:134-137)', () => {
+    function docsWith(name: string, values: string): MetaDocs {
+        const docs = createEmptyMetaDocs();
+        const data = new MetaDataValue();
+        data.applyValue('name', name);
+        data.applyValue('values', values);
+        data.addTo(docs);
+        return docs;
+    }
+
+    it('finds a value that is in the named set', () => {
+        expect(isInDataValueSet(docsWith('not_switches', 'regex,item_flagged'), 'not_switches', 'regex')).toBe(true);
+    });
+
+    it('answers false for a value not in the set', () => {
+        expect(isInDataValueSet(docsWith('not_switches', 'regex'), 'not_switches', 'chance')).toBe(false);
+    });
+
+    it('answers false for a set that does not exist at all', () => {
+        // The cold-start case: meta has not loaded, so every set is absent. Callers must read this
+        // as "no special case applies", never as "checking is off".
+        // MUTANT CAUGHT: `?? true`, or throwing on a missing set.
+        expect(isInDataValueSet(createEmptyMetaDocs(), 'not_switches', 'regex')).toBe(false);
+    });
+
+    it('does not confuse the set name with a value', () => {
+        // MUTANT CAUGHT: swapping the two parameters.
+        const docs = docsWith('not_switches', 'regex');
+        expect(isInDataValueSet(docs, 'regex', 'not_switches')).toBe(false);
     });
 });

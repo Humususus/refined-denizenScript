@@ -23,11 +23,6 @@ exports.checkSingleTag = exports.checkSingleDataLine = exports.checkSingleArgume
 const tagHelper_1 = require("../providers/tagHelper");
 const tagTracer_1 = require("../providers/tagTracer");
 const frenetic_1 = require("./frenetic");
-/** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
-function before(input, match) {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
 /**
  * Context for checking a single script container. Ported from ScriptChecker.cs:772-785.
  *
@@ -258,7 +253,7 @@ function checkSingleTag(checker, line, startChar, tag, context) {
         if (param !== null) {
             // `.Before('.')` -- `<[map.key]>` reads INTO a definition called `map`, so only the
             // part before the first dot is the name being looked up.
-            const name = before((0, frenetic_1.toLowerFast)(param), '.');
+            const name = (0, frenetic_1.before)((0, frenetic_1.toLowerFast)(param), '.');
             if (context !== null && !context.definitions.has(name) && !context.hasUnknowableDefinitions) {
                 warnPart(parsed.parts[0], 'def_of_nothing', 'Definition tag points to non-existent definition (typo, or bad copypaste?).');
             }

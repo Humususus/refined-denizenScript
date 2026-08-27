@@ -12,6 +12,12 @@
 // parseTag() *call* that populates this field belongs in metaLinker.ts, not
 // here; see that file's header for why.
 import type { SingleTag } from '../providers/tagHelper';
+// The ASCII-only fold every ToLowerFast() in SharpDenizenTools/MetaObjects/*.cs performs. It lives
+// under checker/ only because that is where the other Frenetic helpers landed first; the module
+// has no imports of its own, so depending on it here costs nothing. Do NOT substitute
+// toLowerCase(): meta names are ASCII today, but these folds also process script text, and a
+// Unicode fold rewrites Cyrillic, Greek and Turkish identifiers.
+import { toLowerFast } from '../checker/frenetic';
 
 export interface MetaType {
     name: string;
@@ -55,7 +61,7 @@ export function cleanTag(text: string): string {
 
 /** Strips structural symbols from an event name for a searchable "overly cleaned" form. Skips `(optional)` words entirely. */
 function overCleanEvent(evt: string): string {
-    const parts = evt.toLowerCase().split(' ');
+    const parts = toLowerFast(evt).split(' ');
     const kept: string[] = [];
     for (const part of parts) {
         if (part.startsWith('(') && part.endsWith(')')) {
@@ -79,7 +85,7 @@ export abstract class MetaObject {
     abstract get name(): string;
 
     get cleanName(): string {
-        return this.name.toLowerCase();
+        return toLowerFast(this.name);
     }
 
     applyValue(key: string, value: string): boolean {
@@ -97,7 +103,7 @@ export abstract class MetaObject {
                 this.deprecated = value;
                 return true;
             case 'synonyms':
-                this.synonyms.push(...value.split(',').map(s => s.trim().toLowerCase()).filter(s => s.length > 0));
+                this.synonyms.push(...value.split(',').map(s => toLowerFast(s.trim())).filter(s => s.length > 0));
                 return true;
             default:
                 return false;
@@ -266,7 +272,7 @@ export class MetaTag extends MetaObject {
                 else {
                     this.beforeDot = 'Base';
                 }
-                cleaned = cleaned.toLowerCase();
+                cleaned = toLowerFast(cleaned);
                 this.cleanedName = cleaned;
                 const dotIndex = cleaned.indexOf('.');
                 this.afterDotCleaned = dotIndex >= 0 ? cleaned.substring(dotIndex + 1) : '';
@@ -353,7 +359,7 @@ export class MetaEvent extends MetaObject {
         switch (key) {
             case 'events':
                 this.events = value.split('\n').filter(s => s.length > 0);
-                this.cleanEvents = this.events.map(s => s.toLowerCase().replace(/[<>'()]/g, ''));
+                this.cleanEvents = this.events.map(s => toLowerFast(s).replace(/[<>'()]/g, ''));
                 this.overlyCleanedEvents = this.events.map(overCleanEvent);
                 return true;
             case 'triggers':
@@ -369,7 +375,7 @@ export class MetaEvent extends MetaObject {
                 for (const switchLine of value.split('\n').filter(s => s.length > 0)) {
                     this.switches.push(switchLine);
                     const beforeSpace = switchLine.split(' ')[0];
-                    const switchName = beforeSpace.split(':')[0].toLowerCase();
+                    const switchName = toLowerFast(beforeSpace.split(':')[0]);
                     this.switchNames.add(switchName);
                 }
                 return true;
@@ -380,10 +386,10 @@ export class MetaEvent extends MetaObject {
                 this.determinations = value.split('\n').filter(s => s.length > 0);
                 return true;
             case 'cancellable':
-                this.cancellable = value.trim().toLowerCase() === 'true';
+                this.cancellable = toLowerFast(value.trim()) === 'true';
                 return true;
             case 'location':
-                this.hasLocation = value.trim().toLowerCase() === 'true';
+                this.hasLocation = toLowerFast(value.trim()) === 'true';
                 return true;
             case 'example':
                 this.examples.push(value);
@@ -521,9 +527,9 @@ export class MetaProperty extends MetaObject {
         const tag = new MetaTag();
         tag.type = META_TYPE_TAG;
         tag.tagFull = asTag;
-        tag.cleanedName = cleanedTag.toLowerCase();
+        tag.cleanedName = toLowerFast(cleanedTag);
         tag.beforeDot = cleanedTag.includes('.') ? cleanedTag.substring(0, cleanedTag.indexOf('.')) : 'Base';
-        const cleanedTagLower = cleanedTag.toLowerCase();
+        const cleanedTagLower = toLowerFast(cleanedTag);
         const dotIdx = cleanedTagLower.indexOf('.');
         tag.afterDotCleaned = dotIdx >= 0 ? cleanedTagLower.substring(dotIdx + 1) : '';
         tag.returns = this.input;
@@ -559,7 +565,7 @@ export class MetaAction extends MetaObject {
         switch (key) {
             case 'actions':
                 this.actions = value.split('\n').filter(s => s.length > 0);
-                this.cleanActions = this.actions.map(s => s.toLowerCase());
+                this.cleanActions = this.actions.map(toLowerFast);
                 return true;
             case 'triggers':
                 this.triggers = value;
@@ -631,7 +637,7 @@ export class MetaObjectType extends MetaObject {
     }
 
     get cleanName(): string {
-        return this.typeName.toLowerCase();
+        return toLowerFast(this.typeName);
     }
 
     applyValue(key: string, value: string): boolean {
@@ -640,7 +646,7 @@ export class MetaObjectType extends MetaObject {
                 this.typeName = value;
                 return true;
             case 'prefix':
-                this.prefix = value.toLowerCase();
+                this.prefix = toLowerFast(value);
                 return true;
             case 'base':
                 this.baseTypeName = value;
@@ -717,6 +723,12 @@ export class MetaExtension extends MetaObject {
                 this.extensionName = value;
                 return true;
             case 'include_existing':
+                // THE ONE toLowerCase() IN THIS FILE THAT STAYS. Every other fold here ports a
+                // ToLowerFast(); this one ports `bool.TryParse(value, out IncludeExisting)`
+                // (MetaExtension.cs:47), which is case-insensitive and whitespace-trimming, and
+                // yields false for anything that is not a boolean. Comparing a folded string to
+                // 'true' reproduces that, and the choice of fold cannot matter -- no non-ASCII
+                // input equals 'true' under either rule.
                 this.includeExisting = value.trim().toLowerCase() === 'true';
                 return true;
             default:
@@ -740,20 +752,31 @@ export class MetaDataValue extends MetaObject {
     applyValue(key: string, value: string): boolean {
         switch (key) {
             case 'name':
-                this.dataKeyName = value.toLowerCase();
+                this.dataKeyName = toLowerFast(value);
                 return true;
             case 'values':
-                this.values = value.split(',').map(s => s.trim().toLowerCase());
+                this.values = value.split(',').map(s => toLowerFast(s.trim()));
                 return true;
             default:
                 return super.applyValue(key, value);
         }
     }
 
-    addTo(_docs: MetaDocs): void {
-        // Phase 1 does not implement ExtraData/DataValueSets consumption
-        // (event-argument matching against Minecraft blocks/items/entities) —
-        // this class exists only so '<--[data]' blocks parse without error.
+    /**
+     * MetaDataValue.cs:24-27: `docs.DataValueSets.GetOrCreate(DataKeyName, () => []).UnionWith(Values)`.
+     *
+     * UNION, not assign. Several `<--[data]` blocks may share one key name, and each contributes
+     * its values to the same set rather than replacing what came before.
+     */
+    addTo(docs: MetaDocs): void {
+        let set = docs.dataValueSets.get(this.dataKeyName);
+        if (set === undefined) {
+            set = new Set<string>();
+            docs.dataValueSets.set(this.dataKeyName, set);
+        }
+        for (const value of this.values) {
+            set.add(value);
+        }
     }
 }
 
@@ -790,6 +813,16 @@ export interface MetaDocs {
      * bit of a deprecated tag.
      */
     tagDeprecations: Map<string, string>;
+    /**
+     * Internal data value sets, keyed by name. (MetaDocs.cs:97, `DataValueSets`)
+     *
+     * Filled from the `<--[data]` blocks in the meta. Two of these keys are load-bearing for event
+     * checking: `not_switches` lists the `word:word` shapes that are NOT switches (so an event line
+     * like `on player breaks block:stone` is not misread), and `global_switches` lists the switches
+     * every event accepts. Both are DATA rather than code precisely so that Denizen can add to them
+     * without a checker release -- which is why this must not be replaced with a hardcoded list.
+     */
+    dataValueSets: Map<string, Set<string>>;
     /** The ObjectTag root type, set by linkTypeGraph (MetaObjectType.cs:25-32). */
     objectTagType: MetaObjectType | null;
     /** The ElementTag root type, set by linkTypeGraph (MetaObjectType.cs:25-32). */
@@ -814,7 +847,20 @@ export function createEmptyMetaDocs(): MetaDocs {
         rawAdjustables: new Set(),
         tagParts: new Set(),
         tagDeprecations: new Map(),
+        dataValueSets: new Map(),
         objectTagType: null,
         elementTagType: null
     };
+}
+
+/**
+ * Whether the given text value is in the named data set. (MetaDocs.cs:134-137)
+ *
+ * A free function rather than a method because `MetaDocs` is an interface here, where the C# has a
+ * class. Missing set and missing value are the same answer -- false -- which matters on a cold
+ * start, when the meta has not loaded and every set is absent: callers must read that as "no
+ * special case applies", never as "checking is off".
+ */
+export function isInDataValueSet(docs: MetaDocs, set: string, text: string): boolean {
+    return docs.dataValueSets.get(set)?.has(text) ?? false;
 }

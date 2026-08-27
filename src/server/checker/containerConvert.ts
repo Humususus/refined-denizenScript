@@ -20,7 +20,7 @@ import type { ScriptSection, ScriptList, SectionValue } from './containerGather'
 // real, so a value import here would close a require() cycle at runtime. Same pattern as
 // lineChecks.ts and containerGather.ts.
 import type { ScriptChecker } from './scriptChecker';
-import { toLowerFast } from './frenetic';
+import { after, before, toLowerFast } from './frenetic';
 
 /**
  * The data of a script container. Ported from ScriptContainerData.cs:11-48.
@@ -77,24 +77,6 @@ export class ScriptingWorkspaceData {
             this.scripts.set(name, data);
         }
     }
-}
-
-/** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
-function before(input: string, match: string): string {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
-
-/**
- * FreneticUtilities' `string.After(char)`: everything after the first occurrence.
- *
- * Returns `''` when the character is absent, matching the "after" half of `beforeAndAfter` in
- * containerGather.ts. Every call site below guards on `startsWith('as:')` or `startsWith('key:')`
- * first, so the absent case is unreachable in practice.
- */
-function after(input: string, match: string): string {
-    const index = input.indexOf(match);
-    return index < 0 ? '' : input.slice(index + match.length);
 }
 
 /** ScriptChecker.cs:1958-1961's `StartsWithAny`. */

@@ -28,19 +28,6 @@ const frenetic_1 = require("./frenetic");
 const COMMANDS_WITH_COLONS_AND_ARGUMENTS = new Set(['if', 'else', 'foreach', 'while', 'repeat', 'choose', 'case']);
 /** ScriptChecker.cs:57-60 (`CommandsWithColonsButNoArguments`). */
 const COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS = new Set(['else', 'default', 'random']);
-/**
- * FreneticUtilities' `string.BeforeAndAfter(match, out after)`: everything before the first
- * occurrence of `match`, and everything after it. If `match` is absent the whole input is
- * returned as the "before" half and the "after" half is empty. Used at ScriptChecker.cs:1572,
- * where the `cleaned.Contains(": ")` guard at :1570 makes the absent case unreachable.
- */
-function beforeAndAfter(input, match) {
-    const index = input.indexOf(match);
-    if (index < 0) {
-        return [input, ''];
-    }
-    return [input.slice(0, index), input.slice(index + match.length)];
-}
 /** C#'s `string.IsNullOrWhiteSpace`. Used at ScriptChecker.cs:1538. */
 function isNullOrWhiteSpace(text) {
     return text.trim().length === 0;
@@ -395,7 +382,7 @@ function gatherActualContainers(checker) {
         else if (cleaned.includes(': ')) {
             // ScriptChecker.cs:1570-1574: taken from the tab-expanded RAW line, so NOT lowercased
             // -- :1629/:1633 lowercase the key half explicitly, and the value half never is.
-            [startofline, endofline] = beforeAndAfter(line.trim(), ': ');
+            [startofline, endofline] = (0, frenetic_1.beforeAndAfter)(line.trim(), ': ');
             // C# QUIRK, ported verbatim: only the key's length is added, not `": ".length`, so
             // `endIndex` lands on the ':' rather than on the first character of the value.
             endIndex += startofline.length;

@@ -15,7 +15,7 @@ import type { ScriptContainerData } from './containerConvert';
 import { contextValidatedIsValidScriptName } from './containerConvert';
 import { buildArgs } from './buildArgs';
 import { containsObjectNotation, checkSingleArgument, checkSingleTag } from './tagChecks';
-import { toLowerFast } from './frenetic';
+import { after, before, toLowerFast } from './frenetic';
 
 /**
  * Everything a per-command checker gets to look at.
@@ -140,18 +140,6 @@ export function argHasPrefix(arg: string): boolean {
         }
     }
     return false;
-}
-
-/** FreneticUtilities' `string.Before(char)`. */
-function before(input: string, match: string): string {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
-
-/** FreneticUtilities' `string.After(char)`: everything after the first occurrence, else ''. */
-function after(input: string, match: string): string {
-    const index = input.indexOf(match);
-    return index < 0 ? '' : input.slice(index + match.length);
 }
 
 /** ScriptChecker.cs:1958-1961's `StartsWithAny`. */

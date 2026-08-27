@@ -25,13 +25,7 @@ import type { ScriptChecker } from './scriptChecker';
 import { parseTag } from '../providers/tagHelper';
 import { traceTag } from '../providers/tagTracer';
 import type { TagPart } from '../providers/tagHelper';
-import { toLowerFast } from './frenetic';
-
-/** FreneticUtilities' `string.Before(char)`: everything before the first occurrence, else all of it. */
-function before(input: string, match: string): string {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
+import { before, toLowerFast } from './frenetic';
 
 /**
  * Context for checking a single script container. Ported from ScriptChecker.cs:772-785.

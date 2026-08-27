@@ -117,16 +117,6 @@ function argHasPrefix(arg) {
     return false;
 }
 exports.argHasPrefix = argHasPrefix;
-/** FreneticUtilities' `string.Before(char)`. */
-function before(input, match) {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
-}
-/** FreneticUtilities' `string.After(char)`: everything after the first occurrence, else ''. */
-function after(input, match) {
-    const index = input.indexOf(match);
-    return index < 0 ? '' : input.slice(index + match.length);
-}
 /** ScriptChecker.cs:1958-1961's `StartsWithAny`. */
 function startsWithAny(input, ...checks) {
     return checks.some(s => input.startsWith(s));
@@ -174,7 +164,7 @@ register(['adjust'], (details) => {
     // :143-144. The C# reads the AMBIENT `MetaDocs.CurrentMeta` here while using
     // `details.Checker.Meta` twelve lines earlier; there is no such singleton in this repo, so
     // both go through the checker.
-    const mechanismName = (0, frenetic_1.toLowerFast)(before(mechanism.text, ':'));
+    const mechanismName = (0, frenetic_1.toLowerFast)((0, frenetic_1.before)(mechanism.text, ':'));
     const possible = Array.from(meta.mechanisms.values()).filter(m => m.mechName === mechanismName);
     let mech = null;
     if (possible.length === 1) {
@@ -201,7 +191,7 @@ register(['adjust'], (details) => {
     // :176-184
     const defArg = details.arguments.find(s => s.text.startsWith('def:'));
     if (defArg !== undefined) {
-        const defName = (0, frenetic_1.toLowerFast)(after(defArg.text, ':'));
+        const defName = (0, frenetic_1.toLowerFast)((0, frenetic_1.after)(defArg.text, ':'));
         if (!details.context.definitions.has(defName) && !details.context.hasUnknowableDefinitions) {
             details.warn(details.checker.errors, 'bad_adjust_unknown_def', 'Malformed adjust command. Definition name given is unrecognized.', defArg.startChar, defArg.startChar + defArg.text.length);
         }
@@ -214,7 +204,7 @@ register(['execute'], (details) => {
         const bukkitCommandArg = (0, frenetic_1.toLowerFast)(details.arguments[0].text).startsWith('as_')
             ? details.arguments[1].text
             : details.arguments[0].text;
-        const bukkitCommandName = (0, frenetic_1.toLowerFast)(before(bukkitCommandArg, ' '));
+        const bukkitCommandName = (0, frenetic_1.toLowerFast)((0, frenetic_1.before)(bukkitCommandArg, ' '));
         if (exports.BAD_EXECUTE_COMMANDS.has(bukkitCommandName) || bukkitCommandName.startsWith('minecraft:') || bukkitCommandName.startsWith('bukkit:')) {
             details.warn(details.checker.warnings, 'bad_execute', "Inappropriate usage of the 'execute' command. Execute is for external plugin interop, and should never be used for vanilla commands. Use the relevant Denizen script command or mechanism instead.");
         }
@@ -259,7 +249,7 @@ register(['define', 'definemap'], (details) => {
         // the same user ruling: the C# (:229) cuts at ':' and '.' but NOT at '[', so
         // `- define background[46]:x` records `background[46]` -- a name no tag can reference.
         // See the long note at the other site for the measurements behind the ruling.
-        const defName = before(before((0, frenetic_1.toLowerFast)(before(details.arguments[0].text, ':')), '.'), '[');
+        const defName = (0, frenetic_1.before)((0, frenetic_1.before)((0, frenetic_1.toLowerFast)((0, frenetic_1.before)(details.arguments[0].text, ':')), '.'), '[');
         details.trackDefinition(defName);
     }
 });

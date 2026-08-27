@@ -25,7 +25,7 @@ import { countPreSpaces, firstNonWhitespaceIndex } from './lineChecks';
 // real, so a value import here would close a require() cycle at runtime. Same pattern as
 // lineChecks.ts.
 import type { ScriptChecker } from './scriptChecker';
-import { toLowerFast } from './frenetic';
+import { beforeAndAfter, toLowerFast } from './frenetic';
 
 /**
  * One key/value pair of a script section.
@@ -81,20 +81,6 @@ const COMMANDS_WITH_COLONS_AND_ARGUMENTS = new Set<string>(['if', 'else', 'forea
 
 /** ScriptChecker.cs:57-60 (`CommandsWithColonsButNoArguments`). */
 const COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS = new Set<string>(['else', 'default', 'random']);
-
-/**
- * FreneticUtilities' `string.BeforeAndAfter(match, out after)`: everything before the first
- * occurrence of `match`, and everything after it. If `match` is absent the whole input is
- * returned as the "before" half and the "after" half is empty. Used at ScriptChecker.cs:1572,
- * where the `cleaned.Contains(": ")` guard at :1570 makes the absent case unreachable.
- */
-function beforeAndAfter(input: string, match: string): [string, string] {
-    const index = input.indexOf(match);
-    if (index < 0) {
-        return [input, ''];
-    }
-    return [input.slice(0, index), input.slice(index + match.length)];
-}
 
 /** C#'s `string.IsNullOrWhiteSpace`. Used at ScriptChecker.cs:1538. */
 function isNullOrWhiteSpace(text: string): boolean {

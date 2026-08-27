@@ -19,7 +19,7 @@ import type { ScriptChecker } from './scriptChecker';
 import type { ScriptSection, ScriptList } from './containerGather';
 import type { ScriptContainerData } from './containerConvert';
 import type { ScriptWarning } from './scriptWarnings';
-import { toLowerFast } from './frenetic';
+import { before, toLowerFast } from './frenetic';
 
 /** Characters a script title may contain. Ported from ScriptChecker.cs:910. */
 const SCRIPT_TITLE_CHARACTERS_ALLOWED = 'abcdefghijklmnopqrstuvwxyz0123456789_';
@@ -32,12 +32,6 @@ function isOnlyTitleCharacters(text: string): boolean {
         }
     }
     return true;
-}
-
-/** FreneticUtilities' `string.Before(char)`. */
-function before(input: string, match: string): string {
-    const index = input.indexOf(match);
-    return index < 0 ? input : input.slice(0, index);
 }
 
 /** Escapes a backtick for a message, as the C# does with `Replace('`', '\'')`. */
