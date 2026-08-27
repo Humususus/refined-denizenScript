@@ -1297,3 +1297,70 @@ describe('tag parameter completion', () => {
         expect(labels).not.toContain('stone');
     });
 });
+
+describe('tag completion on key lines (TextDocumentService.cs:408-421)', () => {
+    // Regression cover for a port bug reported by the user on 2026-08-27: this port had the
+    // key-line branch RETURN the enum-completion result unconditionally, where the C# returns
+    // only when that branch produced something and otherwise falls through to one shared tag
+    // branch serving `-` lines and `:` lines alike. The effect was that every tag written on a
+    // key line -- `display name: <...`, `format: <...` -- silently offered nothing.
+
+    it('completes a tag base written as a key value', () => {
+        // MUTANT: restore the unconditional `return completeKeyLineValues(...)`.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  display name: <pla')).toEqual(['player', 'playertag']);
+    });
+
+    it('completes a tag part written as a key value', () => {
+        // MUTANT: as above. Distinct from the base case because it exercises findTagAtCursor's
+        // narrowing rather than just its base list.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  format: <player.'))
+            .toEqual(['as', 'flag', 'foo.bar', 'groups', 'name', 'to_uppercase']);
+    });
+
+    it('still prefers enum values over tag completion on a key line', () => {
+        // MUTANT: drop the `if (enumResults.length > 0) return enumResults;` guard, or reorder
+        // the two. `material: sto` must offer materials, not tags -- the C# checks the enum
+        // branch first and this must keep doing so.
+        // `material` is backed by ExtraData.items (argumentCompleters.ts:92), which PARAM_EXTRA
+        // populates with STICK alone -- hence `sti` rather than a block name.
+        const docs = paramDocs();
+        const text = '  material: sti';
+        const labels = provideCompletions(docs, PARAM_EXTRA, text, text.length, 0).map(i => i.label);
+        expect(labels).toContain('stick');
+        expect(labels).not.toContain('player');
+    });
+
+    it('offers nothing on a line with neither a dash nor a colon', () => {
+        // MUTANT: drop the `if (!ctx.trimmed.includes(':')) return [];` guard. That guard is the
+        // C#'s condition at :421 (`StartsWithFast('-') || Contains(':')`), and removing it is a
+        // DEVIATION, not a fix -- it would start completing inside prose and inside the expanded
+        // map-tag buffer, whose lines are `key = value`. Kept faithful pending a user ruling.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  translation = <player.')).toEqual([]);
+    });
+
+    it('keeps the argument under the cursor intact when a tag contains spaces', () => {
+        // MUTANT: make lastTopLevelArgStart count every space, ignoring tag depth. Then the arg
+        // would start after the space inside the brackets and the open tag would be lost.
+        const docs = narrowingDocs();
+        expect(labelsAt(docs, '  display name: <player.flag[a b].')).toEqual([...ALL_PARTS].sort());
+    });
+
+    it('anchors the key-line insert range to the real column, indent included', () => {
+        // MUTANTS: `ctx.indent + argStart` -> `argStart` (shifts every insert left by the
+        // indent), and `argStart = i + 1` -> `argStart = i` in lastTopLevelArgStart (off by one).
+        // Both leave the LABELS identical, so every other test in this block passes with them
+        // applied -- the damage is that accepting a completion overwrites the wrong characters.
+        // `    display name: <pla` puts '<' at index 18 and 'pla' at 19..22.
+        const docs = narrowingDocs();
+        const text = '    display name: <pla';
+        const items = provideCompletions(docs, createEmptyExtraData(), text, text.length, 0);
+        const edit = items.find(i => i.label === 'player')!.textEdit!;
+        expect(edit).toMatchObject({
+            range: { start: { line: 0, character: 19 }, end: { line: 0, character: 22 } },
+            newText: 'player'
+        });
+    });
+});

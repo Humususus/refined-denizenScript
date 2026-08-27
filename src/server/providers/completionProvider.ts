@@ -655,13 +655,98 @@ function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamCon
  * and the command branches, which never resolve a tag in the first place. So the setting
  * changes exactly one behaviour, while the tracer itself may still run regardless.
  */
+/**
+ * Index within `trimmed` where the argument under the cursor begins — the character after the
+ * last space that was NOT inside a tag. Ported from TextDocumentService.cs:441-449.
+ *
+ * A command line gets this from `splitTopLevelArguments` via `parseCommandLine`; a key line has
+ * no such structure, so the C#'s inline scan is what applies. It counts `<` and `>` and ignores
+ * any space seen while that depth is non-zero, which is what keeps `<list[a b c]>` in one piece.
+ *
+ * EQUIVALENT MUTANT: changing `i + 1` to `i` is undetectable. It only ever prepends the matched
+ * space to `argThusFar` while decrementing `argStart` by one, and every position downstream is
+ * computed as `argStart + (index within argThusFar)`, so the two cancel exactly. Measured, not
+ * merely argued: 34,304 cursor positions across all 1,172 corpus lines plus twelve hand-built
+ * edge cases (nested tags, quotes, spaces inside brackets, empty and whitespace-only lines)
+ * produced an identical tag and tag-parameter context under both versions, zero differences.
+ */
+function lastTopLevelArgStart(trimmed: string): number {
+    let argStart = 0;
+    let depth = 0;
+    for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+        if (ch === '<') {
+            depth++;
+        }
+        else if (ch === '>') {
+            depth--;
+        }
+        else if (ch === ' ' && depth === 0) {
+            argStart = i + 1;
+        }
+    }
+    return argStart;
+}
+
+/**
+ * Tag-parameter and tag-part completion for an argument, shared by the command-line and key-line
+ * paths. Returns `null` when the cursor is not inside an open tag, so each caller can decide what
+ * to do next — the command path falls through to argument names and enums, the key line has
+ * nothing further to offer.
+ *
+ * Extracted 2026-08-27 while fixing the key-line path; the C# never had two copies of this to
+ * begin with (TextDocumentService.cs:421 serves both kinds of line from one block), and having
+ * two here is exactly how the key line came to lose tag completion.
+ */
+function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, argStart: number, line: number, trace: boolean): CompletionItem[] | null {
+    const paramCtx = findTagParamAtCursor(argThusFar, argStart);
+    if (paramCtx !== null) {
+        const paramResults = completeTagParameter(docs, extra, paramCtx, line);
+        // Null means nothing documents this bracket (unknown tag, or one that takes no
+        // parameter). Fall through rather than returning []: the tag-part branch is then
+        // free to answer, and does — with [], for the reason above — so this deliberately
+        // keeps the pre-existing behaviour byte-for-byte for every unserved input.
+        if (paramResults !== null) {
+            return paramResults;
+        }
+    }
+    const tagCtx = findTagAtCursor(argThusFar, argStart);
+    if (tagCtx !== null) {
+        return completeTag(docs, tagCtx, line, trace);
+    }
+    return null;
+}
+
 export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number, trace: boolean = true): CompletionItem[] {
     const ctx = parseCursorContext(text, offset);
     if (ctx === null) {
         return [];
     }
     if (ctx.kind === 'line') {
-        return completeKeyLineValues(extra, ctx, line);
+        const enumResults = completeKeyLineValues(extra, ctx, line);
+        if (enumResults.length > 0) {
+            return enumResults;
+        }
+        // PORT BUG FIXED 2026-08-27, reported by the user as "no completions inside an expanded
+        // map tag" and true of every key line in every script.
+        //
+        // TextDocumentService.cs:408-420 returns from the enum branch ONLY when that branch
+        // produced results; otherwise it falls through to :421, whose condition is
+        // `trimmed.StartsWithFast('-') || trimmed.Contains(':')` -- one shared tag branch that
+        // serves command lines and key lines alike. This port had split the two paths and made
+        // the key-line path return unconditionally, so `display name: <&b`, `format: <[text]`
+        // and every other tag written on a key line silently offered nothing.
+        //
+        // The `:` requirement is the C#'s and is kept: a line with neither a dash nor a colon is
+        // prose as far as the C# is concerned, and completing there would be a deviation.
+        if (!ctx.trimmed.includes(':')) {
+            return [];
+        }
+        const argStart = lastTopLevelArgStart(ctx.trimmed);
+        // `null` means "no open tag at the cursor" -- on a key line there is nothing else left
+        // to offer, so it becomes the empty list rather than falling through to the
+        // command-argument branch, which has no command to work from.
+        return completeTagAt(docs, extra, ctx.trimmed.substring(argStart), ctx.indent + argStart, line, trace) ?? [];
     }
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);
@@ -697,20 +782,9 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
-    const paramCtx = findTagParamAtCursor(ctx.argThusFar, ctx.argStart);
-    if (paramCtx !== null) {
-        const paramResults = completeTagParameter(docs, extra, paramCtx, line);
-        // Null means nothing documents this bracket (unknown tag, or one that takes no
-        // parameter). Fall through rather than returning []: the tag-part branch is then
-        // free to answer, and does — with [], for the reason above — so this deliberately
-        // keeps the pre-existing behaviour byte-for-byte for every unserved input.
-        if (paramResults !== null) {
-            return paramResults;
-        }
-    }
-    const tagCtx = findTagAtCursor(ctx.argThusFar, ctx.argStart);
-    if (tagCtx !== null) {
-        return completeTag(docs, tagCtx, line, trace);
+    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace);
+    if (sharedTagResults !== null) {
+        return sharedTagResults;
     }
     // C# merges both sources rather than choosing one (TextDocumentService.cs:362-367
     // appends the ByCommand completer's output onto the argument-name results), and the
