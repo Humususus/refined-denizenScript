@@ -36,8 +36,10 @@ Silence warnings you don't want without touching the script:
 - Type a delimited value like `/[]/` to turn it into `<&lb><&rb>`.
 - Press <kbd>Backspace</kbd> right after a conversion to undo it back to the original `/…/` text.
 
-### DenizenM support
-Completion and hover documentation for [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1) — escape tags, base tags, dot tags, commands, command arguments and events. DenizenM syntax is also excluded from diagnostics, so the base Denizen checker doesn't flag it as invalid.
+### Third-party add-on support
+Add-ons like [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1), BetterModel or DiscordSRV are supported by loading their own meta documentation, not by a built-in list. Point `denizenscript.server.extra_sources` at their meta `.zip` archives and their commands, tags, mechanisms and events become first-class: real completion, real hover, and no false "unknown command" diagnostics.
+
+This replaced a hardcoded table of a few dozen entries. The table could only guess — it offered every entry at every position regardless of what object preceded it, and suppressed diagnostics by matching words as generic as `teleport` and `async`, which silently hid real errors.
 
 ### Denizen-Utilities support
 - `dialog` snippet for scaffolding a dialog container.
