@@ -87,6 +87,58 @@ describe('loadMetaDocs caching', () => {
         expect(fs.existsSync(cacheFile)).toBe(true);
     });
 
+    it('does NOT cache a download in which a source failed to fetch', async () => {
+        // THE BUG THIS GATE DIED OF, hit while running the verify scripts on 2026-08-28. Sources
+        // are fetched in parallel, so one failing still leaves the others' blocks -- and the old
+        // `blocks.length > 0` gate happily wrote that fraction to disk, where the TTL then served
+        // it for twelve hours. The caches written during that wobble held 536 tags instead of
+        // 2493: completion went near-empty and the checker called 87% of real command lines
+        // unknown commands.
+        // MUTANT CAUGHT: dropping the failedSources half of the condition.
+        const partial: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
+        const downloadSpy = vi.fn(async () => ({
+            blocks: partial,
+            loadErrors: ['Source download error for https://example.com/b.zip: socket hang up'],
+            failedSources: ['https://example.com/b.zip']
+        }));
+        const docs = await loadMetaDocs({
+            cacheFile, ttlMs: 1000 * 60,
+            sources: ['https://example.com/a.zip', 'https://example.com/b.zip'],
+            downloadFn: downloadSpy
+        });
+        // The half that arrived is still SERVED -- degrading to nothing would be worse than
+        // degrading to less -- it is only the persisting that is refused.
+        expect(docs.commands.get('foo')).toBeDefined();
+        expect(fs.existsSync(cacheFile)).toBe(false);
+    });
+
+    it('caches a download whose sources all fetched but one had a PARSE complaint', async () => {
+        // `loadErrors` mixes fetch failures with parse complaints from sources that downloaded
+        // perfectly well. Gating on it would mean never caching at all the moment upstream meta
+        // contains one malformed block, turning every editor start into a full re-download.
+        // MUTANT CAUGHT: gating on `loadErrors.length === 0` instead of `failedSources`.
+        const blocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
+        const downloadSpy = vi.fn(async () => ({
+            blocks,
+            loadErrors: ['While processing s#L2 found unknown meta type "nonsense".'],
+            failedSources: [] as string[]
+        }));
+        await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/a.zip'], downloadFn: downloadSpy });
+        expect(fs.existsSync(cacheFile)).toBe(true);
+    });
+
+    it('treats a stub that omits failedSources as "everything fetched"', async () => {
+        // The field is optional so an injected fake need not simulate the network, and every other
+        // caching test in this file relies on that reading -- an absent field must mean "no
+        // failures", not "unknown, so refuse to cache".
+        // MUTANT CAUGHT: `result.failedSources.length === 0` without the `?? []`, which throws; or
+        // treating undefined as a failure, which would silently stop the cache ever being written.
+        const blocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
+        const downloadSpy = vi.fn(async () => ({ blocks, loadErrors: [] as string[] }));
+        await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/a.zip'], downloadFn: downloadSpy });
+        expect(fs.existsSync(cacheFile)).toBe(true);
+    });
+
     it('reuses the cache file within the TTL window instead of downloading again', async () => {
         // The cache records the source list it was built from, so the fixture has to as well.
         const fakeBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];

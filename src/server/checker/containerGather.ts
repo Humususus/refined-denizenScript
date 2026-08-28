@@ -108,6 +108,14 @@ function setEntry(section: ScriptSection, key: LineTrackedString, value: Section
 /**
  * C#'s `section.Keys.Last()` (ScriptChecker.cs:1590), or `null` for an empty section --
  * the C# guards that case with `sec.Any() &&` before calling `.Last()`.
+ *
+ * O(n) IN THE SECTION SIZE, and so is the C#: `.Last()` on a `Dictionary` has no indexer to jump
+ * to and walks the whole thing. Called per line, this makes a section with very many keys
+ * quadratic overall. Measured at the shape that provokes it -- a hot `random:` key line over a
+ * flat section -- it costs 55 ms at 20,000 keys, which no real script approaches; the largest
+ * container in the user's corpus has tens. Noted rather than optimised, because a Map preserves
+ * insertion order and the fix (tracking the last inserted key alongside) would add state to keep
+ * in sync for a cost nothing pays.
  */
 function lastKey(section: ScriptSection): LineTrackedString | null {
     let last: LineTrackedString | null = null;
@@ -267,14 +275,18 @@ export function gatherActualContainers(checker: ScriptChecker): ScriptSection {
         // ScriptChecker.cs:1430-1460: a dedent. Restore whatever was open at the new width.
         if (spaces < pspaces) {
             const tempList = spacedlists.get(spaces);
-            const temp = spacedsections.get(spaces);
+            // Looked up INSIDE the else, not beside `tempList`. The C#'s `else if` short-circuits
+            // (:1436), so on the list path the section map is never probed; hoisting the lookup
+            // out, as this once did, made the two languages differ in work done while agreeing on
+            // every answer. A Map probe is cheap, so this is about the code saying what the C#
+            // says -- but it is also the shape a reader diffing the two files expects to find.
             if (tempList !== undefined) {
                 // ScriptChecker.cs:1432-1435. NOTE: a list restore does NOT also restore
                 // `currentSection` -- lists win, and the section pointer is left where it was.
                 clist = tempList;
-            } else if (temp !== undefined) {
+            } else if (spacedsections.has(spaces)) {
                 // ScriptChecker.cs:1436-1439
-                currentSection = temp;
+                currentSection = spacedsections.get(spaces)!;
             } else {
                 // ScriptChecker.cs:1440-1445: dedented to a width that was never opened. This is
                 // the branch that keeps a mis-indented file from crashing the parser.

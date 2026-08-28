@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { normaliseDocParam, completeTagParam, ParamCandidate, TAG_PARAM_COMPLETERS } from './tagParamCompleters';
+import { ScriptingWorkspaceData, ScriptContainerData } from '../checker/containerConvert';
 import { buildExtraData, parseFlatFds, ExtraData } from '../metaDocs/extraData';
 import { createEmptyMetaDocs, MetaDocs, MetaMechanism, MetaTag } from '../metaDocs/metaTypes';
 
@@ -153,27 +154,45 @@ describe('completeTagParam: ByTag table (CommandTabCompletions.cs:80-95, :141-14
     });
 
     it('registers exactly the servable ByTag specs', () => {
+        // Grew by four in Phase 2D: the three script-container specs and <inventory>, all of
+        // which needed the workspace index that did not exist before it.
         expect([...TAG_PARAM_COMPLETERS.keys()].sort()).toEqual([
             '<biome>',
             '<effect>',
             '<enchantment>',
             '<entity_type>',
+            '<format_script>',
+            '<inventory>',
             '<item>',
             '<material>',
             '<mechanism>=<value>',
             '<mechanism>=<value>;...',
+            '<procedure_script_name>',
             '<property-map>',
             '<property-name>',
+            '<script>',
             '<statistic>'
         ]);
     });
 
-    it('returns nothing for the deliberately unported ByTag specs', () => {
-        // <script>, <procedure_script_name> and <format_script> need SuggestScriptByType
-        // (workspace tracking, Phase 2D); <inventory> needs ExtraData.InventoryMatchers,
-        // which this port's ExtraData does not expose; <custom_color_name> needs
-        // ClientConfiguration.TextColorMap, which is not ported.
-        for (const spec of ['<script>', '<procedure_script_name>', '<format_script>', '<inventory>', '<custom_color_name>']) {
+    it('returns nothing for the one ByTag spec still unported', () => {
+        // <custom_color_name> (:95) needs ClientConfiguration.TextColorMap, which this port does
+        // not have. Everything else in the table is served.
+        expect(complete('<custom_color_name>', '')).toEqual([]);
+    });
+
+    it('offers the inventory labels without needing a workspace', () => {
+        // SuggestInventoryType (:231-239) is enum + scripts, and the enum half is
+        // INVENTORY_MATCHERS -- a hardcoded constant, so it answers with no workspace at all.
+        // MUTANT CAUGHT: leaving <inventory> unregistered, or backing it with an ExtraData set.
+        const labelsFor = labels(complete('<inventory>', 'ender'));
+        expect(labelsFor.sort()).toEqual(['ender_chest', 'enderchest']);
+    });
+
+    it('offers nothing for the script specs when there is no workspace', () => {
+        // The null-workspace guard, which is what makes these safe to register before the first
+        // scan finishes. MUTANT CAUGHT: dropping the guard in suggestScriptByType.
+        for (const spec of ['<script>', '<procedure_script_name>', '<format_script>']) {
             expect(complete(spec, '')).toEqual([]);
         }
     });
@@ -306,5 +325,102 @@ describe('completeTagParam: candidate kind discriminator', () => {
         expect(complete('true/false', '')[0].kind).toBe('tagPiece');
         expect(complete('<property-name>', 'ma')[0].kind)
             .not.toBe(complete('true/false', '')[0].kind);
+    });
+});
+
+describe('completeTagParam: workspace script containers (SuggestScriptByType, :271-279)', () => {
+    /** A workspace holding one container per named type. */
+    function workspaceOf(...entries: [string, string][]): ScriptingWorkspaceData {
+        const data = new ScriptingWorkspaceData();
+        for (const [name, type] of entries) {
+            const container = new ScriptContainerData();
+            container.name = name;
+            container.type = type;
+            data.scripts.set(name, container);
+        }
+        return data;
+    }
+
+    const WORKSPACE = workspaceOf(
+        ['my_proc', 'procedure'],
+        ['my_other_proc', 'procedure'],
+        ['my_task', 'task'],
+        ['my_item', 'item'],
+        ['my_book', 'book'],
+        ['my_format', 'format'],
+        ['my_inventory', 'inventory'],
+        ['my_entity', 'entity'],
+        ['my_enchantment', 'enchantment'],
+        ['_private_task', 'task']
+    );
+
+    function completeWith(docParam: string, typed: string, workspace = WORKSPACE): ParamCandidate[] {
+        return completeTagParam(DOCS, DATA, docParam, typed, TAG, workspace);
+    }
+
+    it('offers every container type for <script>', () => {
+        // :82 registers <script> with a null type, meaning any container at all.
+        // MUTANT CAUGHT: passing a concrete type instead of null.
+        expect(labels(completeWith('<script>', 'my_')).sort())
+            .toEqual(['my_book', 'my_enchantment', 'my_entity', 'my_format', 'my_inventory', 'my_item', 'my_other_proc', 'my_proc', 'my_task']);
+    });
+
+    it('offers only procedures for <procedure_script_name>', () => {
+        // MUTANT CAUGHT: dropping the type filter, which would offer every container.
+        expect(labels(completeWith('<procedure_script_name>', '')).sort()).toEqual(['my_other_proc', 'my_proc']);
+    });
+
+    it('offers only format scripts for <format_script>', () => {
+        expect(labels(completeWith('<format_script>', ''))).toEqual(['my_format']);
+    });
+
+    it('filters by the typed prefix', () => {
+        expect(labels(completeWith('<procedure_script_name>', 'my_o'))).toEqual(['my_other_proc']);
+    });
+
+    it('hides a leading-underscore name until the underscore is typed', () => {
+        // :278's `arg.StartsWith('_') || !s.Name.StartsWith('_')`. A `_`-prefixed script is
+        // private by convention, so it stays out of the list until asked for by name.
+        // MUTANT CAUGHT: dropping the underscore rule either way round.
+        expect(labels(completeWith('<script>', ''))).not.toContain('_private_task');
+        expect(labels(completeWith('<script>', '_'))).toEqual(['_private_task']);
+    });
+
+    it('adds scripts to the enum for <item>, from BOTH the item and book types', () => {
+        // SuggestItem (:261-267) concatenates the item enum with TWO script lookups. The book
+        // half is the easy one to lose.
+        // MUTANT CAUGHT: dropping either script type, or replacing the enum instead of adding.
+        const found = labels(completeWith('<item>', ''));
+        expect(found).toContain('stick');
+        expect(found).toContain('my_item');
+        expect(found).toContain('my_book');
+    });
+
+    it('adds scripts to the enum for <entity_type> and <enchantment>', () => {
+        expect(labels(completeWith('<entity_type>', ''))).toEqual(['zombie', 'my_entity']);
+        expect(labels(completeWith('<enchantment>', ''))).toEqual(['sharpness', 'my_enchantment']);
+    });
+
+    it('adds scripts to the hardcoded label list for <inventory>', () => {
+        const found = labels(completeWith('<inventory>', 'my_'));
+        expect(found).toEqual(['my_inventory']);
+        // And the labels are still there alongside.
+        expect(labels(completeWith('<inventory>', 'chest'))).toEqual(['chest']);
+    });
+
+    it('marks script candidates with their own kind and carries the container', () => {
+        // The caller needs both: the kind picks CompletionItemKind.Method, and the container is
+        // what `describeScript` renders. MUTANT CAUGHT: reusing the 'enum' kind, or dropping the
+        // container and leaving the caller to look the name up again.
+        const [candidate] = completeWith('<format_script>', '');
+        expect(candidate.kind).toBe('script');
+        expect(candidate.script).toBeDefined();
+        expect(candidate.script!.name).toBe('my_format');
+    });
+
+    it('offers no scripts when the workspace is empty, but keeps the enum half', () => {
+        const empty = new ScriptingWorkspaceData();
+        expect(labels(completeWith('<script>', '', empty))).toEqual([]);
+        expect(labels(completeWith('<item>', '', empty))).toEqual(['stick']);
     });
 });

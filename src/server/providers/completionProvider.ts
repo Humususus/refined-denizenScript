@@ -8,7 +8,8 @@
 
 import { CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand, MetaTag } from '../metaDocs/metaTypes';
-import { describeCommand, describeTag, descriptionClean, linkMeta, obligatoryText } from './describe';
+import { describeCommand, describeScript, describeTag, descriptionClean, linkMeta, obligatoryText } from './describe';
+import type { ScriptingWorkspaceData } from '../checker/containerConvert';
 import { parseCursorContext, LineCursorContext } from './cursorContext';
 import { findTagAtCursor, findTagParamAtCursor, TagCursorContext, TagParamContext } from './tagContext';
 import { ExtraData } from '../metaDocs/extraData';
@@ -173,7 +174,7 @@ export function completeKeyLineValues(extra: ExtraData, ctx: LineCursorContext, 
  * condition already covers, by identity rather than by name.
  */
 function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: string, range: Range): CompletionItem[] | null {
-    const beforeLastDot = tag.tagSoFar.substring(0, tag.lastComponentStart - tag.tagStart - 1);
+    const beforeLastDot = tag.beforeLastComponent;
     // Parse errors are irrelevant here — this is a half-typed tag by definition, and the
     // tracer copes with whatever parts come out. Diagnostics are a later phase.
     const parsed = parseTag(beforeLastDot, () => { /* ignore */ });
@@ -277,7 +278,11 @@ function completeTagNarrowed(docs: MetaDocs, tag: TagCursorContext, prefix: stri
             textEdit,
             // Unlike the flat branch, this IS the tag being completed, so its own
             // documentation is genuinely its own — no namespace-collision risk, and so
-            // no need for that branch's `componentCount === 0` gate.
+            // no need for that branch's `componentCount === 0` gate. The same holds for
+            // the detail: TextDocumentService.cs:532 passes `tag.Name` here too, and here
+            // it is unconditional because the candidate IS a MetaTag rather than a string
+            // that may or may not resolve to one.
+            detail: candidate.name,
             documentation: describeTag(candidate)
         });
     }
@@ -417,6 +422,13 @@ export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number,
             if (tag.componentCount === 0) {
                 const doc = docs.tags.get(candidate);
                 if (doc !== undefined) {
+                    // TextDocumentService.cs:508 passes `tagDoc.Name` as the item's DETAIL and
+                    // `DescribeTag(tagDoc)` as its documentation. The detail is the tag's full
+                    // signature -- `<PlayerTag.name>` beside the label `name` -- which is what
+                    // tells the two `name` parts on different object types apart in the list.
+                    // Set together with the documentation, and only here, because C# falls back
+                    // to a two-argument constructor with NEITHER when the lookup misses (:509).
+                    item.detail = doc.name;
                     item.documentation = describeTag(doc);
                 }
             }
@@ -439,7 +451,10 @@ export function completeTag(docs: MetaDocs, tag: TagCursorContext, line: number,
 const PARAM_CANDIDATE_KINDS: Record<ParamCandidateKind, CompletionItemKind> = {
     enum: CompletionItemKind.Enum,
     mechanism: CompletionItemKind.Property,
-    tagPiece: CompletionItemKind.Property
+    tagPiece: CompletionItemKind.Property,
+    // `SuggestScriptByType` builds Method items (CommandTabCompletions.cs:278), which is what
+    // gives a script container a visibly different icon from an enum value in the list.
+    script: CompletionItemKind.Method
 };
 
 /**
@@ -607,12 +622,12 @@ function tagPieceDocumentation(tag: MetaTag, inputData: string): string {
  * `CompleteEnum`'s `key == null ? null : ...` (:206); no `ByTag` registration reaches
  * it today, but `completeEnum` can produce it.
  */
-function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamContext, line: number): CompletionItem[] | null {
+function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamContext, line: number, workspace: ScriptingWorkspaceData | null): CompletionItem[] | null {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
         return null;
     }
-    const candidates = completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag);
+    const candidates = completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results: CompletionItem[] = [];
     for (const candidate of candidates) {
@@ -627,7 +642,15 @@ function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamCon
             kind: PARAM_CANDIDATE_KINDS[candidate.kind],
             textEdit
         };
-        if (candidate.detail.length > 0) {
+        // A script candidate is documented from the container itself, not from its detail text --
+        // CommandTabCompletions.cs:278 passes `DescribeScript(s)`, which is a whole markdown block
+        // (type, name, description keys, definitions, and where the file is), where `detail` is
+        // just the name again.
+        if (candidate.kind === 'script' && candidate.script !== undefined) {
+            item.detail = candidate.script.name;
+            item.documentation = describeScript(candidate.script);
+        }
+        else if (candidate.detail.length > 0) {
             item.documentation = {
                 kind: MarkupKind.Markdown,
                 value: candidate.kind === 'tagPiece'
@@ -698,10 +721,10 @@ function lastTopLevelArgStart(trimmed: string): number {
  * begin with (TextDocumentService.cs:421 serves both kinds of line from one block), and having
  * two here is exactly how the key line came to lose tag completion.
  */
-function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, argStart: number, line: number, trace: boolean): CompletionItem[] | null {
+function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, argStart: number, line: number, trace: boolean, workspace: ScriptingWorkspaceData | null): CompletionItem[] | null {
     const paramCtx = findTagParamAtCursor(argThusFar, argStart);
     if (paramCtx !== null) {
-        const paramResults = completeTagParameter(docs, extra, paramCtx, line);
+        const paramResults = completeTagParameter(docs, extra, paramCtx, line, workspace);
         // Null means nothing documents this bracket (unknown tag, or one that takes no
         // parameter). Fall through rather than returning []: the tag-part branch is then
         // free to answer, and does — with [], for the reason above — so this deliberately
@@ -717,7 +740,7 @@ function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, arg
     return null;
 }
 
-export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number, trace: boolean = true): CompletionItem[] {
+export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number, trace: boolean = true, workspace: ScriptingWorkspaceData | null = null): CompletionItem[] {
     const ctx = parseCursorContext(text, offset);
     if (ctx === null) {
         return [];
@@ -754,7 +777,7 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
         // `null` means "no open tag at the cursor" -- on a key line there is nothing else left
         // to offer, so it becomes the empty list rather than falling through to the
         // command-argument branch, which has no command to work from.
-        return completeTagAt(docs, extra, ctx.trimmed.substring(argStart), ctx.indent + argStart, line, trace) ?? [];
+        return completeTagAt(docs, extra, ctx.trimmed.substring(argStart), ctx.indent + argStart, line, trace, workspace) ?? [];
     }
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);
@@ -790,7 +813,7 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
-    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace);
+    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace);
     if (sharedTagResults !== null) {
         return sharedTagResults;
     }

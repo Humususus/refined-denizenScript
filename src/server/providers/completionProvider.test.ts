@@ -1375,3 +1375,48 @@ describe('tag completion on key lines (TextDocumentService.cs:408-421)', () => {
         });
     });
 });
+
+describe("tag completion items carry the tag's full name as `detail`", () => {
+    // TextDocumentService.cs passes `tagDoc.Name` as the third CompletionItem argument -- the
+    // DETAIL -- at both construction sites, :508 for bases and :532 for narrowed parts. It is what
+    // tells two same-named parts on different object types apart in the list: a bare `name` label
+    // is ambiguous, `<PlayerTag.name>` beside it is not.
+
+    it('sets detail on a base candidate that resolves to a documented tag', () => {
+        // `<player>` is a dotless base tag, so the exact `docs.tags` lookup hits and both the
+        // detail and the documentation come from it.
+        // MUTANT CAUGHT: omitting `item.detail`.
+        const text = '- narrate <player';
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0);
+        const player = items.find(i => i.label === 'player')!;
+        expect(player).toBeDefined();
+        expect(player.detail).toBe('<player>');
+    });
+
+    it('leaves detail undefined on a base candidate with no documented tag', () => {
+        // C# falls back to a two-argument constructor with NEITHER detail nor documentation when
+        // the exact lookup misses (:509). `context` is seeded into tagBases with no MetaTag behind
+        // it (MetaDocs.cs:79), so it is exactly that case.
+        // MUTANT CAUGHT: hoisting `item.detail` out of the `doc !== undefined` guard.
+        const text = '- narrate <context';
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0);
+        const context = items.find(i => i.label === 'context');
+        expect(context).toBeDefined();
+        expect(context!.detail).toBeUndefined();
+        expect(context!.documentation).toBeUndefined();
+    });
+
+    it('leaves detail undefined on an unnarrowed PART candidate', () => {
+        // Parts deliberately carry neither documentation nor detail on the flat branch: the exact
+        // `docs.tags` lookup is wrong for them -- all 33 of its part hits on real meta are
+        // namespace collisions, see the note on completeTag -- so there is no name to show that
+        // would be right.
+        // MUTANT CAUGHT: reusing the base lookup for parts.
+        const text = '- narrate <player.na';
+        const items = provideCompletions(tagDocs(), createEmptyExtraData(), text, text.length, 0, false);
+        expect(items.length).toBeGreaterThan(0);
+        for (const item of items) {
+            expect(item.detail).toBeUndefined();
+        }
+    });
+});

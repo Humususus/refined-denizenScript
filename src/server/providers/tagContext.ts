@@ -23,6 +23,18 @@ export interface TagCursorContext {
     lastComponent: string;
     /** Column where lastComponent begins. */
     lastComponentStart: number;
+    /**
+     * The tag text BEFORE the last top-level dot — `player` in `<player.na`, `''` when the
+     * cursor is still in the base.
+     *
+     * Carried rather than derived. It used to be reconstructed by the one consumer as
+     * `lastComponentStart - tagStart - 1`, which silently assumed the component starts
+     * immediately after the dot -- true until `lastComponent` began skipping leading
+     * whitespace, at which point `<player. na` reconstructed `player.` (dot included), the
+     * re-parse failed, and the narrowed branch quietly fell back to the flat one. Computing
+     * it where `lastDot` is actually known removes the assumption instead of re-fixing it.
+     */
+    beforeLastComponent: string;
 }
 
 /** What tag parameter (if any) surrounds the cursor within one command argument. */
@@ -165,10 +177,26 @@ export function findTagAtCursor(argThusFar: string, argStart: number): TagCursor
     const { tagSoFar, tagStart } = tag;
 
     const { componentCount, lastDot } = scanTagComponents(tagSoFar);
-    const lastComponent = tagSoFar.substring(lastDot);
-    const lastComponentStart = tagStart + lastDot;
+    // TextDocumentService.cs:528: `fullTag[lastDot..].Trim()`. Only LEADING space can occur --
+    // this text ends at the cursor -- and skipping it is what makes `<player. na` complete at all:
+    // without the trim the typed prefix is " na", which no tag part starts with, so the whole list
+    // came back empty. `lastComponentStart` advances with it, because unlike the C# this port
+    // returns a replacement RANGE, and a range that still began at the space would overwrite the
+    // space too and produce `<player.name` from `<player. na` -- silently deleting the user's
+    // separator rather than completing after it.
+    const raw = tagSoFar.substring(lastDot);
+    const leadingSpace = raw.length - raw.trimStart().length;
+    const lastComponent = raw.substring(leadingSpace);
+    const lastComponentStart = tagStart + lastDot + leadingSpace;
+    // `lastDot` is one PAST the dot, so `lastDot - 1` is the dot itself; at component 0 there is
+    // no dot and the answer is the empty string.
+    //
+    // The ternary is an EQUIVALENT MUTANT to `substring(0, Math.max(0, lastDot - 1))`, which also
+    // yields '' at lastDot 0 -- `substring(0, 0)`. Kept because it names the no-dot case out loud
+    // rather than leaving a reader to work out that the clamp is doing that job.
+    const beforeLastComponent = lastDot === 0 ? '' : tagSoFar.substring(0, lastDot - 1);
 
-    return { tagSoFar, tagStart, componentCount, lastComponent, lastComponentStart };
+    return { tagSoFar, tagStart, componentCount, lastComponent, lastComponentStart, beforeLastComponent };
 }
 
 /**

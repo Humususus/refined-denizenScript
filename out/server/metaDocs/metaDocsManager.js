@@ -58,6 +58,10 @@ function downloadAllBlocks(sources) {
     return __awaiter(this, void 0, void 0, function* () {
         const loadErrors = [];
         const allBlocks = [];
+        // Which sources could not be FETCHED, as distinct from those that fetched and then produced a
+        // parse complaint. `loadErrors` mixes both, and only the first kind means the result is
+        // incomplete -- see the caching note in `loadMetaDocs`.
+        const failedSources = [];
         yield Promise.all(sources.map((src) => __awaiter(this, void 0, void 0, function* () {
             try {
                 const data = yield (0, metaLoader_1.downloadBinary)(src);
@@ -66,10 +70,11 @@ function downloadAllBlocks(sources) {
                 allBlocks.push(...blocks);
             }
             catch (ex) {
+                failedSources.push(src);
                 loadErrors.push(`Source download error for ${src}: ${ex instanceof Error ? ex.message : String(ex)}`);
             }
         })));
-        return { blocks: allBlocks, loadErrors };
+        return { blocks: allBlocks, loadErrors, failedSources };
     });
 }
 exports.downloadAllBlocks = downloadAllBlocks;
@@ -156,7 +161,7 @@ function sameSources(cached, wanted) {
 }
 /** Loads MetaDocs, using a disk-cached copy of the extracted blocks when it exists, is within ttlMs, and was built from the same source list; otherwise re-downloading and refreshing the cache. */
 function loadMetaDocs(options) {
-    var _a, _b;
+    var _a, _b, _c;
     return __awaiter(this, void 0, void 0, function* () {
         const sources = (_a = options.sources) !== null && _a !== void 0 ? _a : exports.DEFAULT_META_SOURCES;
         const download = (_b = options.downloadFn) !== null && _b !== void 0 ? _b : downloadAllBlocks;
@@ -180,7 +185,7 @@ function loadMetaDocs(options) {
                         blocks = cached.blocks;
                     }
                 }
-                catch (_c) {
+                catch (_d) {
                     blocks = null;
                 }
             }
@@ -190,7 +195,17 @@ function loadMetaDocs(options) {
             const result = yield download(sources);
             blocks = result.blocks;
             loadErrors = result.loadErrors;
-            if (blocks.length > 0) {
+            // DO NOT CACHE A PARTIAL DOWNLOAD. `blocks.length > 0` alone is far too weak a gate: the
+            // sources are fetched in parallel and one failing still leaves the others' blocks, so a
+            // flaky network produced a cache holding a FRACTION of the meta -- and then served it for
+            // the next twelve hours. Observed 2026-08-28: caches written during a network wobble held
+            // 536 tags instead of 2493, and every downstream check quietly degraded. Completion went
+            // near-empty and the checker reported 87% of real command lines as unknown commands.
+            //
+            // `failedSources`, not `loadErrors`: the latter also collects PARSE complaints from
+            // sources that downloaded perfectly well, so gating on it would mean never caching at all
+            // the moment upstream meta contains one malformed block.
+            if (blocks.length > 0 && ((_c = result.failedSources) !== null && _c !== void 0 ? _c : []).length === 0) {
                 fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
                 fs.writeFileSync(options.cacheFile, JSON.stringify({ sources, blocks }));
             }

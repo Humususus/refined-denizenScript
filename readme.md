@@ -31,6 +31,14 @@ Silence warnings you don't want without touching the script:
 - **`Refined DenizenScript: Unmute Diagnostics`** — undo it.
 - `##ignorewarning <key>` at the top of a file silences one specific check for that whole file.
 
+### Quick Fixes for missing `:` and `-`
+Two of the checker's warnings say exactly what you forgot, so the lightbulb now offers to do it:
+
+- **Line purpose unknown, no identifier** — offers to add a `:` at the end, or a `- ` at the indent.
+- **Line appears to be intended as command, but forgot a `-`** — offers to add the `- `.
+
+The action only appears where a warning already sits, so nothing fires on code the checker is happy with, and every fix is a pure insertion that one <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes. Works on both language server engines.
+
 ### Escaped symbol helper
 - Select text and press <kbd>/</kbd> to convert Denizen special characters into escape codes.
 - Type a delimited value like `/[]/` to turn it into `<&lb><&rb>`.

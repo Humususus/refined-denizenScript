@@ -51,6 +51,15 @@ export function after(input: string, match: string): string {
 }
 
 /**
+ * FreneticUtilities' `string.BeforeLast(...)`: everything before the LAST occurrence, else the
+ * input. Same not-found rule as `before`, which is the uniform one -- see the note above.
+ */
+export function beforeLast(input: string, match: string): string {
+    const index = input.lastIndexOf(match);
+    return index < 0 ? input : input.slice(0, index);
+}
+
+/**
  * FreneticUtilities' `string.BeforeAndAfter(...)`, as a tuple rather than an `out` parameter.
  *
  * Returns `[input, '']` when the separator is absent -- NOT `[input, input]`. See the note above:

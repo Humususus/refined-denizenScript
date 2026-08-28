@@ -258,3 +258,61 @@ describe('findTagParamAtCursor', () => {
         expect(findTagParamAtCursor('<player.', 0)).toBeNull();
     });
 });
+
+describe('findTagAtCursor: the whitespace trim and beforeLastComponent', () => {
+    it('skips leading whitespace in the component being typed', () => {
+        // TextDocumentService.cs:528 trims: `fullTag[lastDot..].Trim()`. Without it the typed
+        // prefix for `<player. na` is " na", which no tag part starts with, so the completion
+        // list came back EMPTY -- measured live at 0 items before this, 7 after.
+        // MUTANT CAUGHT: dropping the trimStart.
+        const ctx = findTagAtCursor('<player. na', 0)!;
+        expect(ctx.lastComponent).toBe('na');
+    });
+
+    it('moves lastComponentStart past the skipped whitespace', () => {
+        // Unlike the C#, this port returns a replacement RANGE built from lastComponentStart. A
+        // start still pointing at the space would make accepting `name` overwrite the space too,
+        // turning `<player. na` into `<player.name` -- silently deleting the user's separator
+        // instead of completing after it.
+        // MUTANT CAUGHT: leaving lastComponentStart at the dot.
+        // `<player. na`: '<' at 0, so tagStart is 1; the dot is at index 7 of the argument, the
+        // space at 8, and `na` begins at 9.
+        const ctx = findTagAtCursor('<player. na', 0)!;
+        expect(ctx.lastComponentStart).toBe(9);
+        expect('<player. na'.substring(ctx.lastComponentStart)).toBe('na');
+    });
+
+    it('trims the START only, so a trailing space still belongs to the component', () => {
+        // The text ends at the cursor, so trailing space means the user typed one and is about to
+        // type more. Trimming it would put the replacement range's end before the cursor.
+        // MUTANT CAUGHT: `raw.trim()` instead of `raw.substring(leadingSpace)`.
+        const ctx = findTagAtCursor('<player. na ', 0)!;
+        expect(ctx.lastComponent).toBe('na ');
+        expect(ctx.lastComponentStart + ctx.lastComponent.length).toBe('<player. na '.length);
+    });
+
+    it('leaves an unspaced component exactly as it was', () => {
+        const ctx = findTagAtCursor('<player.na', 0)!;
+        expect(ctx.lastComponent).toBe('na');
+        expect(ctx.lastComponentStart).toBe(8);
+    });
+
+    it('reports the text before the last dot, without the dot itself', () => {
+        // `beforeLastComponent` is what the narrowed branch re-parses and traces. Including the
+        // trailing dot makes that parse fail, and the branch silently falls back to the flat list
+        // -- which is exactly what happened when it was derived by arithmetic from
+        // lastComponentStart and the trim moved that start.
+        // MUTANT CAUGHT: substring(0, lastDot), keeping the dot.
+        expect(findTagAtCursor('<player.na', 0)!.beforeLastComponent).toBe('player');
+        expect(findTagAtCursor('<player. na', 0)!.beforeLastComponent).toBe('player');
+        expect(findTagAtCursor('<player.name.qu', 0)!.beforeLastComponent).toBe('player.name');
+    });
+
+    it('reports an empty beforeLastComponent while the cursor is still in the base', () => {
+        // There is no dot yet, so there is nothing before it.
+        // MUTANT CAUGHT: `substring(0, Math.max(0, lastDot - 1))`, which at lastDot 0 returns the
+        // whole base instead of ''.
+        expect(findTagAtCursor('<play', 0)!.beforeLastComponent).toBe('');
+        expect(findTagAtCursor('<', 0)!.beforeLastComponent).toBe('');
+    });
+});

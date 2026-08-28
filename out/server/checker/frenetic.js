@@ -10,7 +10,7 @@
 //
 // One definition, imported everywhere, is what stops that recurring.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.beforeAndAfter = exports.after = exports.before = exports.toLowerFast = void 0;
+exports.beforeAndAfter = exports.beforeLast = exports.after = exports.before = exports.toLowerFast = void 0;
 /**
  * FreneticUtilities' `string.ToLowerFast()`.
  *
@@ -51,6 +51,15 @@ function after(input, match) {
     return index < 0 ? input : input.slice(index + match.length);
 }
 exports.after = after;
+/**
+ * FreneticUtilities' `string.BeforeLast(...)`: everything before the LAST occurrence, else the
+ * input. Same not-found rule as `before`, which is the uniform one -- see the note above.
+ */
+function beforeLast(input, match) {
+    const index = input.lastIndexOf(match);
+    return index < 0 ? input : input.slice(0, index);
+}
+exports.beforeLast = beforeLast;
 /**
  * FreneticUtilities' `string.BeforeAndAfter(...)`, as a tuple rather than an `out` parameter.
  *

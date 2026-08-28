@@ -336,7 +336,11 @@ function createServer() {
             return [];
         }
         try {
-            return (0, completionProvider_1.provideCompletions)(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position), params.position.line, tagTracingEnabled);
+            // The workspace lets `<script>`, `<procedure_script_name>`, `<format_script>`,
+            // `<inventory>`, `<item>`, `<entity_type>` and `<enchantment>` offer the user's own
+            // script containers alongside the Minecraft enums. Null before the first scan, which
+            // those completers read as "offer no scripts" rather than "no scripts exist".
+            return (0, completionProvider_1.provideCompletions)(loadedDocs, loadedExtra, doc.getText(), doc.offsetAt(params.position), params.position.line, tagTracingEnabled, tracker.dataFor());
         }
         catch (err) {
             connection.console.error(`Completion failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);

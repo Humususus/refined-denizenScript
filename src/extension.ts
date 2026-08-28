@@ -8,6 +8,7 @@ import { shouldUseTypeScriptServer } from './serverEngineSelector';
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 import { findSaveEntries, entryTagsFor } from "./entryTags";
 import { activateMapTagPeek, SCHEME as MAP_TAG_SCHEME } from "./mapTagPeek";
+import { activateQuickFixes } from "./quickFixes";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from "./denizenEvents";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
@@ -2541,6 +2542,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateMapTagPeek(context);
     activateDenizenEscaping(context);
     activateDiagnosticMuting(context);
+    activateQuickFixes(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
         if (doc.uri.toString().endsWith(".dsc")) {
             tryLoadConfigYaml(doc);

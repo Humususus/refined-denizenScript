@@ -42,6 +42,7 @@ const serverEngineSelector_1 = require("./serverEngineSelector");
 const mutedDiagnostics_1 = require("./mutedDiagnostics");
 const entryTags_1 = require("./entryTags");
 const mapTagPeek_1 = require("./mapTagPeek");
+const quickFixes_1 = require("./quickFixes");
 const denizenEvents_1 = require("./denizenEvents");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
@@ -2438,6 +2439,7 @@ function activate(context) {
         (0, mapTagPeek_1.activateMapTagPeek)(context);
         activateDenizenEscaping(context);
         activateDiagnosticMuting(context);
+        (0, quickFixes_1.activateQuickFixes)(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.uri.toString().endsWith(".dsc")) {
                 tryLoadConfigYaml(doc);

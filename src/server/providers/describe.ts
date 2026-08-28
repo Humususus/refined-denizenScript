@@ -8,6 +8,11 @@ import { MarkupContent, MarkupKind } from 'vscode-languageserver';
 import {
     MetaObject, MetaCommand, MetaTag, MetaEvent, MetaMechanism, MetaLanguage, MetaAction
 } from '../metaDocs/metaTypes';
+// `describeScript` only. checker/ modules never import providers/, so this direction adds no
+// cycle: containerConvert and scriptWarnings both import nothing from here.
+import { LineTrackedString } from '../checker/scriptWarnings';
+import { after, before, beforeLast, toLowerFast } from '../checker/frenetic';
+import type { ScriptContainerData } from '../checker/containerConvert';
 
 /**
  * Escapes text for safe display inside a markdown popup, lifting `<code>` blocks
@@ -126,4 +131,74 @@ export function describeAction(action: MetaAction): MarkupContent {
         + `Triggers: ${descriptionClean(action.triggers)}\n\n`
         + `Contexts:\n- ${descriptionClean(action.context.join('\n- '))}${obligatoryText(action)}`
     );
+}
+
+/** Keys shown BEFORE the definitions block. (CommandTabCompletions.cs:284) */
+const SCRIPT_LEADING_KEYS = ['Description', 'Display Name', 'Title', 'Name Single'];
+
+/** Keys shown AFTER it, as inline code. (CommandTabCompletions.cs:312) */
+const SCRIPT_TRAILING_KEYS = ['ID', 'Entity_Type', 'Inventory', 'Size', 'Material', 'Book', 'Format'];
+
+/** One of a container's keys as display text, or null when it has no such key. */
+function scriptKeyText(script: ScriptContainerData, key: string): string | null {
+    const entry = script.keys.get(toLowerFast(key));
+    if (entry === undefined) {
+        return null;
+    }
+    const value = entry.value;
+    if (value instanceof LineTrackedString) {
+        return value.text;
+    }
+    // CommandTabCompletions.cs:288-291: a list key is rendered as its own bulleted block.
+    if (Array.isArray(value)) {
+        return '\n' + value.map(o => `- ${o instanceof LineTrackedString ? o.text : String(o)}`).join('\n');
+    }
+    // A sub-mapping has no `ToString()` worth showing; the C# would print the dictionary's type
+    // name here, which is noise rather than information.
+    return null;
+}
+
+/**
+ * Documentation for a script container, for completion items that offer one.
+ * Ported from `DescribeScript` (CommandTabCompletions.cs:281-320).
+ *
+ * The shape is: a headline naming the type and name, then whichever of four descriptive keys the
+ * container has, then its definitions with their bracketed explanations unpacked, then whichever
+ * of seven identifying keys it has, and finally where to find it. Everything is conditional --
+ * a container with none of those keys still gets a headline and a location.
+ */
+export function describeScript(script: ScriptContainerData): MarkupContent {
+    let addedFirst = '';
+    for (const key of SCRIPT_LEADING_KEYS) {
+        const text = scriptKeyText(script, key);
+        if (text !== null) {
+            addedFirst += `\n**${key}:** ${text}  `;
+        }
+    }
+    let defInfo = '';
+    const definitions = scriptKeyText(script, 'definitions');
+    if (definitions !== null) {
+        defInfo = '\n### Definitions:';
+        // `- define name[what it is for]` documents itself; the C# splits that apart so the
+        // bracketed half becomes the description rather than part of the name.
+        for (const def of definitions.split('|').map(s => s.trim()).filter(s => s.length > 0)) {
+            let name = def;
+            let info = '';
+            if (def.includes('[') && def.endsWith(']')) {
+                name = before(def, '[').trim();
+                info = beforeLast(after(def, '['), ']').trim();
+            }
+            defInfo += `\n- **${name}:** ${info}  `;
+        }
+    }
+    let addedAfter = '';
+    for (const key of SCRIPT_TRAILING_KEYS) {
+        const text = scriptKeyText(script, key);
+        if (text !== null) {
+            addedAfter += `\n**${key}:** \`${text}\`  `;
+        }
+    }
+    // `lineNumber + 1` because the checker counts from 0 and humans count from 1.
+    return markdown(`${script.type} script '${script.name}'  ${addedFirst}${defInfo}\n${addedAfter}\n`
+        + `In \`${script.fileName}\` at line \`${script.lineNumber + 1}\``);
 }

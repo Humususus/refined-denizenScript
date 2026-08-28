@@ -18,6 +18,13 @@ import { MetaDocs, MetaTag } from '../metaDocs/metaTypes';
 import { ExtraData } from '../metaDocs/extraData';
 import { EnumCompleter } from './argumentCompleters';
 import { after, before } from '../checker/frenetic';
+// Type-only, so this module's compiled output keeps its zero require() calls.
+import type { ScriptContainerData, ScriptingWorkspaceData } from '../checker/containerConvert';
+// The one VALUE import from checker/: the inventory label list, which is a hardcoded constant in
+// both languages rather than loaded data, transcribed once for Phase 2C-7's event validators.
+// `eventValidators` pulls in `advancedMatcher` and `frenetic`, both of which are already
+// dependency-free, so this keeps the no-require() property intact.
+import { INVENTORY_MATCHERS } from '../checker/eventValidators';
 
 /**
  * Which C# construction site a candidate came from. There are exactly three, and the
@@ -41,7 +48,7 @@ import { after, before } from '../checker/frenetic';
  * must keep having zero `require()` calls. Mapping these names onto the LSP enum is the
  * caller's job — `completionProvider.ts` does it.
  */
-export type ParamCandidateKind = 'enum' | 'mechanism' | 'tagPiece';
+export type ParamCandidateKind = 'enum' | 'mechanism' | 'tagPiece' | 'script';
 
 /**
  * One suggested value for a tag parameter.
@@ -59,14 +66,59 @@ export type ParamCandidateKind = 'enum' | 'mechanism' | 'tagPiece';
  * documentation (`enum`, `mechanism`) or the "input option" line to wrap in
  * `CompleteForTagPiece`'s tag envelope (`tagPiece`).
  */
-export interface ParamCandidate { label: string; detail: string; kind: ParamCandidateKind; }
+export interface ParamCandidate {
+    label: string;
+    detail: string;
+    kind: ParamCandidateKind;
+    /**
+     * The container this candidate names, for `kind: 'script'` only.
+     *
+     * Carried rather than re-derived by the caller, which would have to scan the workspace again
+     * to find what this function already had in hand. The caller renders it with `describeScript`;
+     * this module cannot, because building a `MarkupContent` means importing
+     * `vscode-languageserver` and its compiled output must keep zero `require()` calls.
+     */
+    script?: ScriptContainerData;
+}
 
 /**
  * A registered handler for one exact documented parameter spec — the port of
  * `CommandTabCompletions.ByPrefix[""]` for a `ByTag` entry. `ByTag` registrations
  * all use the empty prefix (:80-95), so the prefix dimension collapses away here.
  */
-export type TagParamCompleter = (docs: MetaDocs, extra: ExtraData, typed: string) => ParamCandidate[];
+export type TagParamCompleter = (docs: MetaDocs, extra: ExtraData, typed: string, workspace: ScriptingWorkspaceData | null) => ParamCandidate[];
+
+/**
+ * Script containers of the given type whose name starts with `typed`.
+ * Port of `SuggestScriptByType` (CommandTabCompletions.cs:271-279).
+ *
+ * `type` null means "any type at all" -- that is the `<script>` registration (:82).
+ *
+ * NULL WORKSPACE MEANS OFFER NOTHING, matching the C#'s `WorkspaceData is null` guard (:273).
+ * Before the first workspace scan there is no script index, and inventing one would offer names
+ * that do not exist.
+ *
+ * The underscore rule is the C#'s (:278): a name beginning with `_` is private by convention, so
+ * it is hidden UNLESS the user has already typed the underscore themselves.
+ */
+function suggestScriptByType(workspace: ScriptingWorkspaceData | null, type: string | null, typed: string): ParamCandidate[] {
+    if (workspace === null) {
+        return [];
+    }
+    const results: ParamCandidate[] = [];
+    for (const script of workspace.scripts.values()) {
+        if (type !== null && script.type !== type) {
+            continue;
+        }
+        if (!typed.startsWith('_') && script.name.startsWith('_')) {
+            continue;
+        }
+        if (script.name.startsWith(typed)) {
+            results.push({ label: script.name, detail: script.name, kind: 'script', script });
+        }
+    }
+    return results;
+}
 
 /** Text after the last `sep`; the whole string when absent (FreneticExtensions' `AfterLast`). */
 function afterLast(text: string, sep: string): string {
@@ -145,14 +197,10 @@ function registerEnum(map: Map<string, TagParamCompleter>, spec: string, complet
 function buildTagParamCompleters(): Map<string, TagParamCompleter> {
     const map = new Map<string, TagParamCompleter>();
     // --- ExtraData-backed entries (CommandTabCompletions.cs:82-90) ---
-    // The C# handlers for <item>, <entity_type> and <enchantment> each concatenate
-    // CompleteEnum with SuggestScriptByType (:241-270), so those three also suggest
-    // matching workspace script containers. Only the enum half is ported here; the script
-    // half needs WorkspaceTracker and arrives with Phase 2D, at which point these entries
-    // gain another source rather than being replaced. <item> gains TWO: SuggestItem
-    // (:261-267) concatenates the item enum with SuggestScriptByType for BOTH the "item"
-    // and "book" script types. (C#'s <inventory> handler has the same enum+script shape
-    // but is not registered here at all -- see "Deliberately not registered" below.)
+    // Three of these are enum+script pairs in the C#, and since Phase 2D both halves are here:
+    // <item> is SuggestItem (:261-267), which concatenates the item enum with the "item" AND
+    // "book" script types; <entity_type> is SuggestEntityType (:251-259); <enchantment> is
+    // SuggestEnchantmentType (:241-249).
     registerEnum(map, '<material>', { prefix: '', label: 'Material', values: d => d.materials });
     registerEnum(map, '<item>', { prefix: '', label: 'Item', values: d => d.items });
     registerEnum(map, '<statistic>', { prefix: '', label: 'Statistic', values: d => d.statistics });
@@ -171,12 +219,40 @@ function buildTagParamCompleters(): Map<string, TagParamCompleter> {
     // ';' branch, which would otherwise claim this spec and find nothing.
     map.set('<mechanism>=<value>;...', (docs, _extra, typed) => suggestMechPairSet(docs, typed));
     map.set('<property-map>', (docs, _extra, typed) => suggestMechPairSet(docs, typed));
-    // --- Deliberately not registered ---
-    // <script> (:81), <procedure_script_name> (:80) and <format_script> (:87) all resolve
-    // through SuggestScriptByType, which needs WorkspaceTracker's script index: Phase 2D.
-    // <inventory> (:90) is CompleteEnum(ExtraData.InventoryMatchers) + a script lookup, and
-    // InventoryMatchers is a hardcoded C# constant (SharpDenizenTools ExtraData.cs:226-234)
-    // that this port's ExtraData does not expose — it is not part of the minecraft.fds data.
+    // --- Workspace-backed entries, unblocked by Phase 2D's WorkspaceTracker ---
+    // Each of these needs the script index, which did not exist until the workspace scanner did.
+    //
+    // MEASURED REACH, so nobody has to re-derive it. Against the live meta, the three specs
+    // registered immediately below are used by ZERO documented tags, so they cannot fire through
+    // tag-parameter completion today -- they are registered because the C# registers them (:80-87)
+    // and because a meta update can start using them at any time, not because they do anything
+    // now. The four that follow ARE reachable, and were verified against the user's own workspace:
+    // `<item[ham` offers their `hammer` item script beside the Minecraft item enum, and
+    // `<inventory[my_inv` offers their `my_inventory` inventory script beside the labels.
+    map.set('<procedure_script_name>', (_d, _e, typed, ws) => suggestScriptByType(ws, 'procedure', typed));
+    // `null`, not a type name: <script> accepts a container of ANY type (:82).
+    map.set('<script>', (_d, _e, typed, ws) => suggestScriptByType(ws, null, typed));
+    map.set('<format_script>', (_d, _e, typed, ws) => suggestScriptByType(ws, 'format', typed));
+    // SuggestInventoryType (:231-239). Its enum half is INVENTORY_MATCHERS -- a hardcoded C#
+    // constant rather than minecraft.fds data, which is why this entry stayed unregistered for so
+    // long. It was transcribed for Phase 2C-7's event validators, so both halves are available now
+    // and the list has exactly one home.
+    map.set('<inventory>', (_d, _e, typed, ws) => [
+        ...completeEnum(INVENTORY_MATCHERS, 'Inventory Type', typed),
+        ...suggestScriptByType(ws, 'inventory', typed)
+    ]);
+    // The script halves of the three enum entries above, wrapping rather than replacing them.
+    const enumPlusScripts = (spec: string, ...types: (string | null)[]): void => {
+        const enumHalf = map.get(spec)!;
+        map.set(spec, (docs, extra, typed, ws) => [
+            ...enumHalf(docs, extra, typed, ws),
+            ...types.flatMap(type => suggestScriptByType(ws, type, typed))
+        ]);
+    };
+    enumPlusScripts('<item>', 'item', 'book');
+    enumPlusScripts('<entity_type>', 'entity');
+    enumPlusScripts('<enchantment>', 'enchantment');
+    // --- Still deliberately not registered ---
     // <custom_color_name> (:95) reads ClientConfiguration.TextColorMap, which is not ported.
     return map;
 }
@@ -211,15 +287,15 @@ export function normaliseDocParam(docParam: string): string {
  * Port of `CompleteGenericTagParam` (:137-202). Returns an empty array — never throws —
  * for a spec it cannot serve.
  */
-export function completeTagParam(docs: MetaDocs, extra: ExtraData, docParam: string, typed: string, tag: MetaTag): ParamCandidate[] {
-    return completeParam(docs, extra, docParam, '', typed, tag);
+export function completeTagParam(docs: MetaDocs, extra: ExtraData, docParam: string, typed: string, tag: MetaTag, workspace: ScriptingWorkspaceData | null = null): ParamCandidate[] {
+    return completeParam(docs, extra, docParam, '', typed, tag, workspace);
 }
 
 /**
  * `completeTagParam` with the `prefix` argument C# threads through the recursion
  * (:137, :158). It only ever decorates the option-list detail text at :187.
  */
-function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefix: string, typed: string, tag: MetaTag): ParamCandidate[] {
+function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefix: string, typed: string, tag: MetaTag, workspace: ScriptingWorkspaceData | null): ParamCandidate[] {
     const results: ParamCandidate[] = [];
     const spec = normaliseDocParam(docParam);
     // Branch order is the C#'s: registered spec, then ';' pairs, then '/' options (:141,
@@ -227,7 +303,7 @@ function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefi
     // each match two branches and give different answers depending on which wins.
     const registered = TAG_PARAM_COMPLETERS.get(spec);
     if (registered !== undefined) {
-        return registered(docs, extra, typed);
+        return registered(docs, extra, typed, workspace);
     }
     if (spec.includes(';')) {
         const docPairs = spec.split(';');
@@ -241,7 +317,7 @@ function completeParam(docs: MetaDocs, extra: ExtraData, docParam: string, prefi
                 const expected = before(lastArg, '=');
                 const docMatch = docPairs.find(p => before(p, '=') === expected);
                 if (docMatch !== undefined) {
-                    return completeParam(docs, extra, after(docMatch, '='), `${expected}=`, after(lastArg, '='), tag);
+                    return completeParam(docs, extra, after(docMatch, '='), `${expected}=`, after(lastArg, '='), tag, workspace);
                 }
                 return results;
             }

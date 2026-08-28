@@ -22,9 +22,13 @@ export const DEFAULT_META_SOURCES: string[] = [
 ];
 
 /** Downloads every source in parallel and extracts their raw meta blocks. A failure downloading one source is recorded as a load error and does not prevent the others from succeeding. */
-export async function downloadAllBlocks(sources: string[]): Promise<{ blocks: MetaBlock[]; loadErrors: string[] }> {
+export async function downloadAllBlocks(sources: string[]): Promise<{ blocks: MetaBlock[]; loadErrors: string[]; failedSources: string[] }> {
     const loadErrors: string[] = [];
     const allBlocks: MetaBlock[] = [];
+    // Which sources could not be FETCHED, as distinct from those that fetched and then produced a
+    // parse complaint. `loadErrors` mixes both, and only the first kind means the result is
+    // incomplete -- see the caching note in `loadMetaDocs`.
+    const failedSources: string[] = [];
     await Promise.all(sources.map(async src => {
         try {
             const data = await downloadBinary(src);
@@ -33,10 +37,11 @@ export async function downloadAllBlocks(sources: string[]): Promise<{ blocks: Me
             allBlocks.push(...blocks);
         }
         catch (ex) {
+            failedSources.push(src);
             loadErrors.push(`Source download error for ${src}: ${ex instanceof Error ? ex.message : String(ex)}`);
         }
     }));
-    return { blocks: allBlocks, loadErrors };
+    return { blocks: allBlocks, loadErrors, failedSources };
 }
 
 /** Constructs a fresh MetaDocs by parsing and registering every block. Does not apply extensions — call applyExtensions() afterward if extension merging is needed. */
@@ -114,8 +119,13 @@ export interface LoadMetaDocsOptions {
     ttlMs: number;
     forceRefresh?: boolean;
     sources?: string[];
-    /** Injectable for testing; defaults to the real network downloadAllBlocks(). */
-    downloadFn?: (sources: string[]) => Promise<{ blocks: MetaBlock[]; loadErrors: string[] }>;
+    /**
+     * Injectable for testing; defaults to the real network `downloadAllBlocks()`.
+     *
+     * `failedSources` is optional so a fake can omit it, which reads as "every source was
+     * fetched" -- the right default for a stub that is not simulating a network failure.
+     */
+    downloadFn?: (sources: string[]) => Promise<{ blocks: MetaBlock[]; loadErrors: string[]; failedSources?: string[] }>;
 }
 
 /**
@@ -165,7 +175,17 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
         const result = await download(sources);
         blocks = result.blocks;
         loadErrors = result.loadErrors;
-        if (blocks.length > 0) {
+        // DO NOT CACHE A PARTIAL DOWNLOAD. `blocks.length > 0` alone is far too weak a gate: the
+        // sources are fetched in parallel and one failing still leaves the others' blocks, so a
+        // flaky network produced a cache holding a FRACTION of the meta -- and then served it for
+        // the next twelve hours. Observed 2026-08-28: caches written during a network wobble held
+        // 536 tags instead of 2493, and every downstream check quietly degraded. Completion went
+        // near-empty and the checker reported 87% of real command lines as unknown commands.
+        //
+        // `failedSources`, not `loadErrors`: the latter also collects PARSE complaints from
+        // sources that downloaded perfectly well, so gating on it would mean never caching at all
+        // the moment upstream meta contains one malformed block.
+        if (blocks.length > 0 && (result.failedSources ?? []).length === 0) {
             fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
             fs.writeFileSync(options.cacheFile, JSON.stringify({ sources, blocks }));
         }
