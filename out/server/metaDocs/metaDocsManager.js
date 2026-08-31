@@ -166,28 +166,46 @@ function loadMetaDocs(options) {
         const sources = (_a = options.sources) !== null && _a !== void 0 ? _a : exports.DEFAULT_META_SOURCES;
         const download = (_b = options.downloadFn) !== null && _b !== void 0 ? _b : downloadAllBlocks;
         let blocks = null;
+        /**
+         * The cached blocks when the file exists and matches the source list but is too OLD to use
+         * outright. Kept as a FALLBACK for a download that fails, because a stale complete meta beats
+         * no meta by a wide margin -- see where it is used below.
+         */
+        let staleBlocks = null;
         if (!options.forceRefresh && fs.existsSync(options.cacheFile)) {
             const age = Date.now() - fs.statSync(options.cacheFile).mtimeMs;
-            if (age < options.ttlMs) {
-                try {
-                    const cached = JSON.parse(fs.readFileSync(options.cacheFile, 'utf-8'));
-                    // The cache is keyed by the SOURCE LIST as well as by age. Without this the
-                    // cache was identified by file path alone, so adding or removing an entry in
-                    // `denizenscript.server.extra_sources` changed nothing until the 12-hour TTL
-                    // happened to lapse -- which is exactly how the setting came to look broken.
+            // Read regardless of age: an expired cache is still the fallback for a failed download.
+            try {
+                const cached = JSON.parse(fs.readFileSync(options.cacheFile, 'utf-8'));
+                // The cache is keyed by the SOURCE LIST as well as by age. Without this the cache was
+                // identified by file path alone, so adding or removing an entry in
+                // `denizenscript.server.extra_sources` changed nothing until the 12-hour TTL happened
+                // to lapse -- which is exactly how the setting came to look broken.
+                //
+                // A bare array is the pre-2026-08-27 format. It needs no special case: it has no
+                // `sources` property, so `sameSources` sees undefined and rejects it, and the file is
+                // re-downloaded once on upgrade. An explicit `!Array.isArray` guard here was measured
+                // to be an equivalent mutant and removed rather than left as dead belt-and-braces.
+                if (sameSources(cached === null || cached === void 0 ? void 0 : cached.sources, sources)) {
+                    // Fresh enough to use as-is; otherwise held only as a fallback.
                     //
-                    // A bare array is the pre-2026-08-27 format. It needs no special case: it has no
-                    // `sources` property, so `sameSources` sees undefined and rejects it, and the
-                    // file is re-downloaded once on upgrade. An explicit `!Array.isArray` guard here
-                    // was measured to be an equivalent mutant and removed rather than left as dead
-                    // belt-and-braces.
-                    if (sameSources(cached === null || cached === void 0 ? void 0 : cached.sources, sources)) {
+                    // `<` vs `<=` at this boundary is a known equivalent mutant: it can only differ
+                    // when the age is exactly ttlMs to the millisecond, which a wall-clock delta does
+                    // not hit. `<` is used to match the sibling cache in extraData.ts:130.
+                    if (age < options.ttlMs) {
                         blocks = cached.blocks;
                     }
+                    else {
+                        staleBlocks = cached.blocks;
+                    }
                 }
-                catch (_d) {
-                    blocks = null;
-                }
+            }
+            catch (_d) {
+                // A corrupt or unreadable cache simply means "no cache", and both variables are still
+                // null here: the only statements above that can throw are the read and the parse, and
+                // both run before either is assigned. Resetting them was measured to be dead code
+                // (mutation audit 2026-08-31, mutants M10/M12 survived every test) and removed rather
+                // than left as belt-and-braces, the same call made for the Array.isArray guard above.
             }
         }
         let loadErrors = [];
@@ -205,9 +223,26 @@ function loadMetaDocs(options) {
             // `failedSources`, not `loadErrors`: the latter also collects PARSE complaints from
             // sources that downloaded perfectly well, so gating on it would mean never caching at all
             // the moment upstream meta contains one malformed block.
-            if (blocks.length > 0 && ((_c = result.failedSources) !== null && _c !== void 0 ? _c : []).length === 0) {
+            const failed = (_c = result.failedSources) !== null && _c !== void 0 ? _c : [];
+            if (blocks.length > 0 && failed.length === 0) {
                 fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
                 fs.writeFileSync(options.cacheFile, JSON.stringify({ sources, blocks }));
+            }
+            else if (staleBlocks !== null) {
+                // FALL BACK TO THE EXPIRED CACHE. This is what turns a network outage from a
+                // catastrophe into an inconvenience: the TTL lapsing does not make the cached meta
+                // WRONG, only old, and old-but-complete beats a fraction of the meta or none of it.
+                //
+                // Without this, an expired cache plus an unreachable github.com left the server with
+                // no commands at all -- so every line in every script was reported as an unknown
+                // command and completion offered nothing. Observed 2026-08-28 while the CDN was
+                // dropping TLS connections; the user's report was "everything is broken".
+                //
+                // The cache file is deliberately NOT re-stamped: its mtime is what will make the next
+                // start try the network again, and touching it here would hide the staleness for
+                // another full TTL.
+                loadErrors.push(`Using cached meta from an earlier download: ${failed.length} of ${sources.length} source(s) could not be fetched.`);
+                blocks = staleBlocks;
             }
         }
         const docs = buildMetaDocs(blocks);
