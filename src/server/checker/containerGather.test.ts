@@ -423,14 +423,40 @@ describe('gatherActualContainers: warnings', () => {
 
     it('reports weird_line_growth for a list entry with no list to join (:1502)', () => {
         // 2 "    - narrate a": secwaiting was consumed at line 1 and clist is still null.
-        // Range is (0, line.IndexOf('-')) = (0, 4) -- the END is the dash's column, not `spaces`
-        // (identical here, but the C# genuinely uses a different expression than :1465 does).
+        // The C# range is (0, line.IndexOf('-')) = (0, 4): it spans the INDENT and stops where the
+        // text begins. Corrected by user ruling to span the text instead, (4, 15) -- see the
+        // DELIBERATE DEVIATION note at the warn site.
+        // MUTANT CAUGHT: reverting either endpoint to the C# expression.
         const { checker } = gather('my_task:\n    type: task\n    - narrate a');
-        expect(shapes(checker.warnings)).toEqual([{ line: 2, key: 'weird_line_growth', start: 0, end: 4 }]);
+        expect(shapes(checker.warnings)).toEqual([{ line: 2, key: 'weird_line_growth', start: 4, end: 15 }]);
         expect(checker.warnings[0].customMessageForm).toBe(
             'Line purpose unknown, attempted list entry when not building a list (likely line format error, perhaps missing or misplaced a `:` on lines above, or incorrect tabulation?).'
         );
         expect(shapes(checker.errors)).toEqual([]);
+    });
+
+    it('reports list entries that dedent OUT of every container instead of filing them in the last one', () => {
+        // DELIBERATE DEVIATION (user ruling 2026-09-01). Reduced from the user's own
+        // mafia/commands/test.dsc, where they wrote the symptom into the file as a comment:
+        // "из за того что выше narrate на таб левее, ошибка не на строке 13 и 14 а на строке 16".
+        //
+        // The C# restores `currentSection` on a dedent but leaves `clist` pointing at the list
+        // open before it, so both column-0 lines below were appended to `my_task.script` -- no
+        // diagnostic at all, and the squiggle instead landed on the NEXT line that looked like an
+        // indent growth, two lines late.
+        // MUTANT CAUGHT: removing `clist = null` from the section-restoring arm.
+        const { checker, root } = gather(
+            'my_task:\n    type: task\n    script:\n    - narrate a\n\n- narrate b\n- narrate c'
+        );
+        expect(shapes(checker.warnings)).toEqual([
+            { line: 5, key: 'weird_line_growth', start: 0, end: 11 },
+            { line: 6, key: 'weird_line_growth', start: 0, end: 11 }
+        ]);
+        // And the STRUCTURE is right, which is the half that matters to 2C-3 and 2C-4: the script
+        // list holds only the line that really is inside it. Filing the orphans here would have
+        // sent them on to be command-checked in my_task's context.
+        const script = valueOf(valueOf(root, 'my_task'), 'script');
+        expect(script.map((e: LineTrackedString) => e.text)).toEqual(['narrate a']);
     });
 
     it('reports identifier_missing_line for a line with neither "-" nor ":" (:1577)', () => {

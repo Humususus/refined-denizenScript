@@ -16,6 +16,7 @@ import { contextValidatedIsValidScriptName } from './containerConvert';
 import { buildArgs } from './buildArgs';
 import { containsObjectNotation, checkSingleArgument, checkSingleTag } from './tagChecks';
 import { after, before, toLowerFast } from './frenetic';
+import { COMMANDS_WITH_COLONS_AND_ARGUMENTS, COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS } from './containerGather';
 
 /**
  * Everything a per-command checker gets to look at.
@@ -359,6 +360,99 @@ register(['determine'], (details) => {
             "'- determine canceled' (one 'L') is a likely mistake - you probably meant '- determine cancelled' (two 'L's)");
     }
 });
+
+/**
+ * Reports a control-flow command written without its trailing `:`.
+ *
+ * NO C# COUNTERPART -- a new check, added by USER RULING 2026-09-01. The literal request was
+ * `- if true == false` with no colon, which NEITHER engine reported, so the Quick Fix for missing
+ * colons (src/quickFixPlans.ts) had no diagnostic to hang itself from. This supplies it; the
+ * Quick Fix keys off `missing_colon_on_command`.
+ *
+ * WHY THIS IS NOT DUPLICATING AN EXISTING WARNING. The gatherer does already notice something is
+ * wrong nearby: the body under the colonless `- if` is a list entry at a deeper indent, so
+ * `growing_spaces_in_script` fires -- but on the line BELOW, and it says "spacing grew for no
+ * reason", which describes the symptom rather than the cause. And when the block has no body at
+ * all, nothing fires. Reporting the colon on the line that is missing it is the point.
+ *
+ * WHERE THIS IS CALLED FROM IS THE WHOLE CHECK. A command WITH a colon is parsed into a
+ * ScriptSection by the gatherer and reaches `checkSingleCommand` as a section key; one WITHOUT is
+ * a plain LineTrackedString. So "does this line end in a colon" is answered structurally, at the
+ * call site (containerChecks.ts), and never by looking at the text -- which is why a trailing `:`
+ * inside a tag or a quoted argument cannot fool it.
+ *
+ * The arity rule mirrors `canWarnAboutCommandMissingDash` (ScriptChecker.cs:1644-1647) exactly: a
+ * one-word line is tested against the no-arguments set, a longer one against the with-arguments
+ * set. That is what keeps `- random 5` quiet (`random` wants a colon only as a bare block) while
+ * `- random` is flagged.
+ *
+ * THE LOOP-CONTROL EXCEPTION, and how it was found. The first version of this check reported
+ * seven lines across the user's real corpus and every single one was a false positive:
+ * `- repeat stop if:!<[ent].is_spawned||false>`, `- foreach next`, `- while stop`. Those are the
+ * loop-control forms -- they end an iteration rather than opening a block, and correctly have no
+ * colon. The exclusion is read out of the META (`@Syntax` begins `repeat [stop/next/<amount>]`,
+ * `foreach [stop/next/<object>|...]`, `while [stop/next/...]`, while `if` and `choose` have no
+ * such form) rather than hardcoded, so a future Denizen release that adds or drops the form needs
+ * no checker change. That is the same reasoning that keeps `not_switches`/`global_switches` in
+ * `dataValueSets` instead of in code.
+ *
+ * Because that exclusion needs the meta, the whole check waits for it -- warning while the docs
+ * are still loading would reproduce exactly the seven false positives above.
+ *
+ * Severity is WARNING, not error, deliberately: this check has no C# to be measured against, so
+ * the conservative severity is the right one until it has run on real code for a while.
+ */
+export function checkCommandMissingColon(
+    checker: ScriptChecker,
+    line: number,
+    startChar: number,
+    commandText: string
+): void {
+    // The gatherer joins a colonless command's continuation lines with '\n' (ScriptChecker.cs:1516).
+    // Only the first physical line can carry the missing colon, and the arity that decides which
+    // set to use is the arity of that line, so everything after the first newline is dropped.
+    const firstLine = before(commandText, '\n');
+    const words = firstLine.split(' ').filter(w => w.length > 0);
+    if (words.length === 0) {
+        return;
+    }
+    let commandName = toLowerFast(words[0]);
+    // Same sigil strip as checkSingleCommand (:809-812), so `- ~if x` is not missed.
+    if (commandName.startsWith('~') || commandName.startsWith('^')) {
+        commandName = commandName.substring(1);
+    }
+    const set = words.length === 1 ? COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS : COMMANDS_WITH_COLONS_AND_ARGUMENTS;
+    if (!set.has(commandName)) {
+        return;
+    }
+    // See the loop-control note above. No meta means no way to tell a block opener from a loop
+    // control, so nothing is reported.
+    if (checker.meta === null) {
+        return;
+    }
+    if (words.length > 1 && isLoopControlForm(checker.meta.commands.get(commandName)?.syntax, words[1])) {
+        return;
+    }
+    checker.warn(checker.warnings, line, 'missing_colon_on_command',
+        `The \`${commandName}\` command opens a block and must end with a ':'.`,
+        startChar, startChar + firstLine.length);
+}
+
+/**
+ * Whether `secondWord` is the loop-control form of a command whose `@Syntax` documents one.
+ *
+ * The probe is on the SYNTAX rather than the description because the syntax is the machine-shaped
+ * field: all three loop commands write the form as a leading `[stop/next/...]` alternation, and no
+ * other command's syntax contains that substring. Matching the description instead would depend on
+ * an English sentence.
+ */
+function isLoopControlForm(syntax: string | undefined, secondWord: string): boolean {
+    if (syntax === undefined || !syntax.includes('[stop/next/')) {
+        return false;
+    }
+    const word = toLowerFast(secondWord);
+    return word === 'stop' || word === 'next';
+}
 
 /**
  * Performs the necessary checks on a single command line.

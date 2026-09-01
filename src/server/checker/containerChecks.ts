@@ -14,7 +14,7 @@
 import { LineTrackedString } from './scriptWarnings';
 import { KNOWN_SCRIPT_TYPES, ALWAYS_SCRIPT_KEYS, ALWAYS_DATA_KEYS, matchesSet } from './scriptTypes';
 import { ScriptCheckContext, checkSingleDataLine, checkSingleTag, containsObjectNotation } from './tagChecks';
-import { checkSingleCommand } from './commandSpecifics';
+import { checkSingleCommand, checkCommandMissingColon } from './commandSpecifics';
 import { separateSwitches } from './eventTools';
 import type { EventSwitch } from './eventTools';
 import type { ScriptEventCouldMatcher } from './scriptEventCouldMatcher';
@@ -176,6 +176,11 @@ function checkOneContainer(checker: ScriptChecker, script: ScriptContainerData, 
             // ScriptChecker.cs:1002-1017
             for (const listEntry of list) {
                 if (listEntry instanceof LineTrackedString) {
+                    // NOT IN THE C# (user ruling 2026-09-01). This arm is precisely the "command
+                    // line with NO trailing colon" case -- one WITH a colon is a ScriptSection and
+                    // takes the branch below -- so it is the only place the missing-colon check
+                    // can be made without re-parsing the text. See the note on the function.
+                    checkCommandMissingColon(checker, listEntry.line, listEntry.startChar, listEntry.text);
                     checkSingleCommand(checker, listEntry.line, listEntry.startChar, listEntry.text, ctx, script);
                 }
                 else if (listEntry instanceof Map) {

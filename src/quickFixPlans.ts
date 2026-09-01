@@ -26,11 +26,21 @@ export interface FixPlan {
  * `empty_command_section`, was dropped after reading what it means: a `- foo:` section with
  * nothing indented under it, whose fix is to write the body, not to add punctuation.
  *
- * NOT HERE, and asked for: `- if true == false` with no trailing colon. NEITHER ENGINE reports
- * that line, so there is no diagnostic to hang an action from. Making it offerable is a checker
- * change, not a Quick Fix change.
+ * `missing_colon_on_command` is the third, and the one the feature note said could not be built:
+ * `- if true == false` with no trailing colon used to be reported by NEITHER engine, so there was
+ * no diagnostic to hang an action from. The checker change that supplies it landed 2026-09-01
+ * (`checkCommandMissingColon`, user ruling), so the Quick Fix the user actually asked for now
+ * exists. It is TYPESCRIPT-ENGINE ONLY, unlike the other two: the C# server has no such check, so
+ * on `denizenscript.server.engine: csharp` the diagnostic never arrives and nothing is offered.
+ *
+ * `empty_command_section` remains out, on the reading that its fix is to write the body rather
+ * than to add punctuation.
  */
-export const ACTIONABLE_CODES: ReadonlySet<string> = new Set(['identifier_missing_line', 'key_line_looks_like_command']);
+export const ACTIONABLE_CODES: ReadonlySet<string> = new Set([
+    'identifier_missing_line',
+    'key_line_looks_like_command',
+    'missing_colon_on_command'
+]);
 
 /**
  * The fixes to offer for `code` on a line reading `text`, in the order they should appear.
@@ -61,6 +71,17 @@ export function planFixes(code: string, text: string): FixPlan[] {
         }
         if (!trimmed.startsWith('-')) {
             plans.push({ title: "Add '- ' to the start of the line", character: indent, insert: '- ' });
+        }
+        return plans;
+    }
+    if (code === 'missing_colon_on_command') {
+        // Only the colon, and never the dash: the checker reaches this diagnostic through the
+        // container gatherer's LIST arm, so the line demonstrably already begins with `- `. The
+        // `endsWith(':')` guard is still kept -- it costs nothing and means a stale diagnostic,
+        // arriving after the user has already typed the colon, offers nothing rather than a
+        // second one.
+        if (!trimmed.endsWith(':')) {
+            plans.push({ title: "Add ':' to the end of the line", character: endOfText, insert: ':' });
         }
         return plans;
     }

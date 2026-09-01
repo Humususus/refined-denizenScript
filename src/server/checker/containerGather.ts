@@ -76,11 +76,17 @@ export type ScriptList = ScriptListEntry[];
  */
 export type ScriptListEntry = LineTrackedString | ScriptSection;
 
-/** ScriptChecker.cs:51-54 (`CommandsWithColonsAndArguments`). */
-const COMMANDS_WITH_COLONS_AND_ARGUMENTS = new Set<string>(['if', 'else', 'foreach', 'while', 'repeat', 'choose', 'case']);
+/**
+ * ScriptChecker.cs:51-54 (`CommandsWithColonsAndArguments`).
+ *
+ * Exported for `checkCommandMissingColon` (commandSpecifics.ts), which needs the same two sets
+ * under the same arity rule. Kept here, beside `canWarnAboutCommandMissingDash`, so there is one
+ * definition of "which commands want a colon" rather than two that can drift.
+ */
+export const COMMANDS_WITH_COLONS_AND_ARGUMENTS = new Set<string>(['if', 'else', 'foreach', 'while', 'repeat', 'choose', 'case']);
 
-/** ScriptChecker.cs:57-60 (`CommandsWithColonsButNoArguments`). */
-const COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS = new Set<string>(['else', 'default', 'random']);
+/** ScriptChecker.cs:57-60 (`CommandsWithColonsButNoArguments`). See the note above on the export. */
+export const COMMANDS_WITH_COLONS_BUT_NO_ARGUMENTS = new Set<string>(['else', 'default', 'random']);
 
 /** C#'s `string.IsNullOrWhiteSpace`. Used at ScriptChecker.cs:1538. */
 function isNullOrWhiteSpace(text: string): boolean {
@@ -287,6 +293,25 @@ export function gatherActualContainers(checker: ScriptChecker): ScriptSection {
             } else if (spacedsections.has(spaces)) {
                 // ScriptChecker.cs:1436-1439
                 currentSection = spacedsections.get(spaces)!;
+                // DELIBERATE DEVIATION (USER RULING 2026-09-01, PHASE-2C-BACKLOG section 1).
+                // The C# restores the section here but leaves `clist` pointing at whatever list
+                // was open BEFORE the dedent. A `- ` line that dedents back out of a container
+                // therefore gets appended to the previous container's list instead of being
+                // reported as an orphan.
+                //
+                // The user hit this on `mafia/commands/test.dsc` and described the symptom
+                // exactly: two column-0 `- narrate` lines outside every container were silent,
+                // and the squiggle appeared two lines later on the first line that looked like an
+                // indent growth. Dumping `checker.containers` confirmed both lines had been filed
+                // inside `my_task.script`.
+                //
+                // This is not only a diagnostic-position defect. It corrupts the structure that
+                // ConvertContainers/PreprocContainer consume, so 2C-4's command and tag checks
+                // would go on to check those lines in the wrong container's context.
+                //
+                // Measured on the real corpus when first prototyped (2026-08-25) and again now:
+                // test.dsc flags the two orphan lines as intended, and no other file changes.
+                clist = null;
             } else {
                 // ScriptChecker.cs:1440-1445: dedented to a width that was never opened. This is
                 // the branch that keeps a mis-indented file from crashing the parser.
@@ -387,16 +412,28 @@ export function gatherActualContainers(checker: ScriptChecker): ScriptSection {
                     continue;
                 }
             } else if (clist === null) {
-                // ScriptChecker.cs:1500-1505. NOTE the range's end: `line.IndexOf('-')`, not
-                // `spaces`. They coincide for a normally indented line but the C# genuinely uses
-                // a different expression here than it does at :1465.
+                // ScriptChecker.cs:1500-1505.
+                //
+                // DELIBERATE DEVIATION (USER RULING 2026-09-01, PHASE-2C-BACKLOG section 1, part
+                // B). The C# range is `0 .. line.IndexOf('-')`, which spans the INDENT rather than
+                // the offending text -- and for an orphan line at column 0, where `indexOf('-')`
+                // is 0, it is a ZERO-WIDTH squiggle the user cannot see at all.
+                //
+                // Column 0 is precisely the case the part-A fix above makes reachable, so the two
+                // travel together: fixing A alone would newly report these lines and then show
+                // the user nothing. Corrected to span the text, the same shape and on the same
+                // grounds as `useless_invalid_line` (lineChecks.ts:218) and `cleanStartCut` above.
+                //
+                // `cleanStartCut` is already `firstNonWhitespaceIndex(lines[i])` here -- the
+                // `cleaned.length === 0` case returned long before this point -- and is taken from
+                // the RAW line, so tab-indented scripts are not over-reported by three per tab.
                 checker.warn(
                     checker.warnings,
                     i,
                     'weird_line_growth',
                     'Line purpose unknown, attempted list entry when not building a list (likely line format error, perhaps missing or misplaced a `:` on lines above, or incorrect tabulation?).',
-                    0,
-                    line.indexOf('-')
+                    cleanStartCut,
+                    lines[i].length
                 );
                 pspaces = spaces;
                 continue;

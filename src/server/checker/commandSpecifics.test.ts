@@ -4,7 +4,7 @@ import { ScriptChecker } from './scriptChecker';
 import { ScriptCheckContext } from './tagChecks';
 import {
     CommandCheckDetails, COMMAND_CHECKERS, register, argHasPrefix, BAD_EXECUTE_COMMANDS
-, checkSingleCommand
+, checkSingleCommand, checkCommandMissingColon
 } from './commandSpecifics';
 import type { CommandChecker } from './commandSpecifics';
 import { buildArgs } from './buildArgs';
@@ -832,5 +832,129 @@ describe('the define name cut at "[" (DELIBERATE DEVIATION, user ruling)', () =>
         expect(runChecker('define greeting hello').defs).toEqual(['greeting']);
         expect(runChecker('define mymap.key value').defs).toEqual(['mymap']);
         expect(runChecker('define name:value').defs).toEqual(['name']);
+    });
+});
+
+/**
+ * `checkCommandMissingColon` -- NO C# COUNTERPART. A new check added by user ruling 2026-09-01,
+ * so every expectation below is derived from Denizen's own documented syntax rather than from
+ * ScriptChecker.cs.
+ *
+ * The call site is what decides whether a line is colonless at all: a command WITH a colon is
+ * parsed into a section by the gatherer and never reaches this function. These tests therefore
+ * call it directly, exactly as containerChecks.ts does for the no-colon arm.
+ */
+describe('checkCommandMissingColon (user ruling 2026-09-01)', () => {
+    /** Commands whose @Syntax carries the real loop-control alternation, plus ones that do not. */
+    function colonMeta(): MetaDocs {
+        const cmd = (name: string, syntax: string) => ({
+            objectType: 'command', url: 'src#L1',
+            data: ['@name ' + name, '@syntax ' + syntax, '@short x', '@group x', '@description x',
+                '@required 0', '@maximum 10', '@end_meta']
+        });
+        const d = buildMetaDocs([
+            { objectType: 'objecttype', url: 'src#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
+            // The three loop syntaxes below are copied from the real meta, verified 2026-09-01.
+            cmd('repeat', 'repeat [stop/next/<amount>] (from:<#>) (as:<name>) [<commands>]'),
+            cmd('foreach', 'foreach [stop/next/<object>|...] (as:<name>) (key:<name>) [<commands>]'),
+            cmd('while', 'while [stop/next/[<value>] (!)(<operator> <value>) (&&/|| ...)] [<commands>]'),
+            cmd('if', 'if [<value>] (!)(<operator> <value>) (&&/|| ...) [<commands>]'),
+            cmd('choose', 'choose [<option>] [<cases>]'),
+            cmd('random', 'random (<#>)'),
+            cmd('narrate', 'narrate [<text>]')
+        ]);
+        linkTypeGraph(d);
+        return d;
+    }
+    const COLON_META = colonMeta();
+
+    function colonRun(commandText: string, meta: MetaDocs | null = COLON_META) {
+        const checker = new ScriptChecker('- ' + commandText);
+        checker.meta = meta;
+        checkCommandMissingColon(checker, 0, 2, commandText);
+        return [...checker.errors, ...checker.warnings, ...checker.minorWarnings];
+    }
+    const keysOf = (commandText: string, meta: MetaDocs | null = COLON_META) =>
+        colonRun(commandText, meta).map(w => w.warningUniqueKey);
+
+    it('reports the literal case the user asked for', () => {
+        // `- if true == false` with no trailing ':' was reported by NEITHER engine, which is why
+        // the Quick Fix had nothing to attach to. This is the diagnostic that supplies it.
+        expect(keysOf('if true == false')).toEqual(['missing_colon_on_command']);
+    });
+
+    it('reports the other block openers', () => {
+        expect(keysOf('foreach <list[a|b]>')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('while <[x]>')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('repeat 5')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('choose <[x]>')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('case 123')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('else if <[x]>')).toEqual(['missing_colon_on_command']);
+    });
+
+    it('reports the no-argument block openers only when they stand alone', () => {
+        // The arity rule of canWarnAboutCommandMissingDash (ScriptChecker.cs:1644-1647): a
+        // one-word line is tested against the no-arguments set, a longer one against the
+        // with-arguments set.
+        // MUTANT CAUGHT: swapping the two sets, which is the mistake the C# comment warns about.
+        expect(keysOf('else')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('random')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('default')).toEqual(['missing_colon_on_command']);
+        // `random 5` takes the WITH-arguments set, which has no `random`, so it stays quiet.
+        expect(keysOf('random 5')).toEqual([]);
+        // `while` alone takes the NO-arguments set, which has no `while`.
+        expect(keysOf('while')).toEqual([]);
+    });
+
+    it('stays silent on the loop-control forms -- ALL SEVEN CORPUS FALSE POSITIVES', () => {
+        // Every one of these is a real line from the user's scripts that the FIRST version of this
+        // check wrongly reported. They end an iteration rather than opening a block, so they
+        // correctly carry no colon.
+        // MUTANT CAUGHT: dropping the isLoopControlForm exclusion.
+        expect(keysOf('repeat stop if:!<[ent].is_spawned||false>')).toEqual([]);
+        expect(keysOf('foreach next')).toEqual([]);
+        expect(keysOf('while stop')).toEqual([]);
+        expect(keysOf('repeat next')).toEqual([]);
+        expect(keysOf('foreach stop')).toEqual([]);
+    });
+
+    it('does NOT extend the loop-control excuse to commands whose syntax lacks the form', () => {
+        // `if` and `choose` document no stop/next alternation, so a second word of `stop` is just
+        // an ordinary argument and the missing colon is still a missing colon.
+        // MUTANT CAUGHT: testing only the second word and ignoring the command's syntax.
+        expect(keysOf('if stop')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('choose stop')).toEqual(['missing_colon_on_command']);
+    });
+
+    it('says nothing about ordinary commands', () => {
+        expect(keysOf('narrate hello')).toEqual([]);
+        expect(keysOf('narrate if')).toEqual([]);
+    });
+
+    it('waits for the meta rather than guessing', () => {
+        // Without the meta the loop-control forms cannot be recognised, and warning anyway would
+        // reproduce all seven corpus false positives during every cold start.
+        // MUTANT CAUGHT: removing the `checker.meta === null` guard.
+        expect(keysOf('if true == false', null)).toEqual([]);
+        expect(keysOf('repeat stop', null)).toEqual([]);
+    });
+
+    it('strips the ~ and ^ sigils, as checkSingleCommand does', () => {
+        expect(keysOf('~if <[x]>')).toEqual(['missing_colon_on_command']);
+        expect(keysOf('^if <[x]>')).toEqual(['missing_colon_on_command']);
+    });
+
+    it('ranges over the first physical line only, offset by the given startChar', () => {
+        // The gatherer joins a colonless command's continuation lines with '\n' (:1516). The
+        // squiggle must cover the line that is missing the colon, not the swallowed block.
+        // MUTANT CAUGHT: using commandText.length instead of the first line's length.
+        const w = colonRun('if <[x]>\n        some continuation')[0];
+        expect({ start: w.startChar, end: w.endChar }).toEqual({ start: 2, end: 2 + 'if <[x]>'.length });
+    });
+
+    it('decides arity from the FIRST line, not from the joined text', () => {
+        // `else` plus a swallowed continuation must still count as one word, or it would be tested
+        // against the with-arguments set and the two sets would disagree about it.
+        expect(keysOf('else\n        continuation here')).toEqual(['missing_colon_on_command']);
     });
 });

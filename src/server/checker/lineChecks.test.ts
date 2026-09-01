@@ -622,8 +622,10 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
         // the container parser has plenty to say about it; both entries are hand-derived from
         // ScriptChecker.cs and are what the C# `Run()` produces for this same input:
         //   line 0, "- narrate <def[a]> " -- a list entry with no list open (secwaiting and
-        //     clist both null) -> weird_line_growth (:1500-1505). Its range END is
-        //     `line.IndexOf('-')`, which is 0 here, NOT `spaces`.
+        //     clist both null) -> weird_line_growth (:1500-1505). The C# range is
+        //     (0, line.IndexOf('-')), which for this column-0 line is (0, 0): a ZERO-WIDTH
+        //     squiggle showing the user nothing. Corrected by user ruling to span the text,
+        //     (0, 19) -- this fixture is exactly the invisible case that motivated the change.
         //   line 2, "\tbar" -- tab-expanded to "    bar" at :1422, so 7 chars; it is not "- ",
         //     does not end ':' and has no ": " -> identifier_missing_line (:1575-1579), range
         //     (0, line.Length) = (0, 7).
@@ -633,7 +635,7 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
             { line: 2, key: 'useless_invalid_line', start: 1, end: 4 },
             { line: 2, key: 'raw_tab_symbol', start: 0, end: 0 },
             { line: 0, key: 'old_defs', start: 10, end: 10 },
-            { line: 0, key: 'weird_line_growth', start: 0, end: 0 },
+            { line: 0, key: 'weird_line_growth', start: 0, end: 19 },
             { line: 2, key: 'identifier_missing_line', start: 0, end: 7 }
         ]);
         // Mutant caught: dropping any one of the five calls from run().

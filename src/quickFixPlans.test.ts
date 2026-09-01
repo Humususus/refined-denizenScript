@@ -14,10 +14,14 @@ function titles(plans: FixPlan[]): string[] {
 }
 
 describe('planFixes: which diagnostics are actionable', () => {
-    it('acts on exactly the two codes whose messages name the fix', () => {
-        // MUTANT CAUGHT: adding a third code, e.g. `empty_command_section`, whose fix is to write
+    it('acts on exactly the three codes whose messages name the fix', () => {
+        // MUTANT CAUGHT: adding a fourth code, e.g. `empty_command_section`, whose fix is to write
         // a body rather than to add punctuation.
-        expect([...ACTIONABLE_CODES].sort()).toEqual(['identifier_missing_line', 'key_line_looks_like_command']);
+        // `missing_colon_on_command` joined the set on 2026-09-01, once the checker change that
+        // emits it landed -- the feature note had recorded it as unbuildable precisely because no
+        // engine reported that line.
+        expect([...ACTIONABLE_CODES].sort())
+            .toEqual(['identifier_missing_line', 'key_line_looks_like_command', 'missing_colon_on_command']);
     });
 
     it('offers nothing for a diagnostic it does not act on', () => {
@@ -117,5 +121,40 @@ describe('planFixes: the edits are insertions, so they are reversible', () => {
         expect(apply('    key1', planFixes('identifier_missing_line', '    key1')[0])).toBe('    key1:');
         expect(apply('    if <[x]> == y:', planFixes('key_line_looks_like_command', '    if <[x]> == y:')[0]))
             .toBe('    - if <[x]> == y:');
+    });
+
+    describe('missing_colon_on_command (the case the feature note said could not be built)', () => {
+        const apply = (text: string, plan: FixPlan): string =>
+            text.slice(0, plan.character) + plan.insert + text.slice(plan.character);
+
+        it('turns the literal requested line into the fixed one', () => {
+            // `- if true == false` -> `- if true == false:`. The checker change of 2026-09-01 is
+            // what makes this reachable; before it, no diagnostic carried this code at all.
+            const text = '    - if true == false';
+            const plans = planFixes('missing_colon_on_command', text);
+            expect(plans.map(p => p.title)).toEqual(["Add ':' to the end of the line"]);
+            expect(apply(text, plans[0])).toBe('    - if true == false:');
+        });
+
+        it('offers the colon ONLY, never the dash', () => {
+            // The diagnostic can only arise on a line the gatherer read as a list entry, so the
+            // dash is already there. Offering to add a second one would corrupt the line.
+            // MUTANT CAUGHT: falling through to the shared dash-adding tail.
+            for (const text of ['    - foreach <list[a]>', '    - else', '- while <[x]>']) {
+                expect(planFixes('missing_colon_on_command', text).map(p => p.insert)).toEqual([':']);
+            }
+        });
+
+        it('puts the colon before trailing whitespace, not after it', () => {
+            // A colon after the spaces does not end the key as far as the parser is concerned, so
+            // the fix would appear to do nothing.
+            // MUTANT CAUGHT: using text.length instead of text.trimEnd().length.
+            expect(apply('    - if <[x]>   ', planFixes('missing_colon_on_command', '    - if <[x]>   ')[0]))
+                .toBe('    - if <[x]>:   ');
+        });
+
+        it('offers nothing once the colon is already there', () => {
+            expect(planFixes('missing_colon_on_command', '    - if true == false:')).toEqual([]);
+        });
     });
 });
