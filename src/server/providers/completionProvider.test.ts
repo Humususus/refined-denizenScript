@@ -1420,3 +1420,76 @@ describe("tag completion items carry the tag's full name as `detail`", () => {
         }
     });
 });
+
+/**
+ * FEATURE-IDEAS.md idea 3, user ruling 2026-09-01: map keys inside `- adjust <obj> <map[...]>`
+ * are mechanism names, and are DERIVED from the meta rather than hand-curated.
+ *
+ * The names in the fixture are the real ones the user asked for by name, and they are real
+ * `EntityTag` properties in Denizen's meta -- which is the fact that made the feature note's
+ * "they are not in Denizen's meta" assessment wrong and this implementation possible.
+ */
+describe('map keys inside an adjust argument (user ruling 2026-09-01)', () => {
+    function adjustDocs(): MetaDocs {
+        const blocks: MetaBlock[] = [
+            { objectType: 'objecttype', url: 's#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'command', url: 's#L1', data: ['@name adjust', '@syntax adjust [<ObjectTag>] [<mechanism>](:<value>)', '@short x', '@group x', '@description x', '@required 1', '@maximum 5', '@end_meta'] },
+            { objectType: 'command', url: 's#L1', data: ['@name narrate', '@syntax narrate [<text>]', '@short x', '@group x', '@description x', '@required 1', '@maximum 2', '@end_meta'] },
+            { objectType: 'command', url: 's#L1', data: ['@name define', '@syntax define [<name>] [<value>]', '@short x', '@group x', '@description x', '@required 1', '@maximum 3', '@end_meta'] },
+            // The map tag itself, documented exactly as the real meta documents it: a GENERIC
+            // `(<map>)` parameter, which is why the ordinary spec registry offers nothing here.
+            { objectType: 'tag', url: 's#L1', data: ['@attribute <map[(<map>)]>', '@returns MapTag', '@description x', '@end_meta'] },
+            { objectType: 'mechanism', url: 's#L1', data: ['@object EntityTag', '@name interpolation_start', '@input DurationTag', '@description x', '@end_meta'] },
+            { objectType: 'mechanism', url: 's#L1', data: ['@object EntityTag', '@name interpolation_duration', '@input DurationTag', '@description x', '@end_meta'] },
+            { objectType: 'mechanism', url: 's#L1', data: ['@object EntityTag', '@name translation', '@input LocationTag', '@description x', '@end_meta'] }
+        ];
+        const docs = buildMetaDocs(blocks);
+        linkTypeGraph(docs);
+        return docs;
+    }
+    const DOCS = adjustDocs();
+    const labels = (text: string) =>
+        provideCompletions(DOCS, createEmptyExtraData(), text, text.length, 0).map(i => i.label);
+
+    it('offers mechanism names for the map keys', () => {
+        expect(labels('- adjust <[ent]> <map[interpolation').sort())
+            .toEqual(['interpolation_duration=', 'interpolation_start=']);
+    });
+
+    it('completes a SECOND key after a ";"', () => {
+        // MUTANT CAUGHT: passing the whole parameter text instead of the segment after the last
+        // `;`, which would match nothing once one entry is written.
+        expect(labels('- adjust <[ent]> <map[translation=1,2,3;interpolation_d'))
+            .toEqual(['interpolation_duration=']);
+    });
+
+    it('replaces only the typed segment, keeping the earlier entries', () => {
+        // Accepting a candidate must not eat `translation=1,2,3;`.
+        const text = '- adjust <[ent]> <map[translation=1,2,3;interpolation_d';
+        const item = provideCompletions(DOCS, createEmptyExtraData(), text, text.length, 0)[0];
+        expect(item.textEdit!.range.start.character).toBe('- adjust <[ent]> <map[translation=1,2,3;'.length);
+    });
+
+    it('offers nothing once the "=" is typed, since the VALUE is undocumented', () => {
+        expect(labels('- adjust <[ent]> <map[translation=')).toEqual([]);
+    });
+
+    it('stays silent in a map that is NOT an adjust argument', () => {
+        // A map's keys are arbitrary in general. This is the whole scoping rule, and without it
+        // the feature would offer mechanisms in every data map in every script.
+        // MUTANT CAUGHT: dropping the `commandName === 'adjust'` half of the condition.
+        expect(labels('- narrate <map[interpolation')).toEqual([]);
+        expect(labels('- define x <map[translation')).toEqual([]);
+    });
+
+    it('stays silent on a KEY line, which has no command at all', () => {
+        // The key-line branch passes no command name, and a `<map[...]>` there is data.
+        // MUTANT CAUGHT: defaulting commandName to 'adjust', or threading it from the key-line path.
+        expect(labels('    display name: <map[interpolation')).toEqual([]);
+    });
+
+    it('does not hijack a different tag that happens to take a parameter', () => {
+        // MUTANT CAUGHT: testing only the command and not the tag name.
+        expect(labels('- adjust <[ent]> <list[interpolation')).toEqual([]);
+    });
+});

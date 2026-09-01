@@ -31,6 +31,42 @@ describe('combineSources', () => {
             'https://example.com/custom.zip'
         ]);
     });
+
+    describe('replaceDefaults (user ruling 2026-09-01, for Denizen forks)', () => {
+        it('uses the extra sources ALONE when asked to', () => {
+            // Why this exists: loading a fork additively can only ADD. Measured against the user's
+            // own DenizenM forks -- they drop three mechanisms that the merged docs then keep, so
+            // the checker accepts three mechanisms their server rejects.
+            // MUTANT CAUGHT: ignoring the flag and always concatenating.
+            const defaults = ['https://example.com/a.zip', 'https://example.com/b.zip'];
+            const extra = ['https://example.com/fork.zip'];
+            expect(combineSources(defaults, extra, true)).toEqual(['https://example.com/fork.zip']);
+        });
+
+        it('still appends when the flag is false or omitted', () => {
+            const defaults = ['https://example.com/a.zip'];
+            const extra = ['https://example.com/fork.zip'];
+            expect(combineSources(defaults, extra, false)).toEqual([...defaults, ...extra]);
+            expect(combineSources(defaults, extra)).toEqual([...defaults, ...extra]);
+        });
+
+        it('REFUSES to leave the server with no sources at all', () => {
+            // An empty or blank-only extra list cannot mean "use nothing": that is an editor with
+            // no commands and no tags, which is the exact failure this codebase spent 2026-08-28
+            // fixing. The defaults win regardless of the flag.
+            // MUTANT CAUGHT: returning the cleaned (empty) list when replaceDefaults is set.
+            const defaults = ['https://example.com/a.zip'];
+            expect(combineSources(defaults, [], true)).toEqual(defaults);
+            expect(combineSources(defaults, ['', '   '], true)).toEqual(defaults);
+            expect(combineSources(defaults, undefined, true)).toEqual(defaults);
+            expect(combineSources(defaults, null, true)).toEqual(defaults);
+        });
+
+        it('trims the replacement list too', () => {
+            expect(combineSources(['https://example.com/a.zip'], ['  https://example.com/fork.zip  ', ''], true))
+                .toEqual(['https://example.com/fork.zip']);
+        });
+    });
 });
 
 describe('buildCapabilities', () => {

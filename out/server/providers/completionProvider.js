@@ -615,12 +615,19 @@ function tagPieceDocumentation(tag, inputData) {
  * `CompleteEnum`'s `key == null ? null : ...` (:206); no `ByTag` registration reaches
  * it today, but `completeEnum` can produce it.
  */
-function completeTagParameter(docs, extra, ctx, line, workspace) {
+function completeTagParameter(docs, extra, ctx, line, workspace, commandName = '') {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
         return null;
     }
-    const candidates = (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
+    // NO C# COUNTERPART -- FEATURE-IDEAS.md idea 3, user ruling 2026-09-01. Inside a `<map[...]>`
+    // written as an argument to `adjust`, the map's keys are mechanism names; everywhere else a
+    // map's keys are arbitrary and this must not fire. See `completeAdjustMapKeys` for why the
+    // list is derived from the meta rather than hand-curated, which is what the feature note
+    // assumed would be necessary.
+    const candidates = documented.tag.cleanName === 'map' && commandName === 'adjust'
+        ? (0, tagParamCompleters_1.completeAdjustMapKeys)(docs, ctx.paramSoFar)
+        : (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results = [];
     for (const candidate of candidates) {
@@ -712,10 +719,10 @@ function lastTopLevelArgStart(trimmed) {
  * begin with (TextDocumentService.cs:421 serves both kinds of line from one block), and having
  * two here is exactly how the key line came to lose tag completion.
  */
-function completeTagAt(docs, extra, argThusFar, argStart, line, trace, workspace) {
+function completeTagAt(docs, extra, argThusFar, argStart, line, trace, workspace, commandName = '') {
     const paramCtx = (0, tagContext_1.findTagParamAtCursor)(argThusFar, argStart);
     if (paramCtx !== null) {
-        const paramResults = completeTagParameter(docs, extra, paramCtx, line, workspace);
+        const paramResults = completeTagParameter(docs, extra, paramCtx, line, workspace, commandName);
         // Null means nothing documents this bracket (unknown tag, or one that takes no
         // parameter). Fall through rather than returning []: the tag-part branch is then
         // free to answer, and does — with [], for the reason above — so this deliberately
@@ -803,7 +810,10 @@ function provideCompletions(docs, extra, text, offset, line, trace = true, works
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
-    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace);
+    // `ctx.name` is the command this line runs, and it is passed only from here: the key-line
+    // branch above has no command, and a `<map[...]>` on a key line is data rather than an adjust
+    // argument, so it must keep offering nothing.
+    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace, ctx.name);
     if (sharedTagResults !== null) {
         return sharedTagResults;
     }

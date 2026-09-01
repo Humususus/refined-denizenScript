@@ -55,6 +55,10 @@
             {
                 "command": "refinedDenizenscript.expandMapTag",
                 "title": "Refined DenizenScript: Expand Map/List Tag"
+            },
+            {
+                "command": "refinedDenizenscript.typeSpaceOrSeparator",
+                "title": "Refined DenizenScript: Type Space or Tag Separator"
             }
         ],
         "keybindings": [
@@ -83,6 +87,11 @@
                 "key": "ctrl+alt+d e",
                 "mac": "cmd+alt+d e",
                 "when": "editorTextFocus && editorLangId == denizenscript"
+            },
+            {
+                "command": "refinedDenizenscript.typeSpaceOrSeparator",
+                "key": "space",
+                "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !inSnippetMode && editorLangId == denizenscript"
             }
         ],
         "menus": {
@@ -150,6 +159,11 @@
                     "type": "string",
                     "default": "|+=#_@/",
                     "description": "Header comment symbols."
+                },
+                "denizenscript.autoInsertTagSeparators": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Pressing space directly inside a <map[...]> types ';' and inside a <list[...]> types '|'. Never fires inside a quoted value, outside those two tags, or where there is nothing to separate. One Backspace turns the separator back into a plain space."
                 },
                 "denizenscript.server.engine": {
                     "type": "string",
@@ -326,6 +340,11 @@
                     },
                     "default": [],
                     "description": "Extra meta documentation sources (direct .zip archive URLs) to load alongside the official Denizen sources. Only used by the TypeScript language server engine (denizenscript.server.engine: \"typescript\"); has no effect on the C# engine, which uses denizenscript.extra_sources instead."
+                },
+                "denizenscript.server.replace_default_sources": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use denizenscript.server.extra_sources INSTEAD of the official Denizen sources rather than alongside them. For a Denizen fork: loading a fork additively can only ever ADD to the official meta, so anything the fork REMOVED is still offered by completion and still accepted by the checker. Ignored when extra_sources is empty. Only affects the TypeScript engine, and is read once when the server starts, so changing it requires a window reload."
                 },
                 "denizenscript.server.tagTracing": {
                     "type": "boolean",

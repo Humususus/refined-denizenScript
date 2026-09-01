@@ -15,7 +15,7 @@
  * range, full markdown documentation — belongs to the caller.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = void 0;
+exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeAdjustMapKeys = void 0;
 const frenetic_1 = require("../checker/frenetic");
 // The one VALUE import from checker/: the inventory label list, which is a hardcoded constant in
 // both languages rather than loaded data, transcribed once for Phase 2C-7's event validators.
@@ -109,6 +109,37 @@ function suggestMechPair(docs, typed) {
 function suggestMechPairSet(docs, typed) {
     return suggestMechPair(docs, afterLast(typed, ';'));
 }
+/**
+ * Mechanism-name candidates for the keys of a `<map[...]>` written as an argument to `adjust`.
+ *
+ * NO C# COUNTERPART -- FEATURE-IDEAS.md idea 3, built on the user's ruling of 2026-09-01.
+ *
+ * WHY THIS IS NOT THE FEATURE NOTE'S DESIGN. That note assessed the request ("offer
+ * `translation`, `interpolation_start`, `interpolation_duration` while typing inside a map tag")
+ * and concluded the names "are not in Denizen's meta", so the list would have to be hand-curated
+ * and would go stale. THAT ASSESSMENT WAS WRONG, and the meta says so: all three are documented
+ * `EntityTag` properties, and a property is both a tag and a mechanism. Checked 2026-09-01 against
+ * the live meta -- `entitytag.interpolation_start`, `entitytag.interpolation_duration`,
+ * `entitytag.translation`, `entitytag.scale`. So the list is DERIVED, not curated, and cannot go
+ * stale: a Denizen release that adds a display property makes it complete here the same day.
+ *
+ * WHY IT IS SCOPED TO `adjust`. A map's keys are arbitrary in the general case -- `<map[a=1;b=2]>`
+ * holding data has nothing to do with mechanisms -- and the tag's own documented parameter is the
+ * generic `(<map>)`, which is why the existing spec registry rightly offers nothing there.
+ * `- adjust <object> <map[...]>` is the one shape where the keys ARE mechanism names. It is also
+ * the form the user actually writes: `- adjust <[ent]> <map[...]>` is the commonest adjust in
+ * their scripts, which is already recorded in commandSpecifics.ts's exemption for it.
+ *
+ * Not narrowed to the adjusted object's TYPE. Doing that means tracing `<[ent]>` back to a type,
+ * which for a definition holding an entity is exactly the case the tag tracer cannot resolve; the
+ * result would be an empty list precisely where the feature is wanted. Offering every object's
+ * mechanisms matches what `SuggestMechanisms` already does for `<mechanism>=<value>;...` and what
+ * the C# does there (:209-212), and the typed prefix narrows it immediately.
+ */
+function completeAdjustMapKeys(docs, typed) {
+    return suggestMechPairSet(docs, typed);
+}
+exports.completeAdjustMapKeys = completeAdjustMapKeys;
 /**
  * Registers an `ExtraData`-backed spec. Mirrors the `Register` overload that takes
  * `(options, enumKey)` and wraps it in `CompleteEnum` (:26-33); the raw-function

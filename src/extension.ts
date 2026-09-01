@@ -9,6 +9,7 @@ import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './m
 import { findSaveEntries, entryTagsFor } from "./entryTags";
 import { activateMapTagPeek, SCHEME as MAP_TAG_SCHEME } from "./mapTagPeek";
 import { activateQuickFixes } from "./quickFixes";
+import { separatorForSpace } from "./tagSeparators";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from "./denizenEvents";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
@@ -2446,8 +2447,87 @@ async function escapeSelectionOrDelimitedText() {
     editor.selection = new vscode.Selection(end, end);
 }
 
+/**
+ * A separator this helper typed in place of a space, so one Backspace can put the space back.
+ *
+ * `position` is where the cursor ended up, i.e. immediately AFTER the inserted character.
+ */
+interface DenizenSeparatorEdit {
+    uri: string;
+    position: vscode.Position;
+    inserted: string;
+}
+
+let lastDenizenSeparatorEdit : DenizenSeparatorEdit | undefined = undefined;
+
+/**
+ * SPACE inside a `<map[...]>` or `<list[...]>` types the separator that tag wants.
+ *
+ * FEATURE-IDEAS.md idea 5, user ruling 2026-09-01. Every decision lives in `separatorForSpace`
+ * (src/tagSeparators.ts) so it can be unit-tested without an editor; this function is only the
+ * plumbing, and its rule is that ANY doubt falls through to typing a real space.
+ *
+ * Bound to `space` for denizenscript documents, so it runs on every space the user types in one.
+ * That is why the guards below are ordered cheapest-first and why the setting is read here rather
+ * than cached -- turning the feature off must take effect immediately, not at the next reload.
+ */
+async function typeSpaceOrSeparator() {
+    const editor = vscode.window.activeTextEditor;
+    // Every path below starts by forgetting the last separator. A space that was NOT converted
+    // means the user has typed something else since, so a Backspace after it must be an ordinary
+    // Backspace; the successful path sets a fresh record at the end.
+    lastDenizenSeparatorEdit = undefined;
+    if (!isDenizenEditor(editor)) {
+        await typeDefaultText(" ");
+        return;
+    }
+    if (!vscode.workspace.getConfiguration("denizenscript").get<boolean>("autoInsertTagSeparators", true)) {
+        await typeDefaultText(" ");
+        return;
+    }
+    // Multi-cursor and non-empty selections are left entirely alone. The helper would have to
+    // decide separately for each cursor, and a wrong guess in several places at once is exactly
+    // the "fights the user" failure the feature note warned about.
+    if (editor.selections.length != 1 || !editor.selection.isEmpty) {
+        await typeDefaultText(" ");
+        return;
+    }
+    const position = editor.selection.active;
+    const separator = separatorForSpace(editor.document.lineAt(position.line).text, position.character);
+    if (separator === null) {
+        await typeDefaultText(" ");
+        return;
+    }
+    await editor.edit(editBuilder => {
+        editBuilder.insert(position, separator);
+    });
+    const end = position.translate(0, separator.length);
+    lastDenizenSeparatorEdit = { uri: editor.document.uri.toString(), position: end, inserted: separator };
+    editor.selection = new vscode.Selection(end, end);
+}
+
 async function undoLastDenizenEscapeOrBackspace() {
     const editor = vscode.window.activeTextEditor;
+    // The separator helper shares this key rather than binding Backspace a second time -- two
+    // bindings on one key with the same `when` clause fight each other, and which one wins is not
+    // something this extension should be guessing at. It is checked FIRST because it is the more
+    // recent of the two edits whenever both exist.
+    if (isDenizenEditor(editor) && lastDenizenSeparatorEdit && editor.document.uri.toString() == lastDenizenSeparatorEdit.uri
+        && editor.selections.length == 1 && editor.selection.isEmpty
+        && editor.selection.active.isEqual(lastDenizenSeparatorEdit.position)) {
+        const end = lastDenizenSeparatorEdit.position;
+        const start = end.translate(0, -lastDenizenSeparatorEdit.inserted.length);
+        // Replaced with a SPACE, not deleted: the user pressed space and meant it, and this undoes
+        // only the extension's substitution. A second Backspace then deletes the space normally.
+        await editor.edit(editBuilder => {
+            editBuilder.replace(new vscode.Range(start, end), " ");
+        });
+        const after = start.translate(0, 1);
+        editor.selection = new vscode.Selection(after, after);
+        lastDenizenSeparatorEdit = undefined;
+        return;
+    }
+    lastDenizenSeparatorEdit = undefined;
     if (!isDenizenEditor(editor) || !lastDenizenEscapedEdit || editor.document.uri.toString() != lastDenizenEscapedEdit.uri || editor.selections.length != 1 || !editor.selection.isEmpty) {
         await vscode.commands.executeCommand("deleteLeft");
         return;
@@ -2472,6 +2552,7 @@ async function undoLastDenizenEscapeOrBackspace() {
 function activateDenizenEscaping(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.escapeSelectionOrDelimitedText", escapeSelectionOrDelimitedText));
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.undoEscapeOrBackspace", undoLastDenizenEscapeOrBackspace));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.typeSpaceOrSeparator", typeSpaceOrSeparator));
 }
 
 function tryLoadConfigYaml(relativeTo : vscode.TextDocument) {

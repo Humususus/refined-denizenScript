@@ -75,12 +75,30 @@ function getExtraDataCacheFile(): string {
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'minecraft.fds');
 }
 
-/** Merges the default meta sources with any user-configured extra sources, filtering out blank entries. Extracted as its own function so it's independently unit-testable without a live LSP connection. */
-export function combineSources(defaults: string[], extra: string[] | undefined | null): string[] {
-    if (!extra || extra.length === 0) {
+/**
+ * Merges the default meta sources with any user-configured extra sources, filtering out blank
+ * entries. Extracted as its own function so it's independently unit-testable without a live LSP
+ * connection.
+ *
+ * `replaceDefaults` makes the extra sources the ONLY sources. It exists because the additive
+ * behaviour cannot express a fork that REMOVES something, and that is a real case rather than a
+ * hypothetical: measured 2026-09-01 against the user's own DenizenM forks, which add an `async`
+ * command and two properties but drop the `add_tab_completions`, `flying_fall_damage` and
+ * `remove_tab_completions` mechanisms. Loaded additively, those three stay in the merged docs, so
+ * the checker accepts and completion offers three mechanisms the user's server would reject.
+ *
+ * It is off by default, and deliberately so: turning it on means a typo in the setting leaves the
+ * editor with no meta at all rather than with the official meta plus a warning.
+ */
+export function combineSources(defaults: string[], extra: string[] | undefined | null, replaceDefaults: boolean = false): string[] {
+    const cleaned = (extra ?? []).map(s => s.trim()).filter(s => s.length > 0);
+    if (cleaned.length === 0) {
+        // An empty or blank-only list can never mean "use nothing" -- that would be an editor with
+        // no commands and no tags, which is indistinguishable from the failure mode this codebase
+        // spent 2026-08-28 fixing. The defaults win regardless of the flag.
         return defaults;
     }
-    return [...defaults, ...extra.map(s => s.trim()).filter(s => s.length > 0)];
+    return replaceDefaults ? cleaned : [...defaults, ...cleaned];
 }
 
 /** The capabilities this server advertises. Extracted so it is testable without a live connection. */
@@ -271,9 +289,13 @@ export function createServer(): Connection {
                 connection.console.error(`Reading denizenscript.behaviors.track_full_workspace failed, leaving it on: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
             });
 
-        connection.workspace.getConfiguration('denizenscript.server.extra_sources')
-            .then((extraSources: string[] | undefined) => {
-                const sources = combineSources(DEFAULT_META_SOURCES, extraSources);
+        Promise.all([
+            connection.workspace.getConfiguration('denizenscript.server.extra_sources'),
+            connection.workspace.getConfiguration('denizenscript.server.replace_default_sources')
+        ])
+            .then(([extraSources, replace]: [string[] | undefined, boolean | undefined]) => {
+                const sources = combineSources(DEFAULT_META_SOURCES, extraSources, replace === true);
+                connection.console.log(`Meta sources (${replace === true ? 'REPLACING' : 'alongside'} the defaults): ${sources.length} -- ${sources.join(', ')}`);
                 return loadMetaDocs({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources });
             })
             .then(docs => {
