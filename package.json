@@ -387,9 +387,11 @@
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./ --skipLibCheck",
-        "package": "vsce package",
-        "test": "vitest run"
+        "compile": "node node_modules/typescript/bin/tsc -p ./ --skipLibCheck",
+        "test": "node node_modules/vitest/vitest.mjs run",
+        "verify": "node scripts/verify-grammar.js && node scripts/verify-snippets.js",
+        "vsix": "node scripts/build-vsix.js",
+        "package": "node scripts/build-vsix.js"
     },
     "devDependencies": {
         "@types/adm-zip": "^0.5.7",

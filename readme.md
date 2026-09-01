@@ -1,3 +1,6 @@
+<img width="840" height="180" alt="Frame 1" src="https://github.com/user-attachments/assets/4b738eed-b730-4b1e-8dd6-f44b8dfa4510" />
+
+
 # Refined-DenizenScript
 
 Syntax highlighting, completion, hover and diagnostics for **Denizen scripts** in Visual Studio Code.
@@ -16,8 +19,7 @@ You'll be notified when a new release is out. To check manually: `Ctrl+Shift+P` 
 Auto-checking is configurable — `refinedDenizenscript.update.autoCheck` and `refinedDenizenscript.update.checkIntervalHours`.
 
 ---
-
-## Features
+<img width="840" height="180" alt="Frame 12" src="https://github.com/user-attachments/assets/c17cf3b7-5200-48ed-b466-8b6841cf191e" />
 
 ### File and folder icons
 A **DenizenScript Icons** file icon theme, with distinct icons for `.dsc` files and for 28 recognised Denizen folder names — `handlers`, `data`, `dialogs`, `utils`, `worlds`, `commands`, `entities`, `tasks`, `animations`, `extensions` and more, including their singular/plural spellings.
@@ -31,23 +33,13 @@ Silence warnings you don't want without touching the script:
 - **`Refined DenizenScript: Unmute Diagnostics`** — undo it.
 - `##ignorewarning <key>` at the top of a file silences one specific check for that whole file.
 
-### Quick Fixes for missing `:` and `-`
-Two of the checker's warnings say exactly what you forgot, so the lightbulb now offers to do it:
-
-- **Line purpose unknown, no identifier** — offers to add a `:` at the end, or a `- ` at the indent.
-- **Line appears to be intended as command, but forgot a `-`** — offers to add the `- `.
-
-The action only appears where a warning already sits, so nothing fires on code the checker is happy with, and every fix is a pure insertion that one <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes. Works on both language server engines.
-
 ### Escaped symbol helper
 - Select text and press <kbd>/</kbd> to convert Denizen special characters into escape codes.
 - Type a delimited value like `/[]/` to turn it into `<&lb><&rb>`.
 - Press <kbd>Backspace</kbd> right after a conversion to undo it back to the original `/…/` text.
 
-### Third-party add-on support
-Add-ons like [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1), BetterModel or DiscordSRV are supported by loading their own meta documentation, not by a built-in list. Point `denizenscript.server.extra_sources` at their meta `.zip` archives and their commands, tags, mechanisms and events become first-class: real completion, real hover, and no false "unknown command" diagnostics.
-
-This replaced a hardcoded table of a few dozen entries. The table could only guess — it offered every entry at every position regardless of what object preceded it, and suppressed diagnostics by matching words as generic as `teleport` and `async`, which silently hid real errors.
+### DenizenM support
+Completion and hover documentation for [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1) — escape tags, base tags, dot tags, commands, command arguments and events. DenizenM syntax is also excluded from diagnostics, so the base Denizen checker doesn't flag it as invalid.
 
 ### Denizen-Utilities support
 - `dialog` snippet for scaffolding a dialog container.
@@ -75,12 +67,11 @@ This replaced a hardcoded table of a few dozen entries. The table could only gue
 Load documentation for your own add-ons alongside the official Denizen meta — `denizenscript.extra_sources` (C# engine) or `denizenscript.server.extra_sources` (TypeScript engine), as direct `.zip` URLs.
 
 ---
+<img width="840" height="180" alt="Frame 13" src="https://github.com/user-attachments/assets/43a32c99-4ebe-46ac-a522-2a5ca475ddc9" />
 
-## Fixes
 
 Defects this fork corrects that the original gets wrong:
 
-- **`type: dialog` containers are recognised.** Previously every dialog container was reported as an unknown script type — a red error on perfectly valid scripts.
 - **Squiggles land on the text, not the indentation.** Three separate cases where a warning underlined the leading whitespace instead of the thing it complained about, including one where a capitalised key produced a broken range.
 - **Colour-code warnings report on the right line.** `§` used for colour codes was reported on the wrong line when a command spanned several lines, and missed entirely when it appeared on a continuation line.
 
@@ -94,8 +85,7 @@ Two engines ship with the extension, picked with `denizenscript.server.engine`:
 - **`typescript`** — an in-progress rewrite with no .NET dependency and a faster start. Completion, hover and most script diagnostics work; **tag and command checking isn't finished**, so it reports less than the C# engine. The default is the safe choice.
 
 ---
-
-## For developers
+<img width="840" height="180" alt="Frame 15" src="https://github.com/user-attachments/assets/e778841e-7e34-44f5-a2eb-70fb6b682b7e" />
 
 ### Setup
 
@@ -145,23 +135,14 @@ The TypeScript language server is a **faithful port** of `SharpDenizenTools`, no
 | End-to-end verification | **10 scripts**, all passing against live meta |
 | TypeScript compile | clean |
 
-**Done:** meta loading and linking · command, argument, tag and tag-parameter completion · tag tracing · hover · 23 diagnostics across three layers (line-level checks, container structure, container validity).
-
-**In progress:** tag and command checking — the layer that reports an undefined `<[definition]>` or a garbage tag. The pieces are ported and tested; connecting them needs the container walker.
-
-**Not started:** event validation · tag hover and deprecation warnings · cross-file workspace analysis · YAML validation (deliberately — the rewrite takes no YAML dependency, and the hand-written structure parser covers most of what it caught).
-
-Every test names the mutant it catches, and each task ends with a mutation audit that proves it does. That standard exists because nine tests across one phase named a mutant they did not actually catch — every one found by auditing, none by review.
 
 ---
-
-## Contributing
+<img width="840" height="180" alt="Frame 16" src="https://github.com/user-attachments/assets/5e41cb33-1037-455e-bf23-096ee98cba2f" />
 
 Open source, free for everyone to use and contribute to. If you make changes that could benefit the community, please contribute them upstream to [DenizenVSCode](https://github.com/DenizenScript/DenizenVSCode).
 
 ---
-
-## License
+<img width="840" height="180" alt="Frame 14" src="https://github.com/user-attachments/assets/fac5372a-2ebb-4d94-a021-b8ba056cbdb5" />
 
 MIT.
 

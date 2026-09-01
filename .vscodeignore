@@ -1,0 +1,35 @@
+# What NOT to ship inside the .vsix.
+#
+# vsce already drops devDependencies and .git, but with no file here it packs the whole working
+# tree -- TypeScript sources, the 46 test files, the plan documents, the verify scripts. None of
+# that runs in the editor; `main` is ./out/extension.js and the language server is loaded from
+# out/ too, so out/**/*.js plus the static assets is the entire runtime.
+#
+# Production dependencies (adm-zip, the vscode-language* packages, yaml) are deliberately NOT
+# excluded: they are require()d at runtime and the extension is broken without them.
+
+# Sources -- the compiled output in out/ is what runs.
+src/**
+**/*.ts
+!**/*.d.ts
+
+# Source maps point at src/, which is not shipped, so they resolve to nothing.
+**/*.map
+
+# Build, test and development tooling.
+tsconfig.json
+vitest.config.*
+scripts/**
+.vscode/**
+.vscode-test/**
+.github/**
+
+# Planning and session notes. Gitignored anyway, but a working tree can still hold them.
+docs/**
+.superpowers/**
+
+# Repo metadata and any previously built package.
+.gitignore
+.gitattributes
+.eslintrc*
+**/*.vsix
