@@ -1588,6 +1588,20 @@ const ifCmdLabels : string[] = [ "cmd:if", "cmd:else", "cmd:while", "cmd:waitunt
 
 const deffableCmdLabels : string[] = [ "cmd:run", "cmd:runlater", "cmd:clickable", "cmd:bungeerun" ];
 
+/**
+ * The `cmd:<name>` context label for a command, with any waitable/instant sigil stripped.
+ *
+ * `~` makes a command waitable and `^` makes it run instantly; neither is part of the name
+ * (ScriptChecker.cs:809-812 strips them for exactly this reason). Without stripping them here the
+ * label came out as `cmd:~run`, matching nothing in `deffableCmdLabels` or `ifCmdLabels`, so a
+ * waitable command silently lost its `def:` name colouring and its `if` operator colouring.
+ * Reported by the user 2026-09-01 for `~narrate`.
+ */
+function commandContextLabel(commandText : string) : string {
+    const name = commandText.trim();
+    return "cmd:" + (name.startsWith("~") || name.startsWith("^") ? name.substring(1) : name);
+}
+
 function checkIfHasTagEnd(arg : string, quoted: boolean, quoteMode: string, canQuote : boolean) : boolean {
     const len : number = arg.length;
     let params : number = 0;
@@ -1982,7 +1996,7 @@ function decorateLine(line : string, lineNumber: number, decorations: { [color: 
             const commandText = commandEnd == 0 ? afterDash : afterDash.substring(0, commandEnd);
             if (!afterDash.startsWith(" ")) {
                 addDecor(decorations, "bad_space", lineNumber, preSpaces + 1, endIndexCleaned);
-                decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, false, "cmd:" + commandText.trim());
+                decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, false, commandContextLabel(commandText));
             }
             else {
                 if (commandText.includes("'") || commandText.includes("\"") || commandText.includes("[")) {
@@ -1991,7 +2005,7 @@ function decorateLine(line : string, lineNumber: number, decorations: { [color: 
                 else {
                     addDecor(decorations, "command", lineNumber, preSpaces + 2, endIndexCleaned);
                     if (commandEnd > 0) {
-                        decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, true, "cmd:" + commandText.trim());
+                        decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, true, commandContextLabel(commandText));
                     }
                 }
             }

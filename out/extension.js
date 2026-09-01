@@ -1517,6 +1517,19 @@ function decorateTag(tag, start, lineNumber, decorations) {
 const ifOperators = ["<", ">", "<=", ">=", "==", "!=", "||", "&&", "(", ")", "or", "not", "and", "in", "contains", "!in", "!contains", "matches", "!matches"];
 const ifCmdLabels = ["cmd:if", "cmd:else", "cmd:while", "cmd:waituntil"];
 const deffableCmdLabels = ["cmd:run", "cmd:runlater", "cmd:clickable", "cmd:bungeerun"];
+/**
+ * The `cmd:<name>` context label for a command, with any waitable/instant sigil stripped.
+ *
+ * `~` makes a command waitable and `^` makes it run instantly; neither is part of the name
+ * (ScriptChecker.cs:809-812 strips them for exactly this reason). Without stripping them here the
+ * label came out as `cmd:~run`, matching nothing in `deffableCmdLabels` or `ifCmdLabels`, so a
+ * waitable command silently lost its `def:` name colouring and its `if` operator colouring.
+ * Reported by the user 2026-09-01 for `~narrate`.
+ */
+function commandContextLabel(commandText) {
+    const name = commandText.trim();
+    return "cmd:" + (name.startsWith("~") || name.startsWith("^") ? name.substring(1) : name);
+}
 function checkIfHasTagEnd(arg, quoted, quoteMode, canQuote) {
     const len = arg.length;
     let params = 0;
@@ -1897,7 +1910,7 @@ function decorateLine(line, lineNumber, decorations, lastKey, isData) {
             const commandText = commandEnd == 0 ? afterDash : afterDash.substring(0, commandEnd);
             if (!afterDash.startsWith(" ")) {
                 addDecor(decorations, "bad_space", lineNumber, preSpaces + 1, endIndexCleaned);
-                decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, false, "cmd:" + commandText.trim());
+                decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, false, commandContextLabel(commandText));
             }
             else {
                 if (commandText.includes("'") || commandText.includes("\"") || commandText.includes("[")) {
@@ -1906,7 +1919,7 @@ function decorateLine(line, lineNumber, decorations, lastKey, isData) {
                 else {
                     addDecor(decorations, "command", lineNumber, preSpaces + 2, endIndexCleaned);
                     if (commandEnd > 0) {
-                        decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, true, "cmd:" + commandText.trim());
+                        decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, true, commandContextLabel(commandText));
                     }
                 }
             }

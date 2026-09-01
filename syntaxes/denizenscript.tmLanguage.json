@@ -26,8 +26,9 @@
         "comments": {
             "patterns": [
                 {
+                    "comment": "ANCHORED AT THE START OF THE LINE, and that anchor is load-bearing. Denizen has no end-of-line comment: ScriptChecker.cs:184 tests the TRIMMED line with StartsWith('#'), so a '#' anywhere else is ordinary argument text. Unanchored, this rule ran before every other pattern in the file and greyed out the rest of any line holding a '#' -- a hex colour such as <&color[#FF0000]>, a '#' inside a quoted string, or a channel name.",
                     "name": "comment.line.number-sign.denizenscript",
-                    "match": "#.*$"
+                    "match": "^\\s*#.*$"
                 }
             ]
         },
@@ -94,9 +95,12 @@
             "patterns": [
                 {
                     "name": "keyword.control.denizenscript",
-                    "match": "^\\s*-\\s+([A-Za-z_][A-Za-z0-9_-]*)\\b",
+                    "match": "^\\s*-\\s+([~^]?)([A-Za-z_][A-Za-z0-9_-]*)\\b",
                     "captures": {
                         "1": {
+                            "name": "keyword.operator.denizenscript"
+                        },
+                        "2": {
                             "name": "support.function.denizenscript"
                         }
                     }
@@ -145,8 +149,9 @@
                     }
                 },
                 {
+                    "comment": "The value half gets its own sub-patterns so a tag or a quoted string written on a key line is highlighted as one. Without them this capture swallowed the whole value flat, so `display name: <&b>Test` showed the tag in the plain value colour -- and key lines are where display names, formats and titles are written, which is exactly where tags are commonest. The value also runs to end of line rather than stopping at '#': Denizen has no end-of-line comment (see the note in #comments).",
                     "name": "meta.mapping.value.denizenscript",
-                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^#\\r\\n]*)",
+                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^\\r\\n]*)",
                     "captures": {
                         "2": {
                             "name": "entity.name.section.denizenscript"
@@ -155,7 +160,15 @@
                             "name": "entity.name.section.denizenscript"
                         },
                         "4": {
-                            "name": "constant.language.denizenscript"
+                            "name": "constant.language.denizenscript",
+                            "patterns": [
+                                {
+                                    "include": "#tags"
+                                },
+                                {
+                                    "include": "#strings"
+                                }
+                            ]
                         }
                     }
                 },
