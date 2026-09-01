@@ -10,13 +10,13 @@ import { CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 
 import { MetaDocs, MetaCommand, MetaTag } from '../metaDocs/metaTypes';
 import { describeCommand, describeScript, describeTag, descriptionClean, linkMeta, obligatoryText } from './describe';
 import type { ScriptingWorkspaceData } from '../checker/containerConvert';
-import { parseCursorContext, LineCursorContext } from './cursorContext';
+import { parseCursorContext, LineCursorContext, CommandCursorContext } from './cursorContext';
 import { findTagAtCursor, findTagParamAtCursor, TagCursorContext, TagParamContext } from './tagContext';
 import { ExtraData } from '../metaDocs/extraData';
 import { findEnumCompleters, findKeyLineCompleter } from './argumentCompleters';
 import { parseTag } from './tagHelper';
 import { traceTag } from './tagTracer';
-import { completeTagParam, completeAdjustMapKeys, ParamCandidateKind } from './tagParamCompleters';
+import { completeTagParam, completeMapKeys, ParamCandidateKind } from './tagParamCompleters';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -622,18 +622,22 @@ function tagPieceDocumentation(tag: MetaTag, inputData: string): string {
  * `CompleteEnum`'s `key == null ? null : ...` (:206); no `ByTag` registration reaches
  * it today, but `completeEnum` can produce it.
  */
-function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamContext, line: number, workspace: ScriptingWorkspaceData | null, commandName: string = ''): CompletionItem[] | null {
+function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamContext, line: number, workspace: ScriptingWorkspaceData | null): CompletionItem[] | null {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
         return null;
     }
-    // NO C# COUNTERPART -- FEATURE-IDEAS.md idea 3, user ruling 2026-09-01. Inside a `<map[...]>`
-    // written as an argument to `adjust`, the map's keys are mechanism names; everywhere else a
-    // map's keys are arbitrary and this must not fire. See `completeAdjustMapKeys` for why the
-    // list is derived from the meta rather than hand-curated, which is what the feature note
-    // assumed would be necessary.
-    const candidates = documented.tag.cleanName === 'map' && commandName === 'adjust'
-        ? completeAdjustMapKeys(docs, ctx.paramSoFar)
+    // NO C# COUNTERPART -- FEATURE-IDEAS.md idea 3, user ruling 2026-09-01. `<map[...]>` documents
+    // its own parameter as the generic `(<map>)`, so the spec registry has nothing to offer there
+    // and the bracket sat empty.
+    //
+    // SCOPE WIDENED 2026-09-01, second ruling. This first shipped restricted to maps written as an
+    // argument to `adjust`, on the reasoning that a data map's keys are arbitrary. The user asked
+    // for it in a plain `- narrate <map[...]>` as well, which is their call to make: the noise is
+    // one list the typed prefix immediately narrows, and the restriction meant the feature was
+    // missing exactly where they went looking for it.
+    const candidates = documented.tag.cleanName === 'map'
+        ? completeMapKeys(docs, ctx.paramSoFar)
         : completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results: CompletionItem[] = [];
@@ -728,10 +732,10 @@ function lastTopLevelArgStart(trimmed: string): number {
  * begin with (TextDocumentService.cs:421 serves both kinds of line from one block), and having
  * two here is exactly how the key line came to lose tag completion.
  */
-function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, argStart: number, line: number, trace: boolean, workspace: ScriptingWorkspaceData | null, commandName: string = ''): CompletionItem[] | null {
+function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, argStart: number, line: number, trace: boolean, workspace: ScriptingWorkspaceData | null): CompletionItem[] | null {
     const paramCtx = findTagParamAtCursor(argThusFar, argStart);
     if (paramCtx !== null) {
-        const paramResults = completeTagParameter(docs, extra, paramCtx, line, workspace, commandName);
+        const paramResults = completeTagParameter(docs, extra, paramCtx, line, workspace);
         // Null means nothing documents this bracket (unknown tag, or one that takes no
         // parameter). Fall through rather than returning []: the tag-part branch is then
         // free to answer, and does — with [], for the reason above — so this deliberately
@@ -745,6 +749,41 @@ function completeTagAt(docs: MetaDocs, extra: ExtraData, argThusFar: string, arg
         return completeTag(docs, tagCtx, line, trace);
     }
     return null;
+}
+
+/**
+ * Mechanism names for a command argument documented as `<mechanism>`, or null when this line and
+ * cursor are not that. See the note at the call site for why it exists and why it reads the syntax.
+ *
+ * Returns an empty list — not null — once the `:` is typed: the VALUE side of `mech:value` is
+ * undocumented, exactly as `SuggestMechPair` (CommandTabCompletions.cs:214-224) decides for the
+ * `=` form. Null would let the enum branch answer instead, which is not what "nothing to say here"
+ * should mean.
+ */
+function completeMechanismArgument(docs: MetaDocs, ctx: CommandCursorContext, line: number): CompletionItem[] | null {
+    const command = docs.commands.get(ctx.name);
+    if (command === undefined || !command.syntax.includes('<mechanism>') || ctx.argIndex < 1) {
+        return null;
+    }
+    if (ctx.argPrefix.length > 0) {
+        return [];
+    }
+    const range: Range = { start: { line, character: ctx.argStart }, end: { line, character: ctx.argEnd } };
+    const results: CompletionItem[] = [];
+    for (const mechanism of docs.mechanisms.values()) {
+        if (mechanism.mechName.startsWith(ctx.argThusFar)) {
+            results.push({
+                label: `${mechanism.mechName}:`,
+                kind: CompletionItemKind.Property,
+                textEdit: { range, newText: `${mechanism.mechName}:` },
+                documentation: {
+                    kind: MarkupKind.Markdown,
+                    value: `**${mechanism.mechObject} Mechanism**: ${mechanism.mechName}`
+                }
+            });
+        }
+    }
+    return results;
 }
 
 export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: string, offset: number, line: number, trace: boolean = true, workspace: ScriptingWorkspaceData | null = null): CompletionItem[] {
@@ -820,12 +859,25 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
-    // `ctx.name` is the command this line runs, and it is passed only from here: the key-line
-    // branch above has no command, and a `<map[...]>` on a key line is data rather than an adjust
-    // argument, so it must keep offering nothing.
-    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace, ctx.name);
+    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace);
     if (sharedTagResults !== null) {
         return sharedTagResults;
+    }
+    // NO C# COUNTERPART, and no TypeScript one either until 2026-09-01 -- the user reported that
+    // `- adjust <[ent]> inter` offered nothing. It is a real gap in BOTH engines:
+    // CommandTabCompletions.cs registers mechanism completion only for tag PARAMETER specs
+    // (`<property-name>`, `<mechanism>=<value>`, ...) at :52-55, and never for a command argument,
+    // so `adjust`'s own documented `[<mechanism>]` argument completes nothing on either server.
+    //
+    // Which commands qualify is read from the SYNTAX rather than a hardcoded name list, the same
+    // call made for the loop-control forms in commandSpecifics.ts: any command documenting a
+    // `<mechanism>` argument gets this, so a Denizen release that adds one needs no change here.
+    //
+    // `argIndex >= 1` because the mechanism is never the first argument -- that slot is the object
+    // being adjusted, and offering 680 mechanism names there would bury the real suggestions.
+    const mechResults = completeMechanismArgument(docs, ctx, line);
+    if (mechResults !== null) {
+        return mechResults;
     }
     // C# merges both sources rather than choosing one (TextDocumentService.cs:362-367
     // appends the ByCommand completer's output onto the argument-name results), and the

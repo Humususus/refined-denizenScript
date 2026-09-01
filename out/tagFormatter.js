@@ -87,22 +87,86 @@ function findTagAt(line, character) {
     return null;
 }
 exports.findTagAt = findTagAt;
-/** The `map` / `list` tag bases this module knows how to break apart, and their separators. */
-const FORMATTABLE = [
-    { prefix: '<map[', separator: ';', keyed: true },
-    { prefix: '<list[', separator: '|', keyed: false }
-];
 /**
- * Splits a `<map[...]>` or `<list[...]>` tag into its entries, or null when the tag is not one
- * of those or holds only a single entry (where formatting would add noise and no information).
+ * The tag names this module knows how to break apart, and their separators.
+ *
+ * `with` joined on 2026-09-01, reported by the user: `<item.with[display_name=hi;quantity=2]>` is
+ * a `;`-separated set exactly as a map is -- the meta documents its parameter as
+ * `<mechanism>=<value>;...` -- and it is where long mechanism sets are actually written, so it was
+ * the most conspicuous omission. `with_single` takes one mechanism and no separator, so it is
+ * deliberately absent.
+ *
+ * KEYED BY TAG NAME, NOT BY A `<map[` PREFIX, and that is what the `with` support needed. `map`
+ * and `list` are BASE tags, so a prefix test worked for them; `with` is only ever a SUB-tag
+ * (`<item.with[...]>`, `<player.item_in_hand.with[...]>`), and no fixed prefix can match it.
  */
-function splitTagEntries(tagText) {
-    const lower = tagText.toLowerCase();
-    const kind = FORMATTABLE.find(k => lower.startsWith(k.prefix));
-    if (kind === undefined || !tagText.endsWith(']>')) {
+const FORMATTABLE = new Map([
+    ['map', { separator: ';', keyed: true }],
+    ['with', { separator: ';', keyed: true }],
+    ['list', { separator: '|', keyed: false }]
+]);
+/**
+ * Index of the `[` that opens the tag's FINAL parameter group, given text ending in `]>`, or -1.
+ *
+ * Walks back from the closing `]` counting depth, so a nested `<list[1|2]>` inside the parameters
+ * does not misdirect it. Taking the final group rather than the first is what makes
+ * `<map[a=1;b=2].get[x]>` correctly UNformattable: the group under consideration belongs to `get`.
+ */
+function paramBracketStart(tagText) {
+    let depth = 0;
+    for (let i = tagText.length - 2; i >= 0; i--) {
+        const ch = tagText[i];
+        if (ch === ']') {
+            depth++;
+        }
+        else if (ch === '[') {
+            depth--;
+            if (depth === 0) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+/**
+ * The tag-name component immediately before the `[` at `bracketIndex`, lowercased.
+ *
+ * `<map[` gives "map", `<item.with[` gives "with", `<item[stone].with[` gives "with". The cut is
+ * at the last `.`, which is correct even when an earlier parameter contains one, since that `.`
+ * comes earlier in the string than the one before the name.
+ */
+function nameBeforeBracket(tagText, bracketIndex) {
+    const head = tagText.substring(0, bracketIndex);
+    const dot = head.lastIndexOf('.');
+    return (dot === -1 ? head.replace(/^</, '') : head.substring(dot + 1)).toLowerCase();
+}
+/** The kind and opening text (`<` through `[`) for a formattable tag, or null. */
+function describeFormattable(tagText) {
+    if (!tagText.endsWith(']>')) {
         return null;
     }
-    const inner = tagText.substring(kind.prefix.length, tagText.length - ']>'.length);
+    const bracket = paramBracketStart(tagText);
+    if (bracket === -1) {
+        return null;
+    }
+    const kind = FORMATTABLE.get(nameBeforeBracket(tagText, bracket));
+    if (kind === undefined) {
+        return null;
+    }
+    return { kind, opening: tagText.substring(0, bracket + 1) };
+}
+/**
+ * Splits a `<map[...]>`, `<list[...]>` or `<....with[...]>` tag into its entries, or null when the
+ * tag is not one of those or holds only a single entry (where formatting would add noise and no
+ * information).
+ */
+function splitTagEntries(tagText) {
+    const described = describeFormattable(tagText);
+    if (described === null) {
+        return null;
+    }
+    const kind = described.kind;
+    const inner = tagText.substring(described.opening.length, tagText.length - ']>'.length);
     const rawEntries = splitAtDepthZero(inner, kind.separator);
     if (rawEntries.length < 2) {
         return null;
@@ -130,9 +194,7 @@ function formatTag(tagText, indent = '    ') {
     if (entries === null) {
         return null;
     }
-    const lower = tagText.toLowerCase();
-    const kind = FORMATTABLE.find(k => lower.startsWith(k.prefix));
-    const opening = tagText.substring(0, kind.prefix.length);
+    const { kind, opening } = describeFormattable(tagText);
     const lines = [opening];
     for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
@@ -177,8 +239,13 @@ function collapseTag(pretty) {
         return null;
     }
     const opening = rawLines[0];
-    const lower = opening.toLowerCase();
-    const kind = FORMATTABLE.find(k => lower === k.prefix);
+    // The opening line is the tag's text up to and including its `[`, so it is recognised the same
+    // way `describeFormattable` recognises a whole tag: by the name in front of that bracket. An
+    // exact-prefix test worked while only `<map[` and `<list[` were formattable, but `with` opens
+    // as `<item.with[` or `<player.item_in_hand.with[` -- text this function cannot enumerate.
+    const kind = opening.startsWith('<') && opening.endsWith('[')
+        ? FORMATTABLE.get(nameBeforeBracket(opening, opening.length - 1))
+        : undefined;
     if (kind === undefined || rawLines[rawLines.length - 1] !== ']>') {
         return null;
     }

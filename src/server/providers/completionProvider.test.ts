@@ -1429,7 +1429,7 @@ describe("tag completion items carry the tag's full name as `detail`", () => {
  * `EntityTag` properties in Denizen's meta -- which is the fact that made the feature note's
  * "they are not in Denizen's meta" assessment wrong and this implementation possible.
  */
-describe('map keys inside an adjust argument (user ruling 2026-09-01)', () => {
+describe('map keys and the adjust mechanism argument (user rulings 2026-09-01)', () => {
     function adjustDocs(): MetaDocs {
         const blocks: MetaBlock[] = [
             { objectType: 'objecttype', url: 's#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
@@ -1474,22 +1474,61 @@ describe('map keys inside an adjust argument (user ruling 2026-09-01)', () => {
         expect(labels('- adjust <[ent]> <map[translation=')).toEqual([]);
     });
 
-    it('stays silent in a map that is NOT an adjust argument', () => {
-        // A map's keys are arbitrary in general. This is the whole scoping rule, and without it
-        // the feature would offer mechanisms in every data map in every script.
-        // MUTANT CAUGHT: dropping the `commandName === 'adjust'` half of the condition.
-        expect(labels('- narrate <map[interpolation')).toEqual([]);
-        expect(labels('- define x <map[translation')).toEqual([]);
+    it('offers them in ANY map tag, not only an adjust argument', () => {
+        // SCOPE WIDENED 2026-09-01, second user ruling. This first shipped restricted to maps
+        // written as an argument to `adjust`, on the reasoning that a data map's keys are
+        // arbitrary. The user asked for it in a plain `- narrate <map[...]>` too, which is their
+        // call: the restriction meant the feature was missing where they went looking for it.
+        // MUTANT CAUGHT: reinstating the `commandName === 'adjust'` half of the condition.
+        expect(labels('- narrate <map[interpolation').sort())
+            .toEqual(['interpolation_duration=', 'interpolation_start=']);
+        expect(labels('- define x <map[translation')).toEqual(['translation=']);
     });
 
-    it('stays silent on a KEY line, which has no command at all', () => {
-        // The key-line branch passes no command name, and a `<map[...]>` there is data.
-        // MUTANT CAUGHT: defaulting commandName to 'adjust', or threading it from the key-line path.
-        expect(labels('    display name: <map[interpolation')).toEqual([]);
+    it('offers them on a key line too', () => {
+        // A key line has no command at all, so this pins that the widening reaches that path.
+        expect(labels('    display name: <map[translation')).toEqual(['translation=']);
     });
 
     it('does not hijack a different tag that happens to take a parameter', () => {
         // MUTANT CAUGHT: testing only the command and not the tag name.
         expect(labels('- adjust <[ent]> <list[interpolation')).toEqual([]);
+    });
+
+    describe('the bare mechanism ARGUMENT, e.g. `- adjust <[ent]> inter`', () => {
+        // Reported by the user 2026-09-01 as offering nothing. It is a gap in BOTH engines:
+        // CommandTabCompletions.cs registers mechanism completion only for tag parameter specs
+        // (:52-55), never for a command argument, so `adjust`'s documented `[<mechanism>]`
+        // argument completed nothing on either server.
+        it('offers mechanism names, with a colon rather than an equals', () => {
+            // `adjust [<ObjectTag>] [<mechanism>](:<value>)` -- the argument form separates the
+            // value with `:`, where the map form uses `=`.
+            expect(labels('- adjust <[ent]> interpolation').sort())
+                .toEqual(['interpolation_duration:', 'interpolation_start:']);
+        });
+
+        it('does not offer them in the FIRST argument, which is the object being adjusted', () => {
+            // 680 mechanism names in the object slot would bury every real suggestion.
+            // MUTANT CAUGHT: dropping the argIndex >= 1 guard.
+            expect(labels('- adjust interpolation')).toEqual([]);
+        });
+
+        it('offers nothing once the ":" is typed, since the VALUE is undocumented', () => {
+            expect(labels('- adjust <[ent]> translation:')).toEqual([]);
+        });
+
+        it('reads the qualifying commands from the SYNTAX, not a hardcoded name list', () => {
+            // `narrate [<text>]` documents no `<mechanism>`, so it must not offer them however
+            // many arguments in the cursor is.
+            // MUTANT CAUGHT: matching on the command NAME being 'adjust'.
+            expect(labels('- narrate a interpolation')).toEqual([]);
+        });
+
+        it('replaces the whole typed argument', () => {
+            const text = '- adjust <[ent]> interpolation_d';
+            const item = provideCompletions(DOCS, createEmptyExtraData(), text, text.length, 0)[0];
+            expect(item.textEdit!.range.start.character).toBe('- adjust <[ent]> '.length);
+            expect(item.textEdit!.range.end.character).toBe(text.length);
+        });
     });
 });

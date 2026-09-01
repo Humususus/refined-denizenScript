@@ -208,7 +208,7 @@ function suggestMechPairSet(docs: MetaDocs, typed: string): ParamCandidate[] {
  * mechanisms matches what `SuggestMechanisms` already does for `<mechanism>=<value>;...` and what
  * the C# does there (:209-212), and the typed prefix narrows it immediately.
  */
-export function completeAdjustMapKeys(docs: MetaDocs, typed: string): ParamCandidate[] {
+export function completeMapKeys(docs: MetaDocs, typed: string): ParamCandidate[] {
     return suggestMechPairSet(docs, typed);
 }
 

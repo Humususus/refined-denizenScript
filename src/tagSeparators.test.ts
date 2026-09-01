@@ -27,6 +27,31 @@ describe('separatorForSpace: the two tags it acts on', () => {
     });
 });
 
+describe('separatorForSpace: with[...]', () => {
+    // Reported by the user 2026-09-01. `<item.with[display_name=hi;quantity=2]>` is a
+    // `;`-separated mechanism set exactly as a map is, and is where long sets are actually
+    // written, so leaving it out made the helper miss its most useful case.
+    it('types ";" inside a with tag', () => {
+        expect(at('- give <item[stone].with[display_name=hi')).toBe(';');
+    });
+
+    it('works however deep the sub-tag chain is', () => {
+        // MUTANT CAUGHT: matching the whole accumulated name instead of its last component.
+        expect(at('- narrate <player.item_in_hand.with[quantity=2')).toBe(';');
+    });
+
+    it('leaves with_single alone, which takes no separator', () => {
+        // MUTANT CAUGHT: matching the name by prefix rather than exactly.
+        expect(at('- give <item[stone].with_single[display_name=hi')).toBeNull();
+    });
+
+    it('still respects the quoting and "nothing to separate" rules', () => {
+        expect(at('- give <item[stone].with[display_name="hello there')).toBeNull();
+        expect(at('- give <item[stone].with[')).toBeNull();
+        expect(at('- give <item[stone].with[display_name=')).toBeNull();
+    });
+});
+
 describe('separatorForSpace: where it must stay out of the way', () => {
     it('types a plain space outside any tag', () => {
         expect(at('- narrate hello')).toBeNull();

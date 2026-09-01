@@ -15,9 +15,18 @@
 // scanning can tell that apart from a separator the user wanted. That case is what the one-key
 // undo exists for, and it is why this ships behind a setting that can turn it off.
 
-/** The separator each supported tag wants between its entries. */
+/**
+ * The separator each supported tag wants between its entries.
+ *
+ * `with` joined on 2026-09-01, reported by the user. `<item.with[display_name=hi;quantity=2]>` is
+ * a `;`-separated mechanism set exactly as a map is -- the meta documents its parameter as
+ * `<mechanism>=<value>;...` -- so leaving it out meant the helper was missing from the one tag
+ * where mechanism sets are written most often. `with_single` is the one-mechanism form and takes
+ * no separator at all, so it is deliberately absent.
+ */
 const TAG_SEPARATORS: ReadonlyMap<string, string> = new Map([
     ['map', ';'],
+    ['with', ';'],
     ['list', '|']
 ]);
 

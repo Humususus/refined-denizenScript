@@ -15,7 +15,7 @@
  * range, full markdown documentation — belongs to the caller.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeAdjustMapKeys = void 0;
+exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeMapKeys = void 0;
 const frenetic_1 = require("../checker/frenetic");
 // The one VALUE import from checker/: the inventory label list, which is a hardcoded constant in
 // both languages rather than loaded data, transcribed once for Phase 2C-7's event validators.
@@ -136,10 +136,10 @@ function suggestMechPairSet(docs, typed) {
  * mechanisms matches what `SuggestMechanisms` already does for `<mechanism>=<value>;...` and what
  * the C# does there (:209-212), and the typed prefix narrows it immediately.
  */
-function completeAdjustMapKeys(docs, typed) {
+function completeMapKeys(docs, typed) {
     return suggestMechPairSet(docs, typed);
 }
-exports.completeAdjustMapKeys = completeAdjustMapKeys;
+exports.completeMapKeys = completeMapKeys;
 /**
  * Registers an `ExtraData`-backed spec. Mirrors the `Register` overload that takes
  * `(options, enumKey)` and wraps it in `CompleteEnum` (:26-33); the raw-function

@@ -222,3 +222,61 @@ describe('isCollapsible', () => {
         expect(isCollapsible('hello')).toBe(false);
     });
 });
+
+/**
+ * `with[...]`, reported by the user 2026-09-01 as expanding nothing.
+ *
+ * It is a `;`-separated mechanism set exactly as a map is, but unlike `map` and `list` it is only
+ * ever a SUB-tag -- `<item.with[...]>`, `<player.item_in_hand.with[...]>` -- so the old
+ * `startsWith('<map[')` test could never match it, whatever prefixes were added to the list.
+ */
+describe('with[...] tags', () => {
+    it('splits a with tag into its key/value entries', () => {
+        expect(splitTagEntries('<item.with[display_name=hi;quantity=2]>'))
+            .toEqual([{ key: 'display_name', value: 'hi' }, { key: 'quantity', value: '2' }]);
+    });
+
+    it('finds the tag name however deep the sub-tag chain is', () => {
+        // MUTANT CAUGHT: taking the FIRST name component instead of the one the bracket belongs to.
+        expect(splitTagEntries('<player.item_in_hand.with[a=1;b=2]>'))
+            .toEqual([{ key: 'a', value: '1' }, { key: 'b', value: '2' }]);
+    });
+
+    it('is not confused by a dot inside an earlier parameter', () => {
+        expect(splitTagEntries('<item[stone.slab].with[a=1;b=2]>'))
+            .toEqual([{ key: 'a', value: '1' }, { key: 'b', value: '2' }]);
+    });
+
+    it('formats and collapses back to exactly the original', () => {
+        // The round trip is what makes the peek editable, and the opening line is now variable
+        // text rather than a fixed `<map[`, so collapse has to recover the kind from it.
+        // MUTANT CAUGHT: collapseTag still comparing the opening against a fixed prefix.
+        const tag = '<item.with[display_name=hi;quantity=2]>';
+        const pretty = formatTag(tag)!;
+        expect(pretty).toBe('<item.with[\n    display_name = hi;\n    quantity = 2\n]>');
+        expect(collapseTag(pretty)).toBe(tag);
+    });
+
+    it('takes the FINAL bracket group, so a map with a sub-tag after it is not formattable', () => {
+        // In `<map[a=1;b=2].get[x]>` the group under the closing `]>` belongs to `get`, and `get`
+        // is not a separated set. Formatting the earlier map would produce a tag that cannot be
+        // written back.
+        // MUTANT CAUGHT: scanning forward to the first `[` rather than back from the last `]`.
+        expect(splitTagEntries('<map[a=1;b=2].get[x]>')).toBeNull();
+    });
+
+    it('leaves an unrelated parameterised sub-tag alone', () => {
+        expect(splitTagEntries('<player.flag[home]>')).toBeNull();
+        expect(splitTagEntries('<item.with_single[display_name=hi]>')).toBeNull();
+    });
+
+    it('still declines a single-entry with tag', () => {
+        // Same rule as map and list: one entry gains nothing from being spread over three lines.
+        expect(splitTagEntries('<item.with[display_name=hi]>')).toBeNull();
+    });
+
+    it('counts depth, so a nested tag containing ";" does not split the entries', () => {
+        expect(splitTagEntries('<item.with[lore=<list[a;b]>;quantity=2]>'))
+            .toEqual([{ key: 'lore', value: '<list[a;b]>' }, { key: 'quantity', value: '2' }]);
+    });
+});
