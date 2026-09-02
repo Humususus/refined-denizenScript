@@ -46,6 +46,7 @@ const quickFixes_1 = require("./quickFixes");
 const tagSeparators_1 = require("./tagSeparators");
 const containerSnippets_1 = require("./containerSnippets");
 const definitionProvider_1 = require("./definitionProvider");
+const argumentHintsProvider_1 = require("./argumentHintsProvider");
 const denizenEvents_1 = require("./denizenEvents");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
@@ -2492,6 +2493,7 @@ function activate(context) {
         activateDiagnosticMuting(context);
         (0, quickFixes_1.activateQuickFixes)(context);
         (0, definitionProvider_1.activateDefinitionProvider)(context);
+        (0, argumentHintsProvider_1.activateArgumentHints)(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.uri.toString().endsWith(".dsc")) {
                 tryLoadConfigYaml(doc);

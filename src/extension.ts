@@ -12,6 +12,7 @@ import { activateQuickFixes } from "./quickFixes";
 import { separatorForSpace } from "./tagSeparators";
 import { CONTAINER_SNIPPETS, containerSnippetText } from "./containerSnippets";
 import { activateDefinitionProvider } from "./definitionProvider";
+import { activateArgumentHints } from "./argumentHintsProvider";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from "./denizenEvents";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
@@ -2606,6 +2607,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateDiagnosticMuting(context);
     activateQuickFixes(context);
     activateDefinitionProvider(context);
+    activateArgumentHints(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
         if (doc.uri.toString().endsWith(".dsc")) {
             tryLoadConfigYaml(doc);
