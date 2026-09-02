@@ -59,6 +59,10 @@
             {
                 "command": "refinedDenizenscript.typeSpaceOrSeparator",
                 "title": "Refined DenizenScript: Type Space or Tag Separator"
+            },
+            {
+                "command": "refinedDenizenscript.evaluateMathTag",
+                "title": "Refined DenizenScript: Evaluate Math Tag"
             }
         ],
         "keybindings": [
@@ -169,6 +173,11 @@
                     "type": "boolean",
                     "default": true,
                     "markdownDescription": "Show the arguments a command still accepts as grey text at the end of the line you are editing. Only the line the caret is on is annotated.\n\nTo keep them but see them **on demand only**, leave this on and set `#editor.inlayHints.enabled#` to `offUnlessPressed` — the hint then appears while you hold `Ctrl+Alt`.\n\nNeeds the TypeScript language server engine: the C# engine has no signature-help implementation, so nothing is shown there."
+                },
+                "denizenscript.evaluateMathTags": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Hovering an arithmetic tag such as `<element[1].sub[<element[2].mul[3]>]>` shows what it works out to. Anything the server would have to answer — definitions, flags, `<player...>` — is listed as a value to supply instead of being guessed at; the **Evaluate Math Tag** command asks for those and shows the result.\n\nA result that is not exactly representable is labelled as rounded: Denizen's internal number representation cannot be determined from its documentation, so the exact digits are not promised."
                 },
                 "denizenscript.server.engine": {
                     "type": "string",

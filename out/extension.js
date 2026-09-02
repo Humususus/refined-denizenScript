@@ -47,6 +47,7 @@ const tagSeparators_1 = require("./tagSeparators");
 const containerSnippets_1 = require("./containerSnippets");
 const definitionProvider_1 = require("./definitionProvider");
 const argumentHintsProvider_1 = require("./argumentHintsProvider");
+const mathEvalProvider_1 = require("./mathEvalProvider");
 const denizenEvents_1 = require("./denizenEvents");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
@@ -2494,6 +2495,7 @@ function activate(context) {
         (0, quickFixes_1.activateQuickFixes)(context);
         (0, definitionProvider_1.activateDefinitionProvider)(context);
         (0, argumentHintsProvider_1.activateArgumentHints)(context);
+        (0, mathEvalProvider_1.activateMathEval)(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.uri.toString().endsWith(".dsc")) {
                 tryLoadConfigYaml(doc);
