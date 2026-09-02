@@ -52,7 +52,29 @@ export const INVENTORY_MATCHERS = new Set<string>([
     // This should maybe be in the data file.
     'chest', 'dispenser', 'dropper', 'furnace', 'workbench', 'crafting', 'enchanting', 'brewing', 'player',
     'creative', 'merchant', 'ender_chest', 'anvil', 'smithing', 'beacon', 'hopper', 'shulker_box', 'barrel', 'blast_furnace',
-    'lectern', 'smoker', 'loom', 'cartography', 'grindstone', 'stonecutter', 'composter'
+    'lectern', 'smoker', 'loom', 'cartography', 'grindstone', 'stonecutter', 'composter',
+    // DELIBERATE DEVIATION (user report 2026-09-02): four inventory types Minecraft added after
+    // the C# list was written. `on <item> moves from hopper to jukebox:` runs fine in Denizen but
+    // was reported as a nonexistent event.
+    //
+    // WHY THESE FOUR AND NOT MORE. A word reaching `fallbackScore` below is only ever reported as
+    // WRONG when it is a known block or item -- an unrecognised word (an inventory script's name,
+    // a notable) scores 1 and is left alone. So the false positives are exactly the inventory
+    // types that are also blocks, and nothing else needs adding to silence them. Measured against
+    // the live enum data: each of these four scored 0 before this line and 10 after.
+    //
+    // These are `org.bukkit.event.inventory.InventoryType` values, which is the same source the
+    // list above draws on -- NOT block names. `smithing_table`, `crafting_table`,
+    // `enchanting_table`, `brewing_stand` and `trapped_chest` are deliberately absent: those are
+    // block names whose inventory types are already present under their real names (`smithing`,
+    // `crafting`, `enchanting`, `brewing`, `chest`), and adding them would stop a genuine typo
+    // being caught.
+    //
+    // This list is hand-maintained and will fall behind again -- upstream says as much in the
+    // comment above. If keeping up with it becomes a nuisance, the alternative is to drop the
+    // block/item half of the `foreign` argument for inventories, which would stop this whole class
+    // of false positive at the cost of never catching a block that has no inventory at all.
+    'jukebox', 'chiseled_bookshelf', 'decorated_pot', 'crafter'
 ]);
 
 /**

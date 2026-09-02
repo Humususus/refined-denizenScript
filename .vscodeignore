@@ -24,9 +24,16 @@ scripts/**
 .vscode-test/**
 .github/**
 
-# Planning and session notes. Gitignored anyway, but a working tree can still hold them.
+# Planning and session notes. All of these are gitignored, so they only exist in a working tree --
+# but that is exactly what gets packaged, so they have to be named here too. Verified against the
+# built .vsix on 2026-09-02: every one of them was shipping before this block existed.
 docs/**
 .superpowers/**
+.claude/**
+LSP_REWRITE_PLAN.md
+extension.md
+prompt.md
+trouble.md
 
 # Repo metadata and any previously built package.
 .gitignore

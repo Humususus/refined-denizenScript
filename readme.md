@@ -121,9 +121,19 @@ Each prints `ALL CHECKS PASSED` or a list of failures.
 
 ### Package
 
+Builds the shareable `.vsix` — compiles, runs the tests, then packages:
+
 ```bash
-npm run package
+node scripts/build-vsix.js
 ```
+
+`npm run package` does the same thing. Prefer the `node` form: on some setups `npm run` starts the child process and it produces nothing, which is how a broken build once got packaged silently.
+
+The result is `refined-denizenscript-<version>.vsix` in this folder, about 2 MB. Install it with `Ctrl+Shift+X` → `···` → **Install from VSIX…**, or `code --install-extension refined-denizenscript-<version>.vsix`.
+
+Add `--fast` to skip the tests.
+
+> If `npm install` fails with `ERESOLVE`, you are on a checkout from before 2026-09-02 — the `@types/node` conflict behind it is fixed. Pull, or use `npm install --legacy-peer-deps` once.
 
 ### Current state
 
@@ -131,8 +141,8 @@ The TypeScript language server is a **faithful port** of `SharpDenizenTools`, no
 
 | | |
 |---|---|
-| Unit tests | **704 passing**, 31 files |
-| End-to-end verification | **10 scripts**, all passing against live meta |
+| Unit tests | **1368 passing**, 46 files |
+| End-to-end verification | **17 scripts**, all passing against live meta |
 | TypeScript compile | clean |
 
 

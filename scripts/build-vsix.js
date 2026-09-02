@@ -26,6 +26,33 @@ const ROOT = path.join(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const fast = process.argv.includes('--fast');
 
+/**
+ * Fails with an explanation when the toolchain is not installed.
+ *
+ * WHAT THIS REPLACES. A tester hit this on 2026-09-01: their `npm install` failed, so
+ * node_modules was never created, and every step afterwards died with a raw
+ * `Error: Cannot find module '...node_modules/typescript/bin/tsc'` stack trace. That stack says
+ * nothing about the actual problem, which happened several commands earlier.
+ */
+function requireToolchain() {
+    const needed = [
+        ['node_modules/typescript/bin/tsc', 'typescript'],
+        ['node_modules/vitest/vitest.mjs', 'vitest'],
+        ['node_modules/@vscode/vsce/vsce', '@vscode/vsce']
+    ];
+    const missing = needed.filter(([file]) => !fs.existsSync(path.join(ROOT, file)));
+    if (missing.length === 0) {
+        return;
+    }
+    console.error('\nThe build toolchain is not installed. Missing: ' + missing.map(m => m[1]).join(', '));
+    console.error('\nRun this first, from the folder holding package.json:');
+    console.error('    npm install');
+    console.error('\nIf npm install itself failed with ERESOLVE, you are on an older checkout:');
+    console.error('the @types/node conflict that caused it was fixed on 2026-09-01. Pull, or as a');
+    console.error('one-off use `npm install --legacy-peer-deps`.');
+    process.exit(1);
+}
+
 /** Runs a node entry point from the repo root, streaming its output. Exits the build if it fails. */
 function step(label, entry, args) {
     process.stdout.write(`\n=== ${label} ===\n`);
@@ -44,6 +71,7 @@ function step(label, entry, args) {
 const REQUIRED_OUTPUT = ['out/extension.js', 'out/server/server.js'];
 
 console.log(`Building ${pkg.name} v${pkg.version}${fast ? '  (--fast: tests skipped)' : ''}`);
+requireToolchain();
 
 step('1/3  compile', path.join('node_modules', 'typescript', 'bin', 'tsc'), ['-p', './', '--skipLibCheck']);
 
@@ -66,7 +94,9 @@ else {
     console.log('\n=== 2/3  tests === skipped (--fast)');
 }
 
-step('3/3  package', path.join('node_modules', '@vscode', 'vsce', 'vsce'), ['package', '--no-git-tag-version']);
+// Not `vsce` directly -- see the header of scripts/vsce-package.js for the npm defect it works
+// around, and why it has to be a wrapper rather than a flag.
+step('3/3  package', path.join('scripts', 'vsce-package.js'), []);
 
 const vsix = `${pkg.name}-${pkg.version}.vsix`;
 const vsixPath = path.join(ROOT, vsix);

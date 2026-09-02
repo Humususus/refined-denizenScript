@@ -52,17 +52,26 @@ describe('the hardcoded label sets, transcribed from ExtraData.cs', () => {
         ]);
     });
 
-    it('INVENTORY_MATCHERS matches ExtraData.cs:222-234, duplicates collapsed', () => {
+    it('INVENTORY_MATCHERS is ExtraData.cs:222-234 plus four newer inventory types', () => {
         // The C# list repeats `workbench`, `crafting` and `player`; a HashSet swallows them, so 37
         // written entries become 34 distinct ones. Asserting the deduplicated form is the honest
         // comparison -- it is what both languages actually hold.
+        //
+        // The last four are a DELIBERATE DEVIATION added 2026-09-02 on a user report: Minecraft
+        // gained those inventory types after the C# list was written, and because each is also a
+        // block, an event line naming one was reported as nonexistent. See the note at the set.
+        // MUTANT CAUGHT: silently widening or narrowing the set beyond this recorded difference.
+        const DEVIATION = ['chiseled_bookshelf', 'crafter', 'decorated_pot', 'jukebox'];
         expect([...INVENTORY_MATCHERS].sort()).toEqual([
             'anvil', 'barrel', 'beacon', 'blast_furnace', 'brewing', 'cartography', 'chest',
-            'composter', 'crafting', 'creative', 'dispenser', 'dropper', 'enchanting',
+            'chiseled_bookshelf', 'composter', 'crafter', 'crafting', 'creative', 'decorated_pot',
+            'dispenser', 'dropper', 'enchanting',
             'ender_chest', 'enderchest', 'entity', 'furnace', 'generic', 'grindstone', 'hopper',
-            'inventory', 'lectern', 'location', 'loom', 'merchant', 'notable', 'note', 'npc',
+            'inventory', 'jukebox', 'lectern', 'location', 'loom', 'merchant', 'notable', 'note', 'npc',
             'player', 'shulker_box', 'smithing', 'smoker', 'stonecutter', 'workbench'
         ]);
+        // And the C# half is still intact underneath the addition.
+        expect([...INVENTORY_MATCHERS].filter(l => !DEVIATION.includes(l)).length).toBe(34);
     });
 
     it('keeps `enderchest` and `ender_chest` as two separate labels', () => {
@@ -232,6 +241,31 @@ describe('matchInventory (ExtraData.cs:237-261)', () => {
         expect(matchInventory(data(), 'stone', false)).toBe(0);
         expect(matchInventory(data(), 'stick', false)).toBe(0);
         expect(matchInventory(data(), 'zombie', false)).toBe(0);
+    });
+
+    describe('inventory types newer than the C# list (user report 2026-09-02)', () => {
+        // `on <item> moves from hopper to jukebox:` runs in Denizen but was reported as a
+        // nonexistent event. The mechanism is the branch directly above: these are all blocks, so
+        // once they missed the label set they were scored 0 -- "definitely not an inventory".
+        it('accepts the four that Minecraft added after the list was written', () => {
+            // MUTANT CAUGHT: dropping any of them from INVENTORY_MATCHERS.
+            for (const label of ['jukebox', 'chiseled_bookshelf', 'decorated_pot', 'crafter']) {
+                expect(matchInventory(data(), label, false), label).toBe(10);
+            }
+        });
+
+        it('still rejects a block that has no inventory at all', () => {
+            // The point of adding four names rather than removing the block/item check: a real
+            // typo is still caught.
+            // MUTANT CAUGHT: dropping data.blocks/data.items from the foreign list.
+            expect(matchInventory(data(), 'stone', false)).toBe(0);
+        });
+
+        it('leaves an unrecognised word alone, which is how inventory SCRIPTS keep working', () => {
+            // An inventory script's name or a notable is in no enum anywhere, so it must not be
+            // reported. It scores 1 -- allowed, but not a confirmed match.
+            expect(matchInventory(data(), 'my_custom_menu', false)).toBe(1);
+        });
     });
 });
 
