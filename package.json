@@ -168,7 +168,7 @@
                 "denizenscript.inlineArgumentHints": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Show the arguments a command still accepts as grey text at the end of the line you are editing. Only the line the caret is on is annotated. Needs the TypeScript language server engine — the C# engine has no signature-help implementation, so nothing is shown there."
+                    "markdownDescription": "Show the arguments a command still accepts as grey text at the end of the line you are editing. Only the line the caret is on is annotated.\n\nTo keep them but see them **on demand only**, leave this on and set `#editor.inlayHints.enabled#` to `offUnlessPressed` — the hint then appears while you hold `Ctrl+Alt`.\n\nNeeds the TypeScript language server engine: the C# engine has no signature-help implementation, so nothing is shown there."
                 },
                 "denizenscript.server.engine": {
                     "type": "string",
