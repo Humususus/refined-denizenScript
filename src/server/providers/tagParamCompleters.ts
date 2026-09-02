@@ -126,6 +126,57 @@ function afterLast(text: string, sep: string): string {
     return index === -1 ? text : text.substring(index + sep.length);
 }
 
+/**
+ * The user's custom colour names, for the `<custom_color_name>` spec.
+ *
+ * MODULE STATE SET FROM OUTSIDE rather than read here, and that is deliberate. This file is pure
+ * by contract -- data in, data out, no `vscode-languageserver` import and no I/O -- so it cannot
+ * reach an LSP connection to ask for a setting. `server.ts` reads it and pushes the names in, the
+ * same way it pushes the meta and the workspace data to everything else.
+ *
+ * A `let` rather than another parameter on `TagParamCompleter` because exactly one of the twenty
+ * registrations wants it; widening the signature would make the other nineteen carry a parameter
+ * they ignore.
+ *
+ * C# reaches the same data as `ClientConfiguration.TextColorMap.Keys` (CommandTabCompletions.cs:95)
+ * -- a client setting held on the server. This port had no equivalent, which is why
+ * `<custom_color_name>` was the last registered spec left unserved.
+ */
+let customColorNames: string[] = [];
+
+/**
+ * Parses the `denizenscript.theme_colors.text_color_map` setting into colour names.
+ *
+ * The setting is a comma-separated `name=#RRGGBB` list, and the CLIENT already parses it this way
+ * for the inline `<&[name]>` decorations (extension.ts's `loadAllColors`). Only the names are kept
+ * here: completion offers names, and the hex is the client's business.
+ *
+ * Malformed entries are skipped rather than rejected wholesale -- one typo in a long list should
+ * cost that one colour, not all of them.
+ */
+export function parseTextColorMap(setting: string | undefined | null): string[] {
+    if (!setting) {
+        return [];
+    }
+    const names: string[] = [];
+    for (const entry of setting.split(',')) {
+        const pair = entry.split('=');
+        if (pair.length !== 2) {
+            continue;
+        }
+        const name = pair[0].trim().toLowerCase();
+        if (name.length > 0 && !names.includes(name)) {
+            names.push(name);
+        }
+    }
+    return names;
+}
+
+/** Hands the parsed colour names to the completer. Called by server.ts when configuration arrives. */
+export function setCustomColorNames(names: string[]): void {
+    customColorNames = names;
+}
+
 /** Every enum value starting with `typed`. Port of `CompleteEnum` (:204-207). */
 function completeEnum(values: Set<string>, label: string | null, typed: string): ParamCandidate[] {
     const results: ParamCandidate[] = [];
@@ -242,6 +293,13 @@ function buildTagParamCompleters(): Map<string, TagParamCompleter> {
     registerEnum(map, '<biome>', { prefix: '', label: 'Biome', values: d => d.biomes });
     // :245 labels this enum "Enchantment Key", not "Enchantment".
     registerEnum(map, '<enchantment>', { prefix: '', label: 'Enchantment Key', values: d => d.enchantments });
+    // CommandTabCompletions.cs:95, and the last registered spec this port left unserved. Backed by
+    // the user's own `denizenscript.theme_colors.text_color_map`, pushed in by server.ts -- see
+    // `customColorNames`. Two real tags use it: `<&[<custom_color_name>]>` and
+    // `<ElementTag.custom_color[<custom_color_name>]>`, both verified against the live meta.
+    map.set('<custom_color_name>', (_d, _e, typed) => customColorNames
+        .filter(name => name.startsWith(typed))
+        .map(name => ({ label: name, detail: `**Custom Color**: ${name}`, kind: 'enum' as const })));
     // --- Meta-backed entries (CommandTabCompletions.cs:91-94) ---
     map.set('<property-name>', (docs, _extra, typed) => suggestMechanisms(docs, typed, ''));
     map.set('<mechanism>=<value>', (docs, _extra, typed) => suggestMechPair(docs, typed));

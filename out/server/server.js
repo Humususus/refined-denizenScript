@@ -40,6 +40,7 @@ const extraData_1 = require("./metaDocs/extraData");
 const completionProvider_1 = require("./providers/completionProvider");
 const hoverProvider_1 = require("./providers/hoverProvider");
 const signatureHelpProvider_1 = require("./providers/signatureHelpProvider");
+const tagParamCompleters_1 = require("./providers/tagParamCompleters");
 const scriptChecker_1 = require("./checker/scriptChecker");
 const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 /**
@@ -332,6 +333,21 @@ function createServer() {
             .catch(err => {
             var _a;
             connection.console.error(`Reading denizenscript.server.tagTracing failed, leaving it on: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+        });
+        // The user's own colour names, for the `<custom_color_name>` tag parameter. C# reads the
+        // same setting as `ClientConfiguration.TextColorMap` (CommandTabCompletions.cs:95); this
+        // port had no route to it, which is why that spec was the last one left unserved.
+        // Pushed into the completer rather than imported by it -- tagParamCompleters must keep
+        // zero require() calls in its compiled output.
+        connection.workspace.getConfiguration('denizenscript.theme_colors.text_color_map')
+            .then((colorMap) => {
+            const names = (0, tagParamCompleters_1.parseTextColorMap)(colorMap);
+            (0, tagParamCompleters_1.setCustomColorNames)(names);
+            connection.console.log(`Custom colour names (denizenscript.theme_colors.text_color_map): ${names.length} -- ${names.join(', ')}`);
+        })
+            .catch(err => {
+            var _a;
+            connection.console.error(`Reading denizenscript.theme_colors.text_color_map failed, so <custom_color_name> will offer nothing: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
         });
         (0, extraData_1.loadExtraData)({ cacheFile: getExtraDataCacheFile(), ttlMs: EXTRA_DATA_TTL_MS })
             .then(extra => {

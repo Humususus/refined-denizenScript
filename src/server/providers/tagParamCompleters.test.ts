@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normaliseDocParam, completeTagParam, ParamCandidate, TAG_PARAM_COMPLETERS } from './tagParamCompleters';
+import { normaliseDocParam, completeTagParam, ParamCandidate, TAG_PARAM_COMPLETERS, parseTextColorMap, setCustomColorNames } from './tagParamCompleters';
 import { ScriptingWorkspaceData, ScriptContainerData } from '../checker/containerConvert';
 import { buildExtraData, parseFlatFds, ExtraData } from '../metaDocs/extraData';
 import { createEmptyMetaDocs, MetaDocs, MetaMechanism, MetaTag } from '../metaDocs/metaTypes';
@@ -153,11 +153,14 @@ describe('completeTagParam: ByTag table (CommandTabCompletions.cs:80-95, :141-14
         expect(complete('<enchantment>', '')).toEqual([{ label: 'sharpness', detail: '**Enchantment Key**: sharpness', kind: 'enum' }]);
     });
 
-    it('registers exactly the servable ByTag specs', () => {
+    it('registers EVERY ByTag spec, with none left unported', () => {
         // Grew by four in Phase 2D: the three script-container specs and <inventory>, all of
-        // which needed the workspace index that did not exist before it.
+        // which needed the workspace index that did not exist before it. `<custom_color_name>`
+        // joined 2026-09-03 and was the last one outstanding, so this list is now the whole of
+        // CommandTabCompletions.cs:80-95.
         expect([...TAG_PARAM_COMPLETERS.keys()].sort()).toEqual([
             '<biome>',
+            '<custom_color_name>',
             '<effect>',
             '<enchantment>',
             '<entity_type>',
@@ -173,12 +176,6 @@ describe('completeTagParam: ByTag table (CommandTabCompletions.cs:80-95, :141-14
             '<script>',
             '<statistic>'
         ]);
-    });
-
-    it('returns nothing for the one ByTag spec still unported', () => {
-        // <custom_color_name> (:95) needs ClientConfiguration.TextColorMap, which this port does
-        // not have. Everything else in the table is served.
-        expect(complete('<custom_color_name>', '')).toEqual([]);
     });
 
     it('offers the inventory labels without needing a workspace', () => {
@@ -422,5 +419,72 @@ describe('completeTagParam: workspace script containers (SuggestScriptByType, :2
         const empty = new ScriptingWorkspaceData();
         expect(labels(completeWith('<script>', '', empty))).toEqual([]);
         expect(labels(completeWith('<item>', '', empty))).toEqual(['stick']);
+    });
+});
+
+/**
+ * `<custom_color_name>` -- the last registered spec this port left unserved.
+ *
+ * C# reads the names from `ClientConfiguration.TextColorMap` (CommandTabCompletions.cs:95). This
+ * port has no ambient client configuration, so `server.ts` reads the setting and pushes the names
+ * in. Two real tags use the spec: `<&[<custom_color_name>]>` and
+ * `<ElementTag.custom_color[<custom_color_name>]>`, both verified against the live meta.
+ */
+describe('parseTextColorMap', () => {
+    it('reads the names out of the setting the client already uses', () => {
+        // The shipped default, verbatim from package.json.
+        expect(parseTextColorMap('base=#00AA00,emphasis=#55FFFF,error=#FF5555,warning=#FFFF55,item=#FFAA00,lore=#AAAAAA,npc=#55FF55,default=#FFFFFF'))
+            .toEqual(['base', 'emphasis', 'error', 'warning', 'item', 'lore', 'npc', 'default']);
+    });
+
+    it('lowercases and trims, since the tag is matched case-insensitively', () => {
+        expect(parseTextColorMap(' Base =#00AA00, EMPHASIS=#55FFFF')).toEqual(['base', 'emphasis']);
+    });
+
+    it('skips a malformed entry without losing the rest', () => {
+        // One typo in a long list should cost that one colour, not all of them.
+        // MUTANT CAUGHT: rejecting the whole setting when any entry is bad.
+        expect(parseTextColorMap('base=#00AA00,broken,error=#FF5555')).toEqual(['base', 'error']);
+    });
+
+    it('drops a duplicate name rather than offering it twice', () => {
+        expect(parseTextColorMap('base=#111111,base=#222222')).toEqual(['base']);
+    });
+
+    it('handles an unset or empty setting', () => {
+        expect(parseTextColorMap(undefined)).toEqual([]);
+        expect(parseTextColorMap(null)).toEqual([]);
+        expect(parseTextColorMap('')).toEqual([]);
+    });
+});
+
+describe('<custom_color_name> completion', () => {
+    it('offers nothing before the setting has arrived', () => {
+        // The server pushes the names in asynchronously. Until then this must be silent rather
+        // than inventing Denizen's defaults, which the user may well have replaced.
+        setCustomColorNames([]);
+        expect(complete('<custom_color_name>', '')).toEqual([]);
+    });
+
+    it('offers the configured names, filtered by what is typed', () => {
+        setCustomColorNames(['base', 'emphasis', 'error']);
+        expect(labels(complete('<custom_color_name>', ''))).toEqual(['base', 'emphasis', 'error']);
+        expect(labels(complete('<custom_color_name>', 'e'))).toEqual(['emphasis', 'error']);
+        expect(labels(complete('<custom_color_name>', 'em'))).toEqual(['emphasis']);
+        expect(labels(complete('<custom_color_name>', 'zz'))).toEqual([]);
+    });
+
+    it('marks them as enum candidates, like every other configured value set', () => {
+        setCustomColorNames(['base']);
+        const [candidate] = complete('<custom_color_name>', '');
+        expect(candidate.kind).toBe('enum');
+        expect(candidate.detail).toContain('base');
+    });
+
+    it('is registered under the exact spec the meta writes', () => {
+        // `<&[<custom_color_name>]>` parses its parameter to this literal string; a near-miss key
+        // would leave the spec unserved exactly as it was before.
+        // MUTANT CAUGHT: registering a differently-spelled key.
+        expect(TAG_PARAM_COMPLETERS.has('<custom_color_name>')).toBe(true);
     });
 });

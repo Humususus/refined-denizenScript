@@ -21,6 +21,7 @@ import { ExtraData, createEmptyExtraData, loadExtraData } from './metaDocs/extra
 import { provideCompletions } from './providers/completionProvider';
 import { provideHover } from './providers/hoverProvider';
 import { provideSignatureHelp } from './providers/signatureHelpProvider';
+import { parseTextColorMap, setCustomColorNames } from './providers/tagParamCompleters';
 import { ScriptChecker } from './checker/scriptChecker';
 import { ScriptWarning } from './checker/scriptWarnings';
 
@@ -326,6 +327,21 @@ export function createServer(): Connection {
             })
             .catch(err => {
                 connection.console.error(`Reading denizenscript.server.tagTracing failed, leaving it on: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+            });
+
+        // The user's own colour names, for the `<custom_color_name>` tag parameter. C# reads the
+        // same setting as `ClientConfiguration.TextColorMap` (CommandTabCompletions.cs:95); this
+        // port had no route to it, which is why that spec was the last one left unserved.
+        // Pushed into the completer rather than imported by it -- tagParamCompleters must keep
+        // zero require() calls in its compiled output.
+        connection.workspace.getConfiguration('denizenscript.theme_colors.text_color_map')
+            .then((colorMap: string | undefined) => {
+                const names = parseTextColorMap(colorMap);
+                setCustomColorNames(names);
+                connection.console.log(`Custom colour names (denizenscript.theme_colors.text_color_map): ${names.length} -- ${names.join(', ')}`);
+            })
+            .catch(err => {
+                connection.console.error(`Reading denizenscript.theme_colors.text_color_map failed, so <custom_color_name> will offer nothing: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
             });
 
         loadExtraData({ cacheFile: getExtraDataCacheFile(), ttlMs: EXTRA_DATA_TTL_MS })
