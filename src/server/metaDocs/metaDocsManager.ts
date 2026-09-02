@@ -21,27 +21,46 @@ export const DEFAULT_META_SOURCES: string[] = [
     'https://github.com/DenizenScript/dDiscordBot/archive/master.zip'
 ];
 
-/** Downloads every source in parallel and extracts their raw meta blocks. A failure downloading one source is recorded as a load error and does not prevent the others from succeeding. */
+/**
+ * Downloads every source in parallel and extracts their raw meta blocks. A failure downloading one
+ * source is recorded as a load error and does not prevent the others from succeeding.
+ *
+ * BLOCKS COME BACK IN SOURCE ORDER, NOT IN DOWNLOAD ORDER, and that is load-bearing rather than
+ * tidiness. Registration is last-wins (`docs.commands.set(...)` in MetaObject.addTo), and
+ * `combineSources` deliberately puts the user's `extra_sources` AFTER the official ones so a fork
+ * can override a command or tag it redefines.
+ *
+ * That only works if the order is the source list's. An earlier version pushed each archive's
+ * blocks from inside the `Promise.all` callback, so they landed in COMPLETION order and whichever
+ * archive happened to download fastest won -- meaning a fork overrode the official meta or did
+ * not, depending on the network that morning. Reported 2026-09-03. The per-source slots below fix
+ * the order; the failure lists are collected the same way so a re-run reports identically.
+ */
 export async function downloadAllBlocks(sources: string[]): Promise<{ blocks: MetaBlock[]; loadErrors: string[]; failedSources: string[] }> {
-    const loadErrors: string[] = [];
-    const allBlocks: MetaBlock[] = [];
-    // Which sources could not be FETCHED, as distinct from those that fetched and then produced a
-    // parse complaint. `loadErrors` mixes both, and only the first kind means the result is
-    // incomplete -- see the caching note in `loadMetaDocs`.
-    const failedSources: string[] = [];
-    await Promise.all(sources.map(async src => {
+    // One slot per source, filled in place, so the concatenation below is the source order
+    // regardless of which download finished first.
+    const perSource: MetaBlock[][] = sources.map(() => []);
+    const perSourceErrors: string[][] = sources.map(() => []);
+    const failed: (string | null)[] = sources.map(() => null);
+    await Promise.all(sources.map(async (src, index) => {
         try {
             const data = await downloadBinary(src);
             const lines = extractJavaCommentLines(data);
-            const blocks = extractMetaBlocks(src, lines, loadErrors);
-            allBlocks.push(...blocks);
+            perSource[index] = extractMetaBlocks(src, lines, perSourceErrors[index]);
         }
         catch (ex) {
-            failedSources.push(src);
-            loadErrors.push(`Source download error for ${src}: ${ex instanceof Error ? ex.message : String(ex)}`);
+            // Which sources could not be FETCHED, as distinct from those that fetched and then
+            // produced a parse complaint. `loadErrors` mixes both, and only the first kind means
+            // the result is incomplete -- see the caching note in `loadMetaDocs`.
+            failed[index] = src;
+            perSourceErrors[index].push(`Source download error for ${src}: ${ex instanceof Error ? ex.message : String(ex)}`);
         }
     }));
-    return { blocks: allBlocks, loadErrors, failedSources };
+    return {
+        blocks: perSource.flat(),
+        loadErrors: perSourceErrors.flat(),
+        failedSources: failed.filter((s): s is string => s !== null)
+    };
 }
 
 /** Constructs a fresh MetaDocs by parsing and registering every block. Does not apply extensions — call applyExtensions() afterward if extension merging is needed. */
@@ -141,6 +160,19 @@ function sameSources(cached: unknown, wanted: string[]): boolean {
         && cached.every((s, i) => s === wanted[i]);
 }
 
+/**
+ * Bumped whenever a change makes previously cached BLOCKS wrong rather than merely old.
+ *
+ * 2: block order. Before 2026-09-03 the archives were appended as they downloaded, so a cache
+ * written then holds them in an arbitrary order -- and since registration is last-wins, that
+ * decides which source overrides which. Without this, fixing the order would have appeared not to
+ * work for up to a full TTL after the update, which is exactly the kind of "it is fixed, just wait
+ * twelve hours" that makes a fix look like a lie.
+ *
+ * A cache with no version is pre-2026-09-03 and is discarded on sight.
+ */
+const CACHE_VERSION = 2;
+
 /** Loads MetaDocs, using a disk-cached copy of the extracted blocks when it exists, is within ttlMs, and was built from the same source list; otherwise re-downloading and refreshing the cache. */
 export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDocs> {
     const sources = options.sources ?? DEFAULT_META_SOURCES;
@@ -166,7 +198,7 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
             // `sources` property, so `sameSources` sees undefined and rejects it, and the file is
             // re-downloaded once on upgrade. An explicit `!Array.isArray` guard here was measured
             // to be an equivalent mutant and removed rather than left as dead belt-and-braces.
-            if (sameSources(cached?.sources, sources)) {
+            if (cached?.version === CACHE_VERSION && sameSources(cached?.sources, sources)) {
                 // Fresh enough to use as-is; otherwise held only as a fallback.
                 //
                 // `<` vs `<=` at this boundary is a known equivalent mutant: it can only differ
@@ -206,7 +238,7 @@ export async function loadMetaDocs(options: LoadMetaDocsOptions): Promise<MetaDo
         const failed = result.failedSources ?? [];
         if (blocks.length > 0 && failed.length === 0) {
             fs.mkdirSync(path.dirname(options.cacheFile), { recursive: true });
-            fs.writeFileSync(options.cacheFile, JSON.stringify({ sources, blocks }));
+            fs.writeFileSync(options.cacheFile, JSON.stringify({ version: CACHE_VERSION, sources, blocks }));
         }
         else if (staleBlocks !== null) {
             // FALL BACK TO THE EXPIRED CACHE. This is what turns a network outage from a

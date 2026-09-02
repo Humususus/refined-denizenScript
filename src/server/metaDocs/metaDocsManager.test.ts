@@ -13,6 +13,35 @@ describe('DEFAULT_META_SOURCES', () => {
     });
 });
 
+/**
+ * Extra sources OVERRIDING the official meta, reported 2026-09-03.
+ *
+ * `combineSources` puts the user's `extra_sources` after the defaults precisely so a fork can
+ * redefine a command or tag. That rests on two things: registration being last-wins, and the block
+ * order being the SOURCE order. The second was not true -- see the note on `downloadAllBlocks`.
+ */
+describe('later sources override earlier ones', () => {
+    it('registers the LAST block of a duplicated name, for commands and tags alike', () => {
+        // MUTANT CAUGHT: registering only the first, or skipping a name already present.
+        const docs = buildMetaDocs([
+            { objectType: 'command', url: 'official#L1', data: ['@Name narrate', '@Short official', '@end_meta'] },
+            { objectType: 'tag', url: 'official#L2', data: ['@attribute <PlayerTag.name>', '@returns ElementTag', '@description official', '@end_meta'] },
+            { objectType: 'command', url: 'fork#L1', data: ['@Name narrate', '@Short forked', '@end_meta'] },
+            { objectType: 'tag', url: 'fork#L2', data: ['@attribute <PlayerTag.name>', '@returns ElementTag', '@description forked', '@end_meta'] }
+        ]);
+        expect(docs.commands.get('narrate')!.short).toBe('forked');
+        expect(docs.tags.get('playertag.name')!.description).toContain('forked');
+    });
+
+    it('keeps one entry per name rather than accumulating duplicates', () => {
+        const docs = buildMetaDocs([
+            { objectType: 'command', url: 'a#L1', data: ['@Name narrate', '@Short one', '@end_meta'] },
+            { objectType: 'command', url: 'b#L1', data: ['@Name narrate', '@Short two', '@end_meta'] }
+        ]);
+        expect(docs.commands.size).toBe(1);
+    });
+});
+
 describe('buildMetaDocs', () => {
     it('constructs a populated MetaDocs from parsed blocks', () => {
         const blocks: MetaBlock[] = [
@@ -87,6 +116,31 @@ describe('loadMetaDocs caching', () => {
         expect(fs.existsSync(cacheFile)).toBe(true);
     });
 
+    it('discards a cache written by an older version of this code', async () => {
+        // Cache files written before 2026-09-03 hold the archives in DOWNLOAD order, because they
+        // were appended as they arrived. Since registration is last-wins, that decides which source
+        // overrides which -- so those blocks are wrong, not merely old, and reusing them would make
+        // the ordering fix appear not to work for up to a full TTL after the update.
+        // MUTANT CAUGHT: dropping the version check, or writing a cache without the field.
+        const stale: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name old', '@end_meta'] }];
+        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: stale }));
+        const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name new', '@end_meta'] }];
+        const downloadSpy = vi.fn(async () => ({ blocks: fresh, loadErrors: [] as string[] }));
+        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
+        expect(downloadSpy).toHaveBeenCalledTimes(1);
+        expect(docs.commands.get('new')).toBeDefined();
+        expect(docs.commands.get('old')).toBeUndefined();
+    });
+
+    it('stamps the version into every cache it writes', async () => {
+        const blocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
+        await loadMetaDocs({
+            cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'],
+            downloadFn: async () => ({ blocks, loadErrors: [] as string[] })
+        });
+        expect(JSON.parse(fs.readFileSync(cacheFile, 'utf-8')).version).toBe(2);
+    });
+
     it('does NOT cache a download in which a source failed to fetch', async () => {
         // THE BUG THIS GATE DIED OF, hit while running the verify scripts on 2026-08-28. Sources
         // are fetched in parallel, so one failing still leaves the others' blocks -- and the old
@@ -147,7 +201,7 @@ describe('loadMetaDocs caching', () => {
         // fraction of the meta or none of it.
         // MUTANT CAUGHT: dropping the staleBlocks fallback.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
         // Age it past the TTL.
         const old = Date.now() - 1000 * 60 * 60 * 24;
         fs.utimesSync(cacheFile, new Date(old), new Date(old));
@@ -189,7 +243,7 @@ describe('loadMetaDocs caching', () => {
         // hide the staleness for another full TTL and turn one outage into a day of stale meta.
         // MUTANT CAUGHT: writing the cache file on the fallback path.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
         const old = Date.now() - 1000 * 60 * 60 * 24;
         fs.utimesSync(cacheFile, new Date(old), new Date(old));
         const before = fs.statSync(cacheFile).mtimeMs;
@@ -205,7 +259,7 @@ describe('loadMetaDocs caching', () => {
         // not the first choice.
         // MUTANT CAUGHT: checking staleBlocks before the download result.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name stale', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
         const old = Date.now() - 1000 * 60 * 60 * 24;
         fs.utimesSync(cacheFile, new Date(old), new Date(old));
         const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name fresh', '@end_meta'] }];
@@ -222,7 +276,7 @@ describe('loadMetaDocs caching', () => {
         // add-ons the user just removed, or omit the ones they just added.
         // MUTANT CAUGHT: capturing staleBlocks before the sameSources check.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/OTHER.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/OTHER.zip'], blocks: cachedBlocks }));
         const old = Date.now() - 1000 * 60 * 60 * 24;
         fs.utimesSync(cacheFile, new Date(old), new Date(old));
         const docs = await loadMetaDocs({
@@ -235,7 +289,7 @@ describe('loadMetaDocs caching', () => {
     it('reuses the cache file within the TTL window instead of downloading again', async () => {
         // The cache records the source list it was built from, so the fixture has to as well.
         const fakeBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: fakeBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: fakeBlocks }));
         const downloadSpy = vi.fn(async () => ({ blocks: [] as MetaBlock[], loadErrors: [] as string[] }));
         const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
         expect(downloadSpy).not.toHaveBeenCalled();
@@ -249,7 +303,7 @@ describe('loadMetaDocs caching', () => {
         // until the 12-hour TTL happened to lapse.
         // MUTANT: drop the sameSources check, or make it always return true.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name stale', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
         const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name from_extra', '@end_meta'] }];
         const downloadSpy = vi.fn(async () => ({ blocks: fresh, loadErrors: [] as string[] }));
         const docs = await loadMetaDocs({
@@ -267,7 +321,7 @@ describe('loadMetaDocs caching', () => {
         // cache must not keep serving a source the user just deleted.
         // MUTANT: compare only `cached.sources.length`.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name from_extra', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip', 'https://example.com/extra.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip', 'https://example.com/extra.zip'], blocks: cachedBlocks }));
         const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name official_only', '@end_meta'] }];
         const downloadSpy = vi.fn(async () => ({ blocks: fresh, loadErrors: [] as string[] }));
         const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
@@ -280,7 +334,7 @@ describe('loadMetaDocs caching', () => {
         // archives in the order given and later blocks can override earlier ones, so the same
         // URLs in a different order are a different result, not the same one.
         const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name cached_order', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/a.zip', 'https://example.com/b.zip'], blocks: cachedBlocks }));
+        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/a.zip', 'https://example.com/b.zip'], blocks: cachedBlocks }));
         const downloadSpy = vi.fn(async () => ({ blocks: [{ objectType: 'command', url: 's#L1', data: ['@Name new_order', '@end_meta'] }] as MetaBlock[], loadErrors: [] as string[] }));
         const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/b.zip', 'https://example.com/a.zip'], downloadFn: downloadSpy });
         expect(downloadSpy).toHaveBeenCalledTimes(1);

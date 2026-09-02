@@ -353,7 +353,7 @@
                         "type": "string"
                     },
                     "default": [],
-                    "description": "Extra meta documentation sources (direct .zip archive URLs) to load alongside the official Denizen sources. Only used by the TypeScript language server engine (denizenscript.server.engine: \"typescript\"); has no effect on the C# engine, which uses denizenscript.extra_sources instead."
+                    "markdownDescription": "Extra meta documentation sources (direct .zip archive URLs) to load alongside the official Denizen sources.\n\nThey are loaded **after** the official ones, so a command or tag defined in both is taken from yours — that is how a fork overrides the upstream definition. Anything your fork *removes* is a different matter: loading is additive, so the upstream entry survives. Use `#denizenscript.server.replace_default_sources#` for that.\n\nOnly used by the TypeScript language server engine (`denizenscript.server.engine: \"typescript\"`); the C# engine uses `denizenscript.extra_sources` instead."
                 },
                 "denizenscript.server.replace_default_sources": {
                     "type": "boolean",
