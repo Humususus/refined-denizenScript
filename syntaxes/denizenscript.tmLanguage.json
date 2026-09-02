@@ -94,23 +94,67 @@
         "commands": {
             "patterns": [
                 {
-                    "name": "keyword.control.denizenscript",
-                    "match": "^\\s*-\\s+([~^]?)([A-Za-z_][A-Za-z0-9_-]*)\\b",
-                    "captures": {
+                    "comment": "A begin/end block rather than a single match, so the REST of a command line can be scoped too. As one match it coloured the command name and stopped, leaving `targets:` and `format:` in `- narrate hi targets:<player> format:x` as plain text. The block ends at end of line: Denizen commands are single-line, and a continuation line is an argument block the parser treats separately.",
+                    "name": "meta.command.denizenscript",
+                    "begin": "^\\s*(-)\\s+([~^]?)([A-Za-z_][A-Za-z0-9_-]*)\\b",
+                    "end": "$",
+                    "beginCaptures": {
                         "1": {
-                            "name": "keyword.operator.denizenscript"
+                            "name": "keyword.control.denizenscript"
                         },
                         "2": {
+                            "name": "keyword.operator.denizenscript"
+                        },
+                        "3": {
                             "name": "support.function.denizenscript"
                         }
-                    }
-                },
+                    },
+                    "patterns": [
+                        {
+                            "comment": "Order matters: tags and strings first, so a ':' inside either is never read as an argument prefix.",
+                            "include": "#tags"
+                        },
+                        {
+                            "include": "#strings"
+                        },
+                        {
+                            "include": "#definitionArgument"
+                        },
+                        {
+                            "include": "#argumentPrefix"
+                        },
+                        {
+                            "include": "#operators"
+                        }
+                    ]
+                }
+            ]
+        },
+        "definitionArgument": {
+            "patterns": [
                 {
-                    "name": "variable.other.definition.denizenscript",
+                    "comment": "`def.name:value` on a run-like command. Listed before #argumentPrefix because that rule would otherwise claim `def.name` as an ordinary prefix and lose the distinction.",
                     "match": "\\bdef\\.([A-Za-z_][A-Za-z0-9_]*)\\b",
+                    "name": "variable.other.definition.denizenscript",
                     "captures": {
                         "1": {
                             "name": "variable.other.readwrite.denizenscript"
+                        }
+                    }
+                }
+            ]
+        },
+        "argumentPrefix": {
+            "patterns": [
+                {
+                    "comment": "The `targets:` half of a prefixed argument. Two guards keep it off things that merely contain a colon: a lookbehind for whitespace, so it only fires where an argument STARTS and never mid-word; and a lookahead for a non-space, so the block-opening colon of `- if <[x]> == y:` is left to #operators rather than turning `y` into an argument name.",
+                    "match": "(?<=\\s)([A-Za-z_][A-Za-z0-9_.]*)(:)(?=\\S)",
+                    "captures": {
+                        "1": {
+                            "name": "entity.other.attribute-name.denizenscript"
+                        },
+                        "2": {
+                            "name": "punctuation.separator.key-value.denizenscript"
                         }
                     }
                 }

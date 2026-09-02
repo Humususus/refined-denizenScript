@@ -100,9 +100,42 @@ function check(name, ok, detail) {
     check('4g. an event switch value is scoped',
         has(scopesOf('    on player joins priority:5:', '5'), 'constant.language'));
 
-    // 5 -- no line may tokenise to nothing, which is what a broken pattern looks like.
+    // 5 -- ARGUMENT PREFIXES. Added 2026-09-02: the command rule used to be a single `match` that
+    // coloured the name and stopped, so `targets:` and `format:` were plain text. It is a
+    // begin/end block now, and the risk moved from "not enough colour" to "colour on the wrong
+    // thing" -- hence as many negative checks below as positive ones.
+    const argLine = '    - narrate hi targets:<player> format:myformat';
+    check('5. an argument prefix is scoped as an attribute name',
+        has(scopesOf(argLine, 'targets'), 'entity.other.attribute-name')
+        && has(scopesOf(argLine, 'format'), 'entity.other.attribute-name'));
+    check('5b. its colon is scoped as a separator',
+        has(scopesOf(argLine, ':'), 'punctuation.separator.key-value'));
+    check('5c. a tag argument is still a tag, not a prefix',
+        has(scopesOf(argLine, '<'), 'meta.tag'));
+
+    check('5d. a "def.name" argument keeps its definition scopes',
+        has(scopesOf('    - run mytask def.myvar:5', 'def.'), 'variable.other.definition')
+        && has(scopesOf('    - run mytask def.myvar:5', 'myvar'), 'variable.other.readwrite'));
+
+    // The block-opening colon of a control-flow command is NOT an argument prefix. Without the
+    // lookahead guard this scoped `y` as an argument name on every `- if ... == y:` line.
+    check('5e. the block-opening colon does not make an argument name',
+        !anyScope('    - if <[x]> == y:', 'entity.other.attribute-name'));
+
+    // A colon inside a string or a tag parameter belongs to the string or the tag.
+    check('5f. a colon inside a quoted string is not a prefix',
+        !anyScope('    - narrate "text: here"', 'entity.other.attribute-name'));
+    check('5g. a colon inside a tag parameter is not a prefix',
+        !anyScope('    - narrate <player.flag[a:b]>', 'entity.other.attribute-name'));
+
+    // And a key line is not a command line, so its `key:` keeps its own scope.
+    check('5h. a key line is untouched by the command rules',
+        has(scopesOf('    display name: <&b>Test', 'display name'), 'entity.name.section')
+        && !anyScope('    display name: <&b>Test', 'entity.other.attribute-name'));
+
+    // 6 -- no line may tokenise to nothing, which is what a broken pattern looks like.
     for (const line of ['- ~narrate "hi"', '# c', 'my_task:', '    type: task', '    - if <[x]> == y:']) {
-        check(`5. "${line}" produces tokens`, tokenize(line).length > 0);
+        check(`6. "${line}" produces tokens`, tokenize(line).length > 0);
     }
 
     console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
