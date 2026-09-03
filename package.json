@@ -1,12 +1,23 @@
 {
     "name": "refined-denizenscript",
     "displayName": "refined DenizenScript",
-    "description": "Refined The Denizen scripting language.",
+    "description": "Denizen scripting for VS Code — highlighting, completion, hover and diagnostics, with an optional .NET-free language server.",
     "author": "Humusus_ and DenizenTeam",
-    "version": "1.4.11",
+    "version": "2.0.0",
     "publisher": "humusus",
     "license": "MIT",
     "repository": "https://github.com/Humususus/refined-denizenScript",
+    "bugs": {
+        "url": "https://github.com/Humususus/refined-denizenScript/issues"
+    },
+    "homepage": "https://github.com/Humususus/refined-denizenScript#readme",
+    "keywords": [
+        "denizen",
+        "denizenscript",
+        "dsc",
+        "minecraft",
+        "spigot"
+    ],
     "icon": "logo.png",
     "engines": {
         "vscode": "^1.67.0"

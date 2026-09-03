@@ -199,6 +199,6 @@ Open source, free for everyone to use and contribute to. If you make changes tha
 
 MIT.
 
-- Original project — Copyright (c) 2019-2025 The Denizen Scripting Team — [LICENSE.txt](LICENSE.txt)
+- Original project — Copyright (c) 2019-2025 The Denizen Scripting Team — [LICENSE.txt](https://github.com/Humususus/refined-denizenScript/blob/main/LICENSE.txt)
 - This fork — Copyright (c) 2026 Humususus
-- Ported third-party code — [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- Ported third-party code — [THIRD_PARTY_NOTICES.md](https://github.com/Humususus/refined-denizenScript/blob/main/THIRD_PARTY_NOTICES.md)

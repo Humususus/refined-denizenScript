@@ -1,10 +1,17 @@
-name: Build VSIX and Publish Release
+name: Build VSIX, Publish Release and Marketplace
 
 on:
   push:
     tags:
-      - "v*"
+      # Three-part versions only. A `v2.0` tag would reach `npm version 2.0`, which fails with
+      # "Invalid version" -- VS Code extension versions must be major.minor.patch.
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also publish to the VS Code Marketplace"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -12,6 +19,11 @@ permissions:
 jobs:
   build-release:
     runs-on: ubuntu-latest
+
+    # AT JOB LEVEL ON PURPOSE. The Marketplace step is gated on `env.VSCE_PAT != ''`, and a step's
+    # own `env:` block is not reliably visible to that same step's `if:` -- job-level env is.
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
     steps:
       - name: Checkout
@@ -21,6 +33,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
       - name: Sync package version from tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -29,11 +42,10 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      # `npm ci` rather than `npm install`: it installs exactly what package-lock.json pins, so a
+      # release is reproducible and a transitive update cannot change what ships without a commit.
       - name: Install dependencies
-        run: npm install
-
-      - name: Compile extension
-        run: npm run compile
+        run: npm ci
 
       - name: Read package metadata
         id: meta
@@ -45,8 +57,21 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "vsix=$NAME-$VERSION.vsix" >> "$GITHUB_OUTPUT"
 
-      - name: Package VSIX
-        run: npx vsce package --out "${{ steps.meta.outputs.vsix }}"
+      # ONE STEP DOES COMPILE, TEST AND PACKAGE, and it is deliberately not an npm script chain.
+      # scripts/build-vsix.js spawns each tool directly with spawnSync(process.execPath, ...)
+      # because `npm run <anything>` was observed to start the child process, produce no output and
+      # do no work -- `npm run compile` exiting 0 having emitted nothing. `npx vsce package` hits
+      # the same defect: on the maintainer's machine it exits 0, prints nothing and writes no file.
+      # Packaging through this script is the only invocation shape verified to actually run, and it
+      # fails loudly if the compile or the tests fail rather than shipping a stale out/.
+      - name: Compile, test and package VSIX
+        run: node scripts/build-vsix.js
+
+      - name: Check the packaged version matches
+        shell: bash
+        run: |
+          test -f "${{ steps.meta.outputs.vsix }}" \
+            || { echo "expected ${{ steps.meta.outputs.vsix }}, got:"; ls -1 *.vsix; exit 1; }
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -55,9 +80,30 @@ jobs:
           path: "${{ steps.meta.outputs.vsix }}"
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: "${{ steps.meta.outputs.vsix }}"
           name: "Refined DenizenScript ${{ steps.meta.outputs.version }}"
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.meta.outputs.version) }}
+          tag_name: ${{ github.ref_name }}
           generate_release_notes: true
+
+      # PUBLISHES THE EXACT FILE THAT WAS JUST TESTED, via --packagePath. Without it `vsce publish`
+      # would package a second time, so the artifact on the Marketplace would be a different build
+      # from the one attached to the release.
+      #
+      # Needs a VSCE_PAT repository secret: an Azure DevOps Personal Access Token for the `humusus`
+      # publisher, scoped to Marketplace > Manage. Without the secret this step is skipped rather
+      # than failing, so a tag push still produces a release.
+      - name: Publish to VS Code Marketplace
+        if: >-
+          env.VSCE_PAT != '' &&
+          (startsWith(github.ref, 'refs/tags/v') || inputs.publish)
+        run: npx @vscode/vsce publish --packagePath "${{ steps.meta.outputs.vsix }}"
+
+      - name: Note when publishing was skipped
+        if: >-
+          env.VSCE_PAT == '' &&
+          (startsWith(github.ref, 'refs/tags/v') || inputs.publish)
+        run: |
+          echo "::warning::VSCE_PAT is not set, so the Marketplace publish was skipped. Add the secret to enable it."
