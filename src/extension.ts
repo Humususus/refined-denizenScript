@@ -4,10 +4,26 @@ import * as languageClientNode from "vscode-languageclient/node";
 import * as path from "path";
 import * as fs from "fs";
 import * as https from "https";
+import { shouldUseTypeScriptServer } from './serverEngineSelector';
+import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
+import { findSaveEntries, entryTagsFor } from "./entryTags";
+import { activateMapTagPeek, SCHEME as MAP_TAG_SCHEME } from "./mapTagPeek";
+import { activateQuickFixes } from "./quickFixes";
+import { separatorForSpace } from "./tagSeparators";
+import { CONTAINER_SNIPPETS, containerSnippetText } from "./containerSnippets";
+import { activateDefinitionProvider } from "./definitionProvider";
+import { activateArgumentHints } from "./argumentHintsProvider";
+import { activateMathEval } from "./mathEvalProvider";
+import { definitionsInScope } from "./scopeDefinitions";
+import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from "./denizenEvents";
+import { findHexColors, formatHexColor } from "./hexColors";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
+
+/** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
+let usingTypeScriptServer : boolean = false;
 
 let headerSymbols : string = "|+=#_@/";
 
@@ -38,6 +54,46 @@ function getCache(path : string) {
     return result;
 }
 
+/**
+ * Builds the middleware shared by both language clients (C# and TypeScript engines).
+ *
+ * This was previously inlined only in the C# client's `clientOptions`, so the TypeScript
+ * client ran with no middleware at all. Sharing it here means the TS client now also gets
+ * `provideCompletionItem`'s workspace-flag-completion suppression and `handleDiagnostics`'s
+ * dialog/DenizenM diagnostic filtering — that is an intentional consequence of sharing one
+ * middleware object, not an accident. Do not remove it from the TS client under the
+ * assumption it's unused; Task 3's selection-mute filter depends on both clients routing
+ * diagnostics through here.
+ */
+function buildSharedMiddleware() : languageClient.Middleware {
+    return {
+        provideCompletionItem: (document: vscode.TextDocument, position: vscode.Position, context: any, token: vscode.CancellationToken, next: Function) => {
+            if (isWorkspaceFlagCompletionContext(document, position)) {
+                return [];
+            }
+            return next(document, position, context, token);
+        },
+        handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
+            // An expanded-tag buffer is a FRAGMENT, not a script: its whole content is one
+            // `<map[ ... ]>` spread over several lines. Both servers happily lint it anyway,
+            // because they gate on the URI ending in ".dsc" and the virtual document is named
+            // "tag-N.dsc" - so every line comes back as a warning and the entire block goes
+            // yellow. Dropping them here rather than in either server is deliberate: it is one
+            // place, it covers the C# engine too (which this repo cannot change), and it leaves
+            // real files completely untouched.
+            if (uri.scheme === MAP_TAG_SCHEME) {
+                next(uri, []);
+                return;
+            }
+            // Remember what the server actually said, unfiltered. Muting has to be
+            // able to repaint a file the user isn't typing in, and the server may
+            // never republish for such a file - see repaintDiagnostics.
+            rawDiagnostics.set(pathKey(uri), diagnostics);
+            next(uri, filterDenizenDiagnostics(uri, diagnostics));
+        }
+    }
+}
+
 function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : string) {
     if (!dotnetPath || dotnetPath.length === 0) {
         dotnetPath = "dotnet";
@@ -56,21 +112,35 @@ function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : s
         synchronize: {
             configurationSection: "denizenscript",
         },
-        middleware: {
-            provideCompletionItem: (document: vscode.TextDocument, position: vscode.Position, context: any, token: vscode.CancellationToken, next: Function) => {
-                if (isWorkspaceFlagCompletionContext(document, position)) {
-                    return [];
-                }
-                return next(document, position, context, token);
-            },
-            handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
-                next(uri, diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic) && !isDenizenMDiagnostic(uri, diagnostic)));
-            }
-        }
+        middleware: buildSharedMiddleware()
     }
     let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
     let disposable = client.start();
     context.subscriptions.push(disposable);
+    registerDiagnosticClient(client);
+}
+
+function activateTsLanguageServer(context: vscode.ExtensionContext) {
+    let serverModule : string = context.asAbsolutePath(path.join("out", "server", "server.js"));
+    if (!fs.existsSync(serverModule)) {
+        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
+        return;
+    }
+    let serverOptions: languageClientNode.ServerOptions = {
+        run: { module: serverModule, transport: languageClientNode.TransportKind.ipc },
+        debug: { module: serverModule, transport: languageClientNode.TransportKind.ipc, options: { execArgv: ["--nolazy", "--inspect=6019"] } }
+    }
+    let clientOptions: languageClient.LanguageClientOptions = {
+        documentSelector: ["denizenscript"],
+        synchronize: {
+            configurationSection: "denizenscript",
+        },
+        middleware: buildSharedMiddleware()
+    }
+    let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
+    let disposable = client.start();
+    context.subscriptions.push(disposable);
+    registerDiagnosticClient(client);
 }
 
 const highlightDecors: { [color: string]: vscode.TextEditorDecorationType } = {};
@@ -169,6 +239,199 @@ function activateHighlighter(context: vscode.ExtensionContext) {
 
 function pathKey(uri: vscode.Uri) : string {
     return uri.toString();
+}
+
+/**
+ * ===== Selection diagnostic muting =====
+ *
+ * Lets the user select a chunk of script and silence every diagnostic inside it
+ * while the rest of the file keeps warning. Mutes live in memory only: no marker
+ * comments are written into script files and nothing survives a restart. That is
+ * the intended shape - do not add persistence or comment markers.
+ */
+
+/** The muted regions of every document, keyed by pathKey(uri). Store is deliberately vscode-free. */
+const mutedRegions = new MutedRegions();
+
+/**
+ * The last diagnostics each server published for a document, keyed by pathKey(uri),
+ * before any of our filtering. Without this, a mute could not take effect until the
+ * server happened to publish again - which, for a file the user isn't typing in, may
+ * be never, so the command would look broken.
+ */
+const rawDiagnostics = new Map<string, vscode.Diagnostic[]>();
+
+/** Every language client we started, so repaints can write through their own diagnostic collections. */
+const diagnosticClients : languageClient.BaseLanguageClient[] = [];
+
+function registerDiagnosticClient(client: languageClient.BaseLanguageClient) : void {
+    diagnosticClients.push(client);
+}
+
+/** Adapter: the muted-region store keeps its own plain shapes so it can be unit-tested without vscode. */
+function toMuteRange(range: vscode.Range) : MuteRange {
+    return {
+        start: { line: range.start.line, character: range.start.character },
+        end: { line: range.end.line, character: range.end.character }
+    };
+}
+
+/**
+ * The single filter both the middleware and the repaint path use, so a repainted
+ * file is filtered exactly like a freshly published one.
+ */
+function filterDenizenDiagnostics(uri: vscode.Uri, diagnostics: vscode.Diagnostic[]) : vscode.Diagnostic[] {
+    const key = pathKey(uri);
+    // `isDenizenMDiagnostic` used to be a third condition here. It suppressed any diagnostic
+    // whose message or source line contained one of a hardcoded word list, and that list held
+    // entries as generic as " teleport ", " playeffect ", " async" and " forced" -- so real
+    // errors on ordinary lines vanished. Removed 2026-08-27 with the rest of the hardcoded
+    // third-party tables. Measured before removal: it was eating a genuine unknown_command on
+    // `- async-while` in the user's own scripts.
+    return diagnostics.filter(diagnostic => !isDialogScriptDiagnostic(uri, diagnostic)
+        && !mutedRegions.covers(key, toMuteRange(diagnostic.range)));
+}
+
+/**
+ * Re-filters the cached raw diagnostics for a document and writes the result back
+ * through the clients' own diagnostic collections, so muting and unmuting take
+ * effect the instant the command runs rather than whenever the server next speaks.
+ *
+ * Quietly does nothing when there is no cached publish yet or no client: the next
+ * server publish will produce the right result anyway, and a command must not throw.
+ */
+function repaintDiagnostics(uri: vscode.Uri) : void {
+    const raw = rawDiagnostics.get(pathKey(uri));
+    if (!raw) {
+        return;
+    }
+    const filtered = filterDenizenDiagnostics(uri, raw);
+    // activate() starts exactly one engine (C# or TypeScript), so in practice this
+    // writes to exactly one collection - the one that published `raw` in the first
+    // place. If both engines were ever started at once they would each publish their
+    // own diagnostics anyway, and this cache would need to be keyed per client too.
+    for (const client of diagnosticClients) {
+        const collection = client.diagnostics;
+        if (collection) {
+            collection.set(uri, filtered);
+        }
+    }
+}
+
+/**
+ * A faint background plus an overview-ruler mark, so a muted block never looks
+ * like ordinary code. Without it the user would forget a region is muted and
+ * wonder why a real error never showed up.
+ */
+const mutedRegionDecorationType : vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: "rgba(127, 127, 127, 0.10)",
+    overviewRulerColor: "rgba(127, 127, 127, 0.60)",
+    overviewRulerLane: vscode.OverviewRulerLane.Right
+});
+
+/**
+ * Repaints the muted-region decoration in every visible editor. Ranges are rebuilt
+ * as fresh vscode.Range objects and clamped to the document: the store's ranges are
+ * shared with its internals and must be treated as read-only.
+ */
+function refreshMutedDecorations() : void {
+    for (const editor of vscode.window.visibleTextEditors) {
+        const document = editor.document;
+        const ranges = mutedRegions.rangesFor(pathKey(document.uri));
+        const decorated : vscode.Range[] = [];
+        for (const range of ranges) {
+            const startLine = Math.max(0, Math.min(range.start.line, document.lineCount - 1));
+            const endLine = Math.max(startLine, Math.min(range.end.line, document.lineCount - 1));
+            decorated.push(new vscode.Range(new vscode.Position(startLine, 0), document.lineAt(endLine).range.end));
+        }
+        editor.setDecorations(mutedRegionDecorationType, decorated);
+    }
+}
+
+/** Widens a selection to the whole lines it touches, since mutes are line-oriented. */
+function selectionToMuteRange(document: vscode.TextDocument, selection: vscode.Range) : MuteRange {
+    const bounds = wholeLineMuteBounds(selection.start.line, selection.end.line, selection.end.character);
+    const lastLine = Math.max(0, document.lineCount - 1);
+    const startLine = Math.min(bounds.startLine, lastLine);
+    const endLine = Math.min(bounds.endLine, lastLine);
+    return {
+        start: { line: startLine, character: 0 },
+        end: { line: endLine, character: document.lineAt(endLine).range.end.character }
+    };
+}
+
+function muteDiagnosticsInSelection() : void {
+    const editor = vscode.window.activeTextEditor;
+    if (!isDenizenEditor(editor)) {
+        vscode.window.showInformationMessage("Refined DenizenScript: open a Denizen script to mute diagnostics in it.");
+        return;
+    }
+    const document = editor.document;
+    const key = pathKey(document.uri);
+    // An empty selection mutes the cursor's line: a command that silently does
+    // nothing on a collapsed cursor reads as broken.
+    for (const selection of editor.selections) {
+        mutedRegions.mute(key, selectionToMuteRange(document, selection));
+    }
+    repaintDiagnostics(document.uri);
+    refreshMutedDecorations();
+}
+
+function unmuteDiagnostics() : void {
+    const editor = vscode.window.activeTextEditor;
+    if (!isDenizenEditor(editor)) {
+        vscode.window.showInformationMessage("Refined DenizenScript: open a Denizen script to unmute diagnostics in it.");
+        return;
+    }
+    const document = editor.document;
+    const key = pathKey(document.uri);
+    if (mutedRegions.rangesFor(key).length == 0) {
+        vscode.window.showInformationMessage("Refined DenizenScript: nothing is muted in this script.");
+        return;
+    }
+    const cursor = editor.selection.active;
+    // Cursor inside a muted region unmutes just that region; anywhere else means
+    // "unmute the file". Either way we say which happened, so this is never a
+    // silent no-op the user has to guess about.
+    let message : string;
+    if (mutedRegions.unmuteAt(key, { line: cursor.line, character: cursor.character })) {
+        message = "Refined DenizenScript: unmuted the diagnostics region at the cursor.";
+    }
+    else {
+        mutedRegions.unmuteAll(key);
+        message = "Refined DenizenScript: unmuted all muted diagnostics in this script.";
+    }
+    repaintDiagnostics(document.uri);
+    refreshMutedDecorations();
+    vscode.window.showInformationMessage(message);
+}
+
+function activateDiagnosticMuting(context: vscode.ExtensionContext) {
+    context.subscriptions.push(mutedRegionDecorationType);
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.muteDiagnosticsInSelection", muteDiagnosticsInSelection));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.unmuteDiagnostics", unmuteDiagnostics));
+    // Deliberately a separate subscription from the syntax-highlight refresh handler
+    // in activate(): that one's state is about highlighting and must not be entangled
+    // with mute tracking.
+    vscode.workspace.onDidChangeTextDocument(event => {
+        const key = pathKey(event.document.uri);
+        if (mutedRegions.rangesFor(key).length == 0) {
+            return;
+        }
+        for (const change of event.contentChanges) {
+            mutedRegions.applyEdit(key, toMuteRange(change.range), countNewLines(change.text));
+        }
+        refreshMutedDecorations();
+    }, null, context.subscriptions);
+    vscode.workspace.onDidCloseTextDocument(document => {
+        // Mutes are per-session and per-open-document; drop everything for a closed
+        // file so neither map grows for the lifetime of the window.
+        const key = pathKey(document.uri);
+        mutedRegions.forget(key);
+        rawDiagnostics.delete(key);
+    }, null, context.subscriptions);
+    vscode.window.onDidChangeVisibleTextEditors(() => refreshMutedDecorations(), null, context.subscriptions);
 }
 
 function sortedSetValues(values: Set<string>) : string[] {
@@ -674,458 +937,6 @@ function getFlagCompletionKind(document: vscode.TextDocument, position: vscode.P
     return getContainerDefineTypes(document, position).get(defineFlagMatch[1].toLowerCase());
 }
 
-interface DenizenMDoc {
-    label: string;
-    insertText: string;
-    detail: string;
-    markdown: string;
-}
-
-const denizenMEscapeTags : DenizenMDoc[] = [
-    {
-        label: "&sprite",
-        insertText: "sprite[$1]",
-        detail: "DenizenM text formatting tag",
-        markdown: "`<&sprite[minecraft:items:item/porkchop]>`\n\nRenders a resource-pack sprite in formatted text."
-    },
-    {
-        label: "&shadow_color",
-        insertText: "shadow_color[$1]",
-        detail: "DenizenM text formatting tag",
-        markdown: "`<&shadow_color[#51a2ff]>`\n\nApplies a text shadow color. Use a hex color value."
-    },
-    {
-        label: "&shadow_gradient",
-        insertText: "shadow_gradient[from=$1;to=$2]",
-        detail: "DenizenM text formatting tag",
-        markdown: "`<&shadow_gradient[from=#51a2ff;to=#FFF085]>`\n\nApplies a gradient to text shadow color."
-    },
-    {
-        label: "&dual_gradient",
-        insertText: "dual_gradient[from=$1;to=$2;s_from=$3;s_to=$4]",
-        detail: "DenizenM text formatting tag",
-        markdown: "`<&dual_gradient[from=#51a2ff;to=#FFF085;s_from=#FFF085;s_to=#51a2ff]>`\n\nApplies both normal text gradient and shadow gradient."
-    },
-    {
-        label: "&player_head",
-        insertText: "player_head[$1]",
-        detail: "DenizenM text formatting tag",
-        markdown: "`<&player_head[Tjtoxshpilivili1]>` or `<&player_head[!Tjtoxshpilivili1]>`\n\nRenders a player head texture. Prefix the name with `!` for face-only texture."
-    }
-];
-
-const denizenMBaseTags : DenizenMDoc[] = [
-    {
-        label: "model",
-        insertText: "model[$1]",
-        detail: "BetterModel base tag",
-        markdown: "`<model[dragon]>`\n\nReturns a BMModelTag blueprint by template name."
-    }
-];
-
-const denizenMDotTags : DenizenMDoc[] = [
-    {
-        label: "shadow_color",
-        insertText: "shadow_color[$1]",
-        detail: "DenizenM ElementTag tag",
-        markdown: "`<element.shadow_color[#51a2ff]>`\n\nAdds text shadow color formatting to an element."
-    },
-    {
-        label: "shadow_gradient",
-        insertText: "shadow_gradient[from=$1;to=$2]",
-        detail: "DenizenM ElementTag tag",
-        markdown: "`<element.shadow_gradient[from=#51a2ff;to=#FFF085]>`\n\nAdds text shadow gradient formatting to an element."
-    },
-    {
-        label: "dual_gradient",
-        insertText: "dual_gradient[from=$1;to=$2;s_from=$3;s_to=$4]",
-        detail: "DenizenM ElementTag tag",
-        markdown: "`<element.dual_gradient[from=#51a2ff;to=#FFF085;s_from=#FFF085;s_to=#51a2ff]>`\n\nAdds normal text gradient and shadow gradient formatting to an element."
-    },
-    {
-        label: "rarity_color",
-        insertText: "rarity_color",
-        detail: "DenizenM ItemTag tag",
-        markdown: "`<player.item_in_hand.rarity_color>`\n\nReturns the item's rarity color as a ColorTag."
-    },
-    {
-        label: "unsorted",
-        insertText: "unsorted",
-        detail: "DenizenM entity search tag",
-        markdown: "`<location.find_entities[...].within[...].unsorted>`\n\nBypasses distance-based sorting for better performance when order is not needed."
-    },
-    {
-        label: "limb",
-        insertText: "limb",
-        detail: "BetterModel PlayerTag tag",
-        markdown: "`<player.limb>`\n\nReturns the player's active BetterModel player-renderer limb tracker as a BMActiveModelTag."
-    },
-    {
-        label: "model",
-        insertText: "model[$1]",
-        detail: "BetterModel EntityTag tag",
-        markdown: "`<entity.model[dragon]>`\n\nReturns the BetterModel active tracker model with the specified name from the entity. If no name is provided, returns the first active model."
-    },
-    {
-        label: "models",
-        insertText: "models",
-        detail: "BetterModel EntityTag tag",
-        markdown: "`<entity.models>`\n\nReturns a list of all active BetterModel model names currently operating on the entity."
-    },
-    {
-        label: "entity",
-        insertText: "entity",
-        detail: "BetterModel BMActiveModelTag tag",
-        markdown: "`<[active_model].entity>`\n\nReturns the Bukkit entity that this active BetterModel tracker is attached to."
-    },
-    {
-        label: "name",
-        insertText: "name",
-        detail: "BetterModel model tag",
-        markdown: "`<[active_model].name>` or `<[bone].name>`\n\nReturns the model tracker, blueprint, or bone name."
-    },
-    {
-        label: "type",
-        insertText: "type",
-        detail: "BetterModel model tag",
-        markdown: "`<[active_model].type>`\n\nReturns the model template type, such as PLAYER or GENERAL."
-    },
-    {
-        label: "bone",
-        insertText: "bone[$1]",
-        detail: "BetterModel BMActiveModelTag tag",
-        markdown: "`<[active_model].bone[head]>`\n\nReturns a BMBoneTag for the named bone."
-    },
-    {
-        label: "bones",
-        insertText: "bones",
-        detail: "BetterModel BMActiveModelTag tag",
-        markdown: "`<[active_model].bones>`\n\nReturns a map of all structural bones, keyed by bone name."
-    },
-    {
-        label: "running_animation",
-        insertText: "running_animation",
-        detail: "BetterModel BMActiveModelTag tag",
-        markdown: "`<[active_model].running_animation>`\n\nReturns the animation name currently running. Append `.type` for the loop playback mode."
-    },
-    {
-        label: "animations",
-        insertText: "animations",
-        detail: "BetterModel model tag",
-        markdown: "`<[active_model].animations>` or `<model[dragon].animations>`\n\nReturns a list of configured animation names."
-    },
-    {
-        label: "animation_duration",
-        insertText: "animation_duration[$1]",
-        detail: "BetterModel model tag",
-        markdown: "`<[active_model].animation_duration[walk]>`\n\nReturns the total duration of the named animation."
-    },
-    {
-        label: "viewers",
-        insertText: "viewers",
-        detail: "BetterModel BMActiveModelTag tag",
-        markdown: "`<[active_model].viewers>`\n\nReturns online players currently viewing the model tracker."
-    },
-    {
-        label: "location",
-        insertText: "location",
-        detail: "BetterModel BMBoneTag tag",
-        markdown: "`<[bone].location>`\n\nReturns the current world location of the bone."
-    },
-    {
-        label: "euler",
-        insertText: "euler",
-        detail: "BetterModel BMBoneTag tag",
-        markdown: "`<[bone].euler>`\n\nReturns the bone rotation as Euler angles."
-    },
-    {
-        label: "passengers",
-        insertText: "passengers",
-        detail: "BetterModel BMBoneTag tag",
-        markdown: "`<[bone].passengers>`\n\nReturns entities mounted on this bone's seat."
-    },
-    {
-        label: "item",
-        insertText: "item",
-        detail: "BetterModel BMBoneTag tag",
-        markdown: "`<[bone].item>`\n\nReturns the ItemTag currently displayed on this bone."
-    },
-    {
-        label: "skin",
-        insertText: "skin",
-        detail: "BetterModel BMActiveModelTag mechanism",
-        markdown: "`adjust <[active_model]> skin:<uuid/player>`\n\nChanges the skin of the active model to the player skin associated with the specified UUID or PlayerTag. Only works for limb models."
-    },
-    {
-        label: "skin_url",
-        insertText: "skin_url",
-        detail: "SkinsRestorer PlayerTag tag",
-        markdown: "`<player.skin_url>`\n\nReturns the URL of the player's current skin texture."
-    },
-    {
-        label: "skin_type",
-        insertText: "skin_type",
-        detail: "SkinsRestorer PlayerTag tag",
-        markdown: "`<player.skin_type>`\n\nReturns the skin type: CUSTOM, LEGACY, PLAYER, or URL."
-    },
-    {
-        label: "discord_id",
-        insertText: "discord_id",
-        detail: "DiscordSRV PlayerTag tag",
-        markdown: "`<player.discord_id>`\n\nReturns the Discord snowflake ID linked to the Minecraft player's account, or null if none is linked."
-    }
-];
-
-const denizenMCommands : DenizenMDoc[] = [
-    {
-        label: "bmmodel",
-        insertText: "bmmodel entity:$1 model:$2",
-        detail: "BetterModel command",
-        markdown: "`bmmodel entity:<entity> model:<model> (remove)`\n\nAttaches a specific BetterModel to an entity or removes an existing one. An entity can have multiple models at once."
-    },
-    {
-        label: "bmlimb",
-        insertText: "bmlimb target:$1 model:$2 animation:$3",
-        detail: "BetterModel command",
-        markdown: "`bmlimb target:<entity> model:<limb_model> animation:<animation> (loop:<mode>) (override)`\n\nPlays a specific limb animation for a player or NPC. Target must be a player-type entity."
-    },
-    {
-        label: "bmstate",
-        insertText: "bmstate model:$1 state:$2",
-        detail: "BetterModel command",
-        markdown: "`bmstate model:<BMActiveModelTag> (state:<animation>) (bones:<list>) (loop:<mode>) (speed:<#.#>) (override) (remove)`\n\nStarts, stops, or modifies animations on a model. Optionally targets specific bones."
-    },
-    {
-        label: "bmpart",
-        insertText: "bmpart entity:$1 model:$2 bone:$3 part:$4 from:$5",
-        detail: "BetterModel command",
-        markdown: "`bmpart entity:<entity> model:<model_name> bone:<bone> part:<limb_name> from:<player>`\n\nApplies a limb texture from an online player's skin to a specific bone."
-    },
-    {
-        label: "skin",
-        insertText: "skin $1",
-        detail: "SkinsRestorer command",
-        markdown: "`skin [<name>/<url>/<texture>] (<player>|...)`\n\nChanges the skin of the specified player(s). If no targets are specified, the queue player is used."
-    }
-];
-
-const denizenMCommandArgs : DenizenMDoc[] = [
-    {
-        label: "async",
-        insertText: "async",
-        detail: "DenizenM teleport argument",
-        markdown: "`teleport <player> <location> async`\n\nTeleports asynchronously to avoid loading-chunk lag."
-    },
-    {
-        label: "forced",
-        insertText: "forced",
-        detail: "DenizenM playeffect argument",
-        markdown: "`playeffect effect:END_ROD <location> visibility:100 forced`\n\nForces extended particle visibility."
-    },
-    {
-        label: "add",
-        insertText: "add",
-        detail: "DenizenM resourcepack argument",
-        markdown: "`resourcepack add ...`\n\nAdds an additional resource pack instead of replacing the existing stack."
-    },
-    {
-        label: "entity:",
-        insertText: "entity:$1",
-        detail: "BetterModel bmmodel/bmpart argument",
-        markdown: "`entity:<entity>`\n\nThe target entity holding or receiving a BetterModel model."
-    },
-    {
-        label: "target:",
-        insertText: "target:$1",
-        detail: "BetterModel bmlimb argument",
-        markdown: "`target:<entity>`\n\nThe player or NPC target for the limb animation."
-    },
-    {
-        label: "model:",
-        insertText: "model:$1",
-        detail: "BetterModel command argument",
-        markdown: "`model:<model>`\n\nThe model name, active tracker name, limb model name, or BMActiveModelTag depending on the command."
-    },
-    {
-        label: "animation:",
-        insertText: "animation:$1",
-        detail: "BetterModel bmlimb argument",
-        markdown: "`animation:<animation>`\n\nThe animation name to play on the limb."
-    },
-    {
-        label: "state:",
-        insertText: "state:$1",
-        detail: "BetterModel bmstate argument",
-        markdown: "`state:<animation>`\n\nThe animation name to start. Optional when stopping all animations via `remove`."
-    },
-    {
-        label: "bones:",
-        insertText: "bones:$1",
-        detail: "BetterModel bmstate argument",
-        markdown: "`bones:<list>`\n\nA list of bone names to target. Omit to affect all bones."
-    },
-    {
-        label: "loop:",
-        insertText: "loop:${1|PLAY_ONCE,LOOP,HOLD_ON_LAST|}",
-        detail: "BetterModel animation argument",
-        markdown: "`loop:PLAY_ONCE`, `loop:LOOP`, or `loop:HOLD_ON_LAST`\n\nControls animation playback mode."
-    },
-    {
-        label: "speed:",
-        insertText: "speed:$1",
-        detail: "BetterModel bmstate argument",
-        markdown: "`speed:<#.#>`\n\nPlayback speed multiplier. Defaults to 1.0."
-    },
-    {
-        label: "override",
-        insertText: "override",
-        detail: "BetterModel animation switch",
-        markdown: "`override`\n\nOverrides currently playing animations."
-    },
-    {
-        label: "remove",
-        insertText: "remove",
-        detail: "BetterModel command switch",
-        markdown: "`remove`\n\nRemoves a model or stops an animation, depending on the command."
-    },
-    {
-        label: "bone:",
-        insertText: "bone:$1",
-        detail: "BetterModel bmpart argument",
-        markdown: "`bone:<bone>`\n\nThe destination bone name in the model."
-    },
-    {
-        label: "part:",
-        insertText: "part:${1|HEAD,TORSO,LEFT_ARM,RIGHT_ARM,LEFT_LEG,RIGHT_LEG|}",
-        detail: "BetterModel bmpart argument",
-        markdown: "`part:<limb_name>`\n\nSource limb name from the player skin, such as HEAD or TORSO."
-    },
-    {
-        label: "from:",
-        insertText: "from:$1",
-        detail: "BetterModel bmpart argument",
-        markdown: "`from:<player>`\n\nAn online PlayerTag whose skin provides the texture source."
-    }
-];
-
-const denizenMEvents : DenizenMDoc[] = [
-    {
-        label: "player unchecked sign edits",
-        insertText: "player unchecked sign edits:",
-        detail: "DenizenM Paper event",
-        markdown: "`on player unchecked sign edits:` or `after player unchecked sign edits:`\n\nPaper-specific event for unchecked sign edit handling."
-    },
-    {
-        label: "bm start reload",
-        insertText: "bm start reload:",
-        detail: "BetterModel event",
-        markdown: "`on bm start reload:`\n\nTriggers when BetterModel begins the reload process, before models and resource packs are regenerated."
-    },
-    {
-        label: "bm end reload",
-        insertText: "bm end reload:",
-        detail: "BetterModel event",
-        markdown: "`on bm end reload:`\n\nTriggers when BetterModel finishes reloading models and generating the resource pack.\n\nContext: `<context.result>` returns SUCCESS, FAILURE, or RELOAD."
-    },
-    {
-        label: "bm animation signal",
-        insertText: "bm animation signal:",
-        detail: "BetterModel event",
-        markdown: "`on bm animation signal name:<name>:`\n\nTriggers globally when a BetterModel Blockbench animation keyframe reaches a `denizen:` script signal.\n\nContexts include `<context.name>`, `<context.model>`, and custom `<context.[key]>` values."
-    },
-    {
-        label: "bm player animation signal",
-        insertText: "bm player animation signal:",
-        detail: "BetterModel event",
-        markdown: "`on bm player animation signal name:<name>:`\n\nTriggers per viewing player when an animation keyframe issues a personal visual `signal:` trigger."
-    },
-    {
-        label: "bm player model interact",
-        insertText: "bm player model interact:",
-        detail: "BetterModel event",
-        markdown: "`on bm player model interact name:<name>:`\n\nTriggers when a player left- or right-clicks any hitbox belonging to an active BetterModel model.\n\nContexts: `<context.model>`, `<context.hand>`."
-    },
-    {
-        label: "player skin apply",
-        insertText: "player skin apply:",
-        detail: "SkinsRestorer event",
-        markdown: "`on player skin apply:`\n\nTriggers when a player's skin is being applied via SkinsRestorer.\n\nContext: `<context.value>`. Determinations: `TEXTURE:<val>;<sig>`, `NAME:<name>`, `URL:<url>`."
-    },
-    {
-        label: "player links discord account",
-        insertText: "player links discord account:",
-        detail: "DiscordSRV event",
-        markdown: "`on player links discord account:`\n\nTriggers when a Minecraft player successfully links their Discord account.\n\nContext: `<context.discord_id>`."
-    },
-    {
-        label: "player unlinks discord account",
-        insertText: "player unlinks discord account:",
-        detail: "DiscordSRV event",
-        markdown: "`on player unlinks discord account:`\n\nTriggers when a Minecraft player unlinks their Discord account.\n\nContext: `<context.discord_id>`."
-    }
-];
-
-const denizenMKnownTerms : string[] = [
-    "&sprite", "&shadow_color", "&shadow_gradient", "&dual_gradient", "&player_head",
-    ".shadow_color", ".shadow_gradient", ".dual_gradient", ".rarity_color", ".unsorted",
-    ".limb", ".model", ".models", ".bone", ".bones", ".running_animation", ".animation_duration", ".viewers",
-    ".skin", ".skin_url", ".skin_type", ".discord_id", ".euler", ".passengers",
-    " custom_model_data", "remove_resource_pack", "remove_resource_packs",
-    " resourcepack ", " teleport ", " playeffect ", " async", " forced",
-    " bmmodel ", " bmlimb ", " bmstate ", " bmpart ", " skin ",
-    "bm start reload", "bm end reload", "bm animation signal", "bm player animation signal", "bm player model interact",
-    "player skin apply", "player links discord account", "player unlinks discord account",
-    "player unchecked sign edits", "bmactivemodeltag", "bmmodeltag", "bmbonetag"
-];
-
-function makeDenizenMCompletion(doc: DenizenMDoc, range: vscode.Range) : vscode.CompletionItem {
-    const item = new vscode.CompletionItem(doc.label, vscode.CompletionItemKind.Function);
-    item.detail = doc.detail;
-    item.documentation = new vscode.MarkdownString(doc.markdown);
-    item.insertText = new vscode.SnippetString(doc.insertText);
-    item.filterText = doc.label.startsWith("&") ? doc.label.substring(1) : doc.label;
-    item.range = range;
-    return item;
-}
-
-function labelMatchesInput(label: string, input: string) : boolean {
-    const cleanLabel = label.toLowerCase();
-    const cleanInput = input.toLowerCase();
-    if (cleanLabel.startsWith(cleanInput)) {
-        return true;
-    }
-    if (cleanLabel.startsWith("player ") && cleanLabel.substring("player ".length).startsWith(cleanInput)) {
-        return true;
-    }
-    if (cleanLabel.startsWith("bm ") && cleanLabel.substring("bm ".length).startsWith(cleanInput)) {
-        return true;
-    }
-    return false;
-}
-
-function makeDenizenMEscapeCompletion(doc: DenizenMDoc, range: vscode.Range) : vscode.CompletionItem {
-    const item = makeDenizenMCompletion(doc, range);
-    item.insertText = new vscode.SnippetString(doc.label + doc.insertText.substring(doc.label.substring(1).length));
-    item.filterText = doc.label;
-    return item;
-}
-
-function getDenizenMBaseTagCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
-    const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const baseTagMatch = /<([A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (!baseTagMatch) {
-        return [];
-    }
-    const typed = baseTagMatch[1].toLowerCase();
-    if (typed.length == 0) {
-        return [];
-    }
-    const range = getCompletionRange(document, position, baseTagMatch[1].length);
-    return denizenMBaseTags
-        .filter(doc => doc.label.toLowerCase().startsWith(typed))
-        .map(doc => makeDenizenMCompletion(doc, range));
-}
-
 function isTopLevelContainerLine(line: string) : boolean {
     return /^[A-Za-z_][A-Za-z0-9_\-]*\s*:\s*(#.*)?$/.test(line);
 }
@@ -1170,11 +981,24 @@ function getContainerTextUntilPosition(document: vscode.TextDocument, position: 
 
 function getContainerDefines(document: vscode.TextDocument, position: vscode.Position) : Set<string> {
     const defines = new Set<string>();
-    const defineMatcher = /^\s*-\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\b/i;
-    for (const rawLine of getContainerText(document, position).replace(/\r/g, "").split("\n")) {
+    // Denizen puts no character restriction on a define name — DenizenCore takes the
+    // command's first argument and cuts it at ':' and '.' (see SharpDenizenTools
+    // ScriptCheckerCommandSpecifics.cs:229). Notably `- define 123 value` is legal, so
+    // the name must not be required to start with a letter. `definemap` names a map the
+    // same way. A name containing a tag is skipped: it is not knowable statically.
+    const defineMatcher = /^\s*-\s*define(?:map)?\s+(\S+)/i;
+    // Only defines established ABOVE the cursor are usable at it: `- define` runs in
+    // order, so a name set further down the script does not exist yet here. The last
+    // element is the cursor's own (partial) line, dropped because a define is not
+    // usable on the very line that sets it.
+    const linesAbove = getContainerTextUntilPosition(document, position).replace(/\r/g, "").split("\n").slice(0, -1);
+    for (const rawLine of linesAbove) {
         const defineMatch = defineMatcher.exec(rawLine);
         if (defineMatch) {
-            defines.add(defineMatch[1]);
+            const name = defineMatch[1].split(":")[0].split(".")[0];
+            if (name.length > 0 && !name.includes("<")) {
+                defines.add(name);
+            }
         }
     }
     return defines;
@@ -1236,6 +1060,12 @@ function getDialogInputKeys(document: vscode.TextDocument, position: vscode.Posi
     return isDialog ? keys : new Set<string>();
 }
 
+/**
+ * Skeletons for every script container type live in `containerSnippets.ts`, which imports no
+ * `vscode` and is therefore unit-testable. They moved out of this file on 2026-09-01, when the
+ * user reported that the bodies carried literal two-space indents instead of tabs -- a data
+ * defect no test could see while the table sat behind a `vscode` import.
+ */
 function getContainerSnippetCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
     const match = /^(\s*)([A-Za-z_]*)$/i.exec(linePrefix);
@@ -1243,121 +1073,123 @@ function getContainerSnippetCompletions(document: vscode.TextDocument, position:
         return [];
     }
     const range = getCompletionRange(document, position, match[2].length);
-    const dialogSnippet = "${1:my_dialog}:\n  type: dialog\n  base:\n    type: multi\n    title: <gray>${2:Добро пожаловать!}\n    columns: 1\n  bodies:\n    header:\n      type: message\n      message: <gray>${3:Введите отображаемое имя}\n  inputs:\n    1:\n      type: text\n      label: ${4:Имя}\n      key: ${5:display_name}\n  buttons:\n    1:\n      label: ${6:Подтвердить}\n      script:\n      - define name <context.${5:display_name}>\n      - narrate <[name]>";
-    return [makeSnippetCompletion("dialog", "Denizen dialog container", dialogSnippet, range)];
-}
-
-function getDenizenMEventCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
-    const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const eventMatch = /^\s*(on|after)\s+([A-Za-z ]*)$/i.exec(linePrefix);
-    if (!eventMatch) {
-        return [];
-    }
-    const typed = eventMatch[2].trimStart().toLowerCase();
-    if (typed.length == 0) {
-        return [];
-    }
-    const range = getCompletionRange(document, position, eventMatch[2].length);
-    return denizenMEvents
-        .filter(doc => labelMatchesInput(doc.label, typed))
-        .map(doc => makeDenizenMCompletion(doc, range));
-}
-
-function getDenizenMCommandCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
-    const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const commandMatch = /^(\s*-\s*(?:~)?)([A-Za-z]*)$/i.exec(linePrefix);
-    if (!commandMatch) {
-        return [];
-    }
-    const typed = commandMatch[2].toLowerCase();
-    const range = getCompletionRange(document, position, commandMatch[2].length);
-    return denizenMCommands
-        .filter(doc => doc.label.toLowerCase().startsWith(typed))
-        .map(doc => makeDenizenMCompletion(doc, range));
-}
-
-function getDenizenMCommandArgCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
-    const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const commandArgMatch = /^\s*-\s*(?:~)?([A-Za-z]+)\b.*(?:^|\s)([A-Za-z_:]*)$/i.exec(linePrefix);
-    if (!commandArgMatch) {
-        return [];
-    }
-    const command = commandArgMatch[1].toLowerCase();
-    const typed = commandArgMatch[2].toLowerCase();
-    const range = getCompletionRange(document, position, commandArgMatch[2].length);
-    return denizenMCommandArgs
-        .filter(doc => {
-            const label = doc.label.toLowerCase();
-            if (!label.startsWith(typed)) {
-                return false;
-            }
-            if (command == "teleport") {
-                return label == "async";
-            }
-            if (command == "playeffect") {
-                return label == "forced";
-            }
-            if (command == "resourcepack") {
-                return label == "add";
-            }
-            if (command == "bmmodel") {
-                return ["entity:", "model:", "remove"].indexOf(label) != -1;
-            }
-            if (command == "bmlimb") {
-                return ["target:", "model:", "animation:", "loop:", "override"].indexOf(label) != -1;
-            }
-            if (command == "bmstate") {
-                return ["model:", "state:", "bones:", "loop:", "speed:", "override", "remove"].indexOf(label) != -1;
-            }
-            if (command == "bmpart") {
-                return ["entity:", "model:", "bone:", "part:", "from:"].indexOf(label) != -1;
-            }
-            return false;
-        })
-        .map(doc => makeDenizenMCompletion(doc, range));
+    return CONTAINER_SNIPPETS.map(entry =>
+        makeSnippetCompletion(entry.type, entry.detail, containerSnippetText(entry), range));
 }
 
 function getDenizenCompletions(document: vscode.TextDocument, position: vscode.Position) : vscode.CompletionItem[] {
     const linePrefix = document.lineAt(position).text.substring(0, position.character);
-    const eventCompletions = getDenizenMEventCompletions(document, position);
-    if (eventCompletions.length > 0) {
-        return eventCompletions;
-    }
+    // The hardcoded DenizenM / BetterModel / SkinsRestorer / DiscordSRV tables that used to be
+    // consulted here were removed on 2026-08-27 by user ruling. They were a stand-in for meta
+    // this extension could not load; `denizenscript.server.extra_sources` now loads that meta
+    // for real, so a curated word list is both redundant and worse -- it offered every entry at
+    // every dot position regardless of the object type in front of it.
+    //
+    // Container snippets, dialog context keys, defines and flags read live workspace state and
+    // have no server-side equivalent yet, so they stay.
     const containerSnippets = getContainerSnippetCompletions(document, position);
     if (containerSnippets.length > 0) {
         return containerSnippets;
-    }
-    const commandCompletions = getDenizenMCommandCompletions(document, position);
-    if (commandCompletions.length > 0) {
-        return commandCompletions;
-    }
-    const escapeTagMatch = /<(&?[A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (escapeTagMatch) {
-        const baseTagCompletions = getDenizenMBaseTagCompletions(document, position);
-        if (baseTagCompletions.length > 0) {
-            return baseTagCompletions;
-        }
-        const range = getCompletionRange(document, position, escapeTagMatch[1].length);
-        return denizenMEscapeTags.map(doc => makeDenizenMEscapeCompletion(doc, range));
     }
     const contextMatch = /<context\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
     if (contextMatch) {
         const range = getCompletionRange(document, position, contextMatch[1].length);
         return sortedSetValues(getDialogInputKeys(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Property, "Dialog input context", range));
     }
-    const dotTagMatch = /<[^\s<>]*\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
-    if (dotTagMatch) {
-        const range = getCompletionRange(document, position, dotTagMatch[1].length);
-        return denizenMDotTags.map(doc => makeDenizenMCompletion(doc, range));
+    // Event lines inside a world container's `events:` key.
+    //
+    // Neither engine offers these -- CompletionItemService.cs has no event handling at all, and
+    // the TypeScript server's completion stops at commands, arguments and tags. So typing under
+    // `events:` offered nothing, which is what the user reported.
+    //
+    // Runs on BOTH engines, and only when the immediate parent key is `events:` on a `type:
+    // world` container, so 527 event lines never bury the ordinary suggestions elsewhere.
+    if (!/^\s*-/.test(linePrefix)) {
+        // The VALUE half of a switch, e.g. `on player breaks block bukkit_priority:HI`.
+        //
+        // Checked before the event-name list because the two cannot both apply: `parseEventLinePrefix`
+        // excludes `:`, so once a switch is written it returns null and the names stop being offered.
+        // Only the three switches whose values the meta documents as a closed set are completed --
+        // see EVENT_SWITCH_VALUES for why the flag-name and number switches are deliberately absent.
+        const switchValue = parseEventSwitchValue(linePrefix);
+        if (switchValue && isInWorldEvents(document.getText().split(/\r?\n/), position.line)) {
+            const values = EVENT_SWITCH_VALUES.get(switchValue.switchName)!;
+            const range = getCompletionRange(document, position, switchValue.typed.length);
+            return values.map(value => {
+                const item = new vscode.CompletionItem(value, vscode.CompletionItemKind.EnumMember);
+                item.detail = `${switchValue.switchName} switch`;
+                item.range = range;
+                return item;
+            });
+        }
+        // THE `on `/`after ` PREFIX IS NOT PART OF THE EVENT NAME. Denizen writes event lines as
+        // `on player joins:` or `after player breaks block:`, but the meta documents them as
+        // `player joins` -- so matching the whole typed text found nothing the moment the user
+        // typed `on`, which is how every event line starts. Worse, the replacement range covered
+        // the prefix, so accepting a suggestion would have deleted the `on ` too.
+        const eventPrefixMatch = parseEventLinePrefix(linePrefix);
+        if (eventPrefixMatch && isInWorldEvents(document.getText().split(/\r?\n/), position.line)) {
+            const hasPrefix = eventPrefixMatch.hasPrefix;
+            const typed = eventPrefixMatch.typed;
+            // Only the part AFTER `on `/`after ` is replaced, so what the user already typed
+            // stays put.
+            const range = getCompletionRange(document, position, typed.length);
+            return DENIZEN_EVENTS.map(event => {
+                const item = new vscode.CompletionItem(event.name, vscode.CompletionItemKind.Event);
+                // A snippet, not plain text: `<block>` and friends become tabstops the author
+                // tabs through, and the optional `(...)` groups are dropped to leave the
+                // minimal valid form.
+                //
+                // `on ` is prepended only when the user has NOT already written a prefix --
+                // Denizen requires one, so a bare event line would be invalid.
+                item.insertText = new vscode.SnippetString((hasPrefix ? '' : 'on ') + eventSnippet(event.name) + ':');
+                item.detail = 'Denizen event';
+                item.documentation = new vscode.MarkdownString(event.trigger);
+                item.range = range;
+                // VS Code filters on the text inside `range`, which is now the event name
+                // without its prefix -- exactly what the label is.
+                item.filterText = event.name;
+                return item;
+            });
+        }
     }
-    const commandArgCompletions = getDenizenMCommandArgCompletions(document, position);
-    if (commandArgCompletions.length > 0) {
-        return commandArgCompletions;
+    // `<entry[NAME].…>` -- the sub-tags of the command that saved NAME.
+    //
+    // These are NOT in the tag index: entry sub-tags are documented per command, so there are
+    // zero tags in the meta whose base is `entry`. Without this branch the editor falls back to
+    // the general tag-part list, which contains none of the right answers -- typing
+    // `<entry[123].spawned` offered `spawned_npcs` and never `spawned_entity`.
+    //
+    // Runs on BOTH engines: the TypeScript server has the same blind spot as the C# one here.
+    const entryTagMatch = /<entry\[([^\]<>]*)\]\.([A-Za-z0-9_]*)$/i.exec(linePrefix);
+    if (entryTagMatch) {
+        const saved = findSaveEntries(document.getText().split(/\r?\n/), position.line);
+        const range = getCompletionRange(document, position, entryTagMatch[2].length);
+        const known = saved.find(e => e.name == entryTagMatch[1].toLowerCase());
+        const detail = known ? `Entry tag from '${known.command}'` : "Denizen entry tag";
+        return entryTagsFor(entryTagMatch[1], saved).map(value => makeCompletion(value, vscode.CompletionItemKind.Property, detail, range));
+    }
+    // `<entry[…` -- the save-entry names written above the cursor in this container.
+    const entryNameMatch = /<entry\[([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
+    if (entryNameMatch) {
+        const saved = findSaveEntries(document.getText().split(/\r?\n/), position.line);
+        const range = getCompletionRange(document, position, entryNameMatch[1].length);
+        return saved.map(e => makeCompletion(e.name, vscode.CompletionItemKind.Variable, `Save entry from '${e.command}'`, range));
     }
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
         const range = getCompletionRange(document, position, defineMatch[1].length);
-        return sortedSetValues(getContainerDefines(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range));
+        // The IMPLICIT definitions first: a loop variable or a `filter_value` is in scope right
+        // here, where a `- define` from twenty lines up may or may not still be what the user
+        // means. Both are offered, and neither hides the other -- `- define` names that clash are
+        // dropped, since the implicit one is what a tag resolves to in this position.
+        const implicit = definitionsInScope(document.getText().replace(/\r/g, "").split("\n"), position.line, position.character);
+        const implicitNames = new Set(implicit.map(d => d.name));
+        const declared = sortedSetValues(getContainerDefines(document, position)).filter(v => !implicitNames.has(v));
+        return [
+            ...implicit.map(d => makeCompletion(d.name, vscode.CompletionItemKind.Variable, `Denizen define from ${d.source}`, range)),
+            ...declared.map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range))
+        ];
     }
     const flagMatch = /(?:<player\.flag\[|<server\.flag\[|<\[[A-Za-z_][A-Za-z0-9_]*\]\.flag\[)([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
     if (flagMatch) {
@@ -1373,45 +1205,6 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
     return [];
 }
 
-function getDenizenMDocByLabel(label: string) : DenizenMDoc | undefined {
-    const cleanLabel = label.toLowerCase();
-    return denizenMEscapeTags.concat(denizenMBaseTags).concat(denizenMDotTags).concat(denizenMCommands).concat(denizenMCommandArgs).concat(denizenMEvents)
-        .filter(doc => doc.label.toLowerCase() == cleanLabel || doc.label.toLowerCase() == "&" + cleanLabel)[0];
-}
-
-function getDenizenMHover(document: vscode.TextDocument, position: vscode.Position) : vscode.Hover | undefined {
-    const line = document.lineAt(position).text;
-    const char = position.character;
-    const tagStart = line.lastIndexOf("<", char);
-    const tagEnd = line.indexOf(">", char);
-    if (tagStart != -1 && tagEnd != -1 && tagStart < char) {
-        const tagText = line.substring(tagStart + 1, tagEnd);
-        const escapeMatch = /^(&[A-Za-z0-9_]+)(?:[\[\.]|$)/.exec(tagText);
-        if (escapeMatch) {
-            const doc = getDenizenMDocByLabel(escapeMatch[1]);
-            if (doc) {
-                return new vscode.Hover(new vscode.MarkdownString(doc.markdown));
-            }
-        }
-        const dotParts = tagText.split(/[.\[\]]/).filter(part => part.length > 0);
-        for (const part of dotParts) {
-            const doc = getDenizenMDocByLabel(part);
-            if (doc) {
-                return new vscode.Hover(new vscode.MarkdownString(doc.markdown));
-            }
-        }
-    }
-    const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_]+/);
-    if (wordRange) {
-        const word = document.getText(wordRange);
-        const doc = getDenizenMDocByLabel(word);
-        if (doc) {
-            return new vscode.Hover(new vscode.MarkdownString(doc.markdown), wordRange);
-        }
-    }
-    return undefined;
-}
-
 function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
     workspaceIndex.refreshWorkspace();
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
@@ -1420,11 +1213,9 @@ function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
             return getDenizenCompletions(document, position);
         }
     }, "<", "[", ".", "&", " "));
-    context.subscriptions.push(vscode.languages.registerHoverProvider("denizenscript", {
-        provideHover(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.Hover> {
-            return getDenizenMHover(document, position);
-        }
-    }));
+    // The hover provider that lived here served only the hardcoded third-party doc tables,
+    // removed 2026-08-27. Both language servers already provide hover from real meta, so there
+    // is nothing left for a client-side provider to add.
     const watcher = vscode.workspace.createFileSystemWatcher("**/*.dsc");
     watcher.onDidCreate(uri => {
         workspaceIndex.updateUri(uri);
@@ -1448,6 +1239,13 @@ function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
 }
 
 function isDenizenUri(uri: vscode.Uri) : boolean {
+    // An expanded-tag buffer is named "tag-N.dsc" so that it gets Denizen syntax highlighting,
+    // which means it passes the extension test below. It must NOT be indexed: its content is a
+    // bare `<map[ ... ]>` fragment, and parsing that as a script files nonsense container and
+    // definition names into the merged index that real completions are drawn from.
+    if (uri.scheme === MAP_TAG_SCHEME) {
+        return false;
+    }
     return uri.fsPath.toLowerCase().endsWith(".dsc");
 }
 
@@ -1670,14 +1468,6 @@ function isDialogScriptDiagnostic(uri: vscode.Uri, diagnostic: vscode.Diagnostic
     return false;
 }
 
-function isDenizenMDiagnostic(uri: vscode.Uri, diagnostic: vscode.Diagnostic) : boolean {
-    const document = vscode.workspace.textDocuments.filter(doc => pathKey(doc.uri) == pathKey(uri))[0];
-    const message = diagnostic.message.toLowerCase();
-    const lineText = document && diagnostic.range.start.line < document.lineCount ? document.lineAt(diagnostic.range.start.line).text.toLowerCase() : "";
-    const combined = message + "\n" + lineText;
-    return denizenMKnownTerms.some(term => combined.indexOf(term) != -1);
-}
-
 let refreshTimer: NodeJS.Timer | undefined = undefined;
 
 function refreshDecor() {
@@ -1830,6 +1620,20 @@ const ifCmdLabels : string[] = [ "cmd:if", "cmd:else", "cmd:while", "cmd:waitunt
 
 const deffableCmdLabels : string[] = [ "cmd:run", "cmd:runlater", "cmd:clickable", "cmd:bungeerun" ];
 
+/**
+ * The `cmd:<name>` context label for a command, with any waitable/instant sigil stripped.
+ *
+ * `~` makes a command waitable and `^` makes it run instantly; neither is part of the name
+ * (ScriptChecker.cs:809-812 strips them for exactly this reason). Without stripping them here the
+ * label came out as `cmd:~run`, matching nothing in `deffableCmdLabels` or `ifCmdLabels`, so a
+ * waitable command silently lost its `def:` name colouring and its `if` operator colouring.
+ * Reported by the user 2026-09-01 for `~narrate`.
+ */
+function commandContextLabel(commandText : string) : string {
+    const name = commandText.trim();
+    return "cmd:" + (name.startsWith("~") || name.startsWith("^") ? name.substring(1) : name);
+}
+
 function checkIfHasTagEnd(arg : string, quoted: boolean, quoteMode: string, canQuote : boolean) : boolean {
     const len : number = arg.length;
     let params : number = 0;
@@ -1856,7 +1660,6 @@ function checkIfHasTagEnd(arg : string, quoted: boolean, quoteMode: string, canQ
     }
     return false;
 }
-
 
 const baseTagSpecialColors: { [color: string]: string } = {
     "&0": "#000000", "black": "#000000",
@@ -2225,7 +2028,7 @@ function decorateLine(line : string, lineNumber: number, decorations: { [color: 
             const commandText = commandEnd == 0 ? afterDash : afterDash.substring(0, commandEnd);
             if (!afterDash.startsWith(" ")) {
                 addDecor(decorations, "bad_space", lineNumber, preSpaces + 1, endIndexCleaned);
-                decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, false, "cmd:" + commandText.trim());
+                decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, false, commandContextLabel(commandText));
             }
             else {
                 if (commandText.includes("'") || commandText.includes("\"") || commandText.includes("[")) {
@@ -2234,7 +2037,7 @@ function decorateLine(line : string, lineNumber: number, decorations: { [color: 
                 else {
                     addDecor(decorations, "command", lineNumber, preSpaces + 2, endIndexCleaned);
                     if (commandEnd > 0) {
-                        decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, true, "cmd:" + commandText.trim());
+                        decorateArg(trimmed.substring(commandEnd), preSpaces + commandEnd, lineNumber, decorations, true, commandContextLabel(commandText));
                     }
                 }
             }
@@ -2656,8 +2459,87 @@ async function escapeSelectionOrDelimitedText() {
     editor.selection = new vscode.Selection(end, end);
 }
 
+/**
+ * A separator this helper typed in place of a space, so one Backspace can put the space back.
+ *
+ * `position` is where the cursor ended up, i.e. immediately AFTER the inserted character.
+ */
+interface DenizenSeparatorEdit {
+    uri: string;
+    position: vscode.Position;
+    inserted: string;
+}
+
+let lastDenizenSeparatorEdit : DenizenSeparatorEdit | undefined = undefined;
+
+/**
+ * SPACE inside a `<map[...]>` or `<list[...]>` types the separator that tag wants.
+ *
+ * FEATURE-IDEAS.md idea 5, user ruling 2026-09-01. Every decision lives in `separatorForSpace`
+ * (src/tagSeparators.ts) so it can be unit-tested without an editor; this function is only the
+ * plumbing, and its rule is that ANY doubt falls through to typing a real space.
+ *
+ * Bound to `space` for denizenscript documents, so it runs on every space the user types in one.
+ * That is why the guards below are ordered cheapest-first and why the setting is read here rather
+ * than cached -- turning the feature off must take effect immediately, not at the next reload.
+ */
+async function typeSpaceOrSeparator() {
+    const editor = vscode.window.activeTextEditor;
+    // Every path below starts by forgetting the last separator. A space that was NOT converted
+    // means the user has typed something else since, so a Backspace after it must be an ordinary
+    // Backspace; the successful path sets a fresh record at the end.
+    lastDenizenSeparatorEdit = undefined;
+    if (!isDenizenEditor(editor)) {
+        await typeDefaultText(" ");
+        return;
+    }
+    if (!vscode.workspace.getConfiguration("denizenscript").get<boolean>("autoInsertTagSeparators", true)) {
+        await typeDefaultText(" ");
+        return;
+    }
+    // Multi-cursor and non-empty selections are left entirely alone. The helper would have to
+    // decide separately for each cursor, and a wrong guess in several places at once is exactly
+    // the "fights the user" failure the feature note warned about.
+    if (editor.selections.length != 1 || !editor.selection.isEmpty) {
+        await typeDefaultText(" ");
+        return;
+    }
+    const position = editor.selection.active;
+    const separator = separatorForSpace(editor.document.lineAt(position.line).text, position.character);
+    if (separator === null) {
+        await typeDefaultText(" ");
+        return;
+    }
+    await editor.edit(editBuilder => {
+        editBuilder.insert(position, separator);
+    });
+    const end = position.translate(0, separator.length);
+    lastDenizenSeparatorEdit = { uri: editor.document.uri.toString(), position: end, inserted: separator };
+    editor.selection = new vscode.Selection(end, end);
+}
+
 async function undoLastDenizenEscapeOrBackspace() {
     const editor = vscode.window.activeTextEditor;
+    // The separator helper shares this key rather than binding Backspace a second time -- two
+    // bindings on one key with the same `when` clause fight each other, and which one wins is not
+    // something this extension should be guessing at. It is checked FIRST because it is the more
+    // recent of the two edits whenever both exist.
+    if (isDenizenEditor(editor) && lastDenizenSeparatorEdit && editor.document.uri.toString() == lastDenizenSeparatorEdit.uri
+        && editor.selections.length == 1 && editor.selection.isEmpty
+        && editor.selection.active.isEqual(lastDenizenSeparatorEdit.position)) {
+        const end = lastDenizenSeparatorEdit.position;
+        const start = end.translate(0, -lastDenizenSeparatorEdit.inserted.length);
+        // Replaced with a SPACE, not deleted: the user pressed space and meant it, and this undoes
+        // only the extension's substitution. A second Backspace then deletes the space normally.
+        await editor.edit(editBuilder => {
+            editBuilder.replace(new vscode.Range(start, end), " ");
+        });
+        const after = start.translate(0, 1);
+        editor.selection = new vscode.Selection(after, after);
+        lastDenizenSeparatorEdit = undefined;
+        return;
+    }
+    lastDenizenSeparatorEdit = undefined;
     if (!isDenizenEditor(editor) || !lastDenizenEscapedEdit || editor.document.uri.toString() != lastDenizenEscapedEdit.uri || editor.selections.length != 1 || !editor.selection.isEmpty) {
         await vscode.commands.executeCommand("deleteLeft");
         return;
@@ -2682,6 +2564,7 @@ async function undoLastDenizenEscapeOrBackspace() {
 function activateDenizenEscaping(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.escapeSelectionOrDelimitedText", escapeSelectionOrDelimitedText));
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.undoEscapeOrBackspace", undoLastDenizenEscapeOrBackspace));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.typeSpaceOrSeparator", typeSpaceOrSeparator));
 }
 
 function tryLoadConfigYaml(relativeTo : vscode.TextDocument) {
@@ -2737,13 +2620,25 @@ function tryLoadConfigYaml(relativeTo : vscode.TextDocument) {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-    let path : string = await activateDotNet();
-    activateLanguageServer(context, path);
+    usingTypeScriptServer = shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"));
+    if (usingTypeScriptServer) {
+        activateTsLanguageServer(context);
+    }
+    else {
+        let path : string = await activateDotNet();
+        activateLanguageServer(context, path);
+    }
     activateHighlighter(context);
     activateUpdateChecks(context);
     activateDenizenFileCommands(context);
     activateWorkspaceCompletions(context);
+    activateMapTagPeek(context);
     activateDenizenEscaping(context);
+    activateDiagnosticMuting(context);
+    activateQuickFixes(context);
+    activateDefinitionProvider(context);
+    activateArgumentHints(context);
+    activateMathEval(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
         if (doc.uri.toString().endsWith(".dsc")) {
             tryLoadConfigYaml(doc);
@@ -2798,6 +2693,35 @@ export async function activate(context: vscode.ExtensionContext) {
             return denizenScriptFoldingProvider(document, context, token);
         }
     });
+    // A swatch beside every hex colour written inside a tag, opening VS Code's own picker.
+    // FEATURE-IDEAS.md idea 10, user request 2026-09-03. Runs on BOTH engines: this is an editor
+    // feature, not a language-server one, and neither server has any notion of colour.
+    //
+    // The decision of what counts as a colour lives in `hexColors.ts` so it can be unit-tested
+    // without a `vscode` import; this adapter is the only part that touches the API. VS Code asks
+    // for the WHOLE document on every change, hence a single line scan with no allocation beyond
+    // the matches themselves.
+    context.subscriptions.push(vscode.languages.registerColorProvider('denizenscript', {
+        provideDocumentColors(document: vscode.TextDocument): vscode.ProviderResult<vscode.ColorInformation[]> {
+            const results: vscode.ColorInformation[] = [];
+            for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
+                for (const found of findHexColors(document.lineAt(lineNumber).text)) {
+                    const range = new vscode.Range(lineNumber, found.start, lineNumber, found.end);
+                    // vscode.Color channels are 0-1; the match carries them as 0-255 bytes.
+                    const color = new vscode.Color(found.red / 255, found.green / 255, found.blue / 255, found.alpha / 255);
+                    results.push(new vscode.ColorInformation(range, color));
+                }
+            }
+            return results;
+        },
+        provideColorPresentations(color: vscode.Color, context: { document: vscode.TextDocument, range: vscode.Range }): vscode.ProviderResult<vscode.ColorPresentation[]> {
+            // Whether the author wrote the 8-digit form is read back off the document rather than
+            // remembered, because VS Code hands this callback only the colour and its range. It
+            // decides whether an opaque colour keeps its alpha byte -- see `formatHexColor`.
+            const hadAlpha = context.document.getText(context.range).length === '#rrggbbaa'.length;
+            return [new vscode.ColorPresentation(formatHexColor(color.red * 255, color.green * 255, color.blue * 255, color.alpha * 255, hadAlpha))];
+        }
+    }));
     scheduleRefresh();
     outputChannel.appendLine('Denizen extension has been activated');
 }

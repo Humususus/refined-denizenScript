@@ -1,0 +1,733 @@
+// Completion for Denizen world-script event lines.
+//
+// Neither engine offers these: CompletionItemService.cs has no event handling at all, and the
+// TypeScript server's completion covers commands, arguments and tags but not events. So typing
+// under a world container's `events:` key offered nothing.
+//
+// Client-side and table-driven for the same reason as ./entryTags: it must work on the DEFAULT
+// csharp engine, and the client has no access to the loaded meta. Regenerate the table when
+// Denizen adds events.
+//
+// No `vscode` import: this stays a pure function of its inputs so it can be unit tested, same as
+// ./mutedDiagnostics, ./entryTags and ./tagFormatter.
+
+// GENERATED from live Denizen meta on 2026-08-25.
+// 399 documented events, expanded to 527 concrete event lines.
+export const DENIZEN_EVENTS : { name: string; trigger: string }[] = [
+    { name: "<'command_name'> command", trigger: "when a player, console, or command block/minecart runs a Bukkit command. This happens before any code of established commands, allowing scripts to 'override' existing commands. Note that for the sake of the event line, escaping is used, so 'bukkit:plugins' becomes 'bukkit&coplugins'" },
+    { name: "<'structure/plant'> grows (naturally)", trigger: "when a structure (a tree or a mushroom) grows in a world." },
+    { name: "<'structure/plant'> grows from bonemeal", trigger: "when a structure (a tree or a mushroom) grows in a world." },
+    { name: "<block> being built (on <block>)", trigger: "when an attempt is made to build a block on another block. Not necessarily caused by players. Does not normally fire when players place blocks. Prefer <@link event player places block> for that." },
+    { name: "<block> burns", trigger: "when a block is destroyed by fire." },
+    { name: "<block> cooks <item> (into <item>)", trigger: "when an item is smelted/cooked by a block." },
+    { name: "<block> decay", trigger: "when leaves decay." },
+    { name: "<block> destroyed by explosion", trigger: "when a block is destroyed by an explosion (caused by either an entity or a block exploding)." },
+    { name: "<block> dispenses <item>", trigger: "when a block dispenses a single item." },
+    { name: "<block> drops <item> from breaking", trigger: "when a items drop from a block due to a player breaking the block in survival mode." },
+    { name: "<block> explodes", trigger: "when a block explodes (like a bed in the nether. For TNT, refer to the \"entity explodes\" event instead). For a block being destroyed by an explosion, refer to the \"block destroyed by explosion\" event instead." },
+    { name: "<block> extends", trigger: "when a piston extends." },
+    { name: "<block> fades", trigger: "when a block fades, melts, or disappears based on world conditions." },
+    { name: "<block> falls", trigger: "when a block begins to fall. Generic form \"block falls\" (with a material) also fires when the block lands." },
+    { name: "<block> forms", trigger: "when a block is formed based on world conditions, EG, when snow forms in a snow storm or ice forms in a cold biome." },
+    { name: "<block> grows", trigger: "when a block grows naturally in the world, EG, when wheat, sugar canes, cacti, watermelons or pumpkins grow." },
+    { name: "<block> physics", trigger: "when a block's physics update." },
+    { name: "<block> retracts", trigger: "when a piston retracts." },
+    { name: "<block> shears <entity>", trigger: "when a dispenser shears a nearby sheep." },
+    { name: "<block> smelts <item> (into <item>)", trigger: "when an item is smelted/cooked by a block." },
+    { name: "<block> tries to dispense <item>", trigger: "before a block dispenses an item. This event fires before the dispenser fully processes a drop, allowing access to the dispensing slot and cancellation of sound effects." },
+    { name: "<entity> added to world", trigger: "any time an entity is added to the world for any reason, including chunks loading pre-existing entities." },
+    { name: "<entity> breaks <hanging> (because <'cause'>)", trigger: "when a hanging entity (painting, item_frame, or leash_hitch) is broken." },
+    { name: "<entity> breeds", trigger: "when two entities breed." },
+    { name: "<entity> casts <'spell'>", trigger: "when an entity, usually an Evoker or Illusioner, casts a spell." },
+    { name: "<entity> changes <block> (into <block>)", trigger: "when an entity changes the material of a block." },
+    { name: "<entity> changes air level", trigger: "when an entity's air level changes." },
+    { name: "<entity> changes food level", trigger: "when an entity's food level changes." },
+    { name: "<entity> changes phase", trigger: "when a dragon's combat phase changes." },
+    { name: "<entity> changes pose", trigger: "when an entity changes its visual pose." },
+    { name: "<entity> combusts", trigger: "when an entity catches fire." },
+    { name: "<entity> creates portal", trigger: "when an entity creates a portal. Generally, prefer <@link event portal created> instead of this." },
+    { name: "<entity> damaged (by <'cause'>)", trigger: "when an entity is damaged." },
+    { name: "<entity> damaged by <entity>", trigger: "when an entity is damaged." },
+    { name: "<entity> damages <entity>", trigger: "when an entity is damaged." },
+    { name: "<entity> damages <vehicle>", trigger: "when a vehicle is damaged." },
+    { name: "<entity> death", trigger: "when an entity dies. Note that this fires *after* the entity dies, and thus some data may be lost from the entity. The death can only be cancelled on Paper." },
+    { name: "<entity> despawns", trigger: "when an entity despawns permanently from the world. May fire repeatedly for one entity." },
+    { name: "<entity> destroys <vehicle>", trigger: "when a vehicle is destroyed." },
+    { name: "<entity> destroys vehicle", trigger: "when a vehicle is destroyed." },
+    { name: "<entity> dies", trigger: "when an entity dies. Note that this fires *after* the entity dies, and thus some data may be lost from the entity. The death can only be cancelled on Paper." },
+    { name: "<entity> drops <item>", trigger: "when an entity drops an item." },
+    { name: "<entity> enters <area>", trigger: "when an entity enters or exits a noted area (cuboid, ellipsoid, or polygon). On Spigot servers, only fires for players. Paper is required for other mob types." },
+    { name: "<entity> enters <entity>", trigger: "when an entity mounts another entity." },
+    { name: "<entity> enters portal", trigger: "when an entity enters a portal. That is, when the entity touches a portal block." },
+    { name: "<entity> exits <area>", trigger: "when an entity enters or exits a noted area (cuboid, ellipsoid, or polygon). On Spigot servers, only fires for players. Paper is required for other mob types." },
+    { name: "<entity> exits <entity>", trigger: "when an entity dismounts from another entity." },
+    { name: "<entity> exits portal", trigger: "when an entity exits a portal. This uses Spigot 'EntityPortalExitEvent' which seems to no longer be called on modern server versions." },
+    { name: "<entity> explodes", trigger: "when an entity explodes (primed_tnt, creeper, etc)." },
+    { name: "<entity> explosion primes", trigger: "when an entity decides to explode." },
+    { name: "<entity> forms <block>", trigger: "when a block is formed by an entity. For example, when a snowman forms snow." },
+    { name: "<entity> goes into <block>", trigger: "when an entity enters, and is stored in a block (eg a bee enters a bee nest). Does not fire when a silverfish \"enters\" a stone block. Prefer <@link event entity changes block> for that." },
+    { name: "<entity> heals (because <'cause'>)", trigger: "when an entity heals." },
+    { name: "<entity> interacts with <block>", trigger: "when an entity interacts with a block (EG an arrow hits a button)" },
+    { name: "<entity> jumps", trigger: "when a horse jumps." },
+    { name: "<entity> killed (by <'cause'>)", trigger: "when an entity is killed." },
+    { name: "<entity> killed (by <entity>)", trigger: "when an entity is killed." },
+    { name: "<entity> kills <entity>", trigger: "when an entity is killed." },
+    { name: "<entity> knocks back <entity>", trigger: "when an entity is knocked back from the hit of another entity." },
+    { name: "<entity> launched", trigger: "when a projectile is launched." },
+    { name: "<entity> loads crossbow", trigger: "when a living entity loads a crossbow with a projectile." },
+    { name: "<entity> pathfinds", trigger: "when an entity starts pathfinding towards a location or entity." },
+    { name: "<entity> picks up <item>", trigger: "when an entity picks up an item." },
+    { name: "<entity> potion effects <'change_action'>", trigger: "when an entity's potion effects change." },
+    { name: "<entity> potion effects modified", trigger: "when an entity's potion effects change." },
+    { name: "<entity> prespawns (because <'cause'>)", trigger: "before a mob spawns and before the mob is created for spawning. Note that this has a limited number of use cases. The intent of this event is to save server resources for blanket mob banning/limiting scripts. Use the entity spawn event as a backup." },
+    { name: "<entity> removed from world", trigger: "any time an entity is removed from the world for any reason, including chunks unloading." },
+    { name: "<entity> resurrected", trigger: "when an entity dies and is resurrected by a totem." },
+    { name: "<entity> shoots <item>", trigger: "when an entity shoots something out of a bow." },
+    { name: "<entity> shoots <material> (with <projectile>)", trigger: "N/A - deprecated in favor of <@link event projectile hits>" },
+    { name: "<entity> spawns (because <'cause'>)", trigger: "when an entity spawns." },
+    { name: "<entity> starts|stops gliding", trigger: "when an entity starts or stops gliding." },
+    { name: "<entity> starts|stops swimming", trigger: "when an entity starts or stops swimming." },
+    { name: "<entity> steps on <material>", trigger: "when a non-player entity steps onto a specific block material. For players, use <@link event player steps on block>." },
+    { name: "<entity> takes <item>", trigger: "when an entity picks up an item." },
+    { name: "<entity> tamed", trigger: "when an entity is tamed." },
+    { name: "<entity> targets (<entity>) (because <'cause'>)", trigger: "when an entity targets a new entity (usually a hostile mob preparing to attack something), or un-targets one." },
+    { name: "<entity> teleported by portal", trigger: "When an entity is about to be teleported by a portal (currently only fires for nether portals)." },
+    { name: "<entity> teleports", trigger: "when an entity teleports." },
+    { name: "<entity> toggles gliding", trigger: "when an entity starts or stops gliding." },
+    { name: "<entity> toggles swimming", trigger: "when an entity starts or stops swimming." },
+    { name: "<entity> transforms (into <entity>)", trigger: "when an entity transforms into different entities (including villager infections, slime splitting, etc)." },
+    { name: "<entity> unleashed (because <'reason'>)", trigger: "when an entity is unleashed." },
+    { name: "<hanging> breaks (because <'cause'>)", trigger: "when a hanging entity (painting, item_frame, or leash_hitch) is broken." },
+    { name: "<inventory> picks up <item>", trigger: "when a hopper or hopper minecart picks up an item." },
+    { name: "<item> despawns", trigger: "when an item entity despawns." },
+    { name: "<item> enchanted", trigger: "when an item is enchanted." },
+    { name: "<item> merges", trigger: "when an item entity merges into another item entity." },
+    { name: "<item> moves from <inventory> (to <inventory>)", trigger: "when an entity or block moves an item from one inventory to another. (Hopper-style movement, not player-induced movement)." },
+    { name: "<item> recipe formed", trigger: "when an item's recipe is correctly formed." },
+    { name: "<item> spawns", trigger: "when an item entity spawns." },
+    { name: "<item> splash", trigger: "when a splash potion breaks open." },
+    { name: "<item> splashes", trigger: "when a splash potion breaks open." },
+    { name: "<projectile> collides with <entity>", trigger: "N/A - use <@link event projectile hits> with the 'entity' switch on versions above 1.19." },
+    { name: "<projectile> hits", trigger: "When a projectile hits a block or an entity." },
+    { name: "<projectile> hits <'block/entity'>", trigger: "N/A - deprecated in favor of <@link event projectile hits>" },
+    { name: "<vehicle> collides with <entity>", trigger: "when a vehicle collides with an entity." },
+    { name: "<vehicle> collides with <material>", trigger: "when a vehicle collides with a block." },
+    { name: "<vehicle> collides with block", trigger: "when a vehicle collides with a block." },
+    { name: "<vehicle> collides with entity", trigger: "when a vehicle collides with an entity." },
+    { name: "<vehicle> created", trigger: "when a vehicle is created." },
+    { name: "<vehicle> damaged", trigger: "when a vehicle is damaged." },
+    { name: "<vehicle> destroyed", trigger: "when a vehicle is destroyed." },
+    { name: "<vehicle> moves", trigger: "when a vehicle moves in the slightest." },
+    { name: "<world> initializes", trigger: "when a world is initialized." },
+    { name: "<world> loads", trigger: "when a world is loaded." },
+    { name: "<world> saves", trigger: "when a world is saved." },
+    { name: "<world> unloads", trigger: "when a world is unloaded." },
+    { name: "anvil block breaks", trigger: "when an anvil is damaged from being used." },
+    { name: "anvil block damaged", trigger: "when an anvil is damaged from being used." },
+    { name: "area effect cloud applies", trigger: "when an area_effect_cloud tries to apply its effect(s) to entities within range." },
+    { name: "areashop <'shop'> bought", trigger: "when an AreaShop is bought." },
+    { name: "areashop <'shop'> expires", trigger: "when an AreaShop's rent expires." },
+    { name: "areashop <'shop'> rented", trigger: "when an AreaShop is rented." },
+    { name: "areashop <'shop'> resold", trigger: "when an AreaShop is resold." },
+    { name: "areashop <'shop'> sold", trigger: "when an AreaShop is resold." },
+    { name: "arikeys key pressed", trigger: "When a key is pressed by a client running AriKeys, if that key is in the AriKeys config." },
+    { name: "arikeys key released", trigger: "When a key stops being pressed by a client running AriKeys, if that key is in the AriKeys config." },
+    { name: "bell rings", trigger: "when a bell block rings. (Requires Paper on versions lower than 1.19)" },
+    { name: "bigdoors door opens|closes", trigger: "when a Big Doors door opens or closes." },
+    { name: "bigdoors door toggles", trigger: "when a Big Doors door opens or closes." },
+    { name: "block drops item from breaking", trigger: "when a items drop from a block due to a player breaking the block in survival mode." },
+    { name: "block equips <item>", trigger: "when armor is equipped to an entity by a dispenser." },
+    { name: "block ignites", trigger: "when a block is set on fire." },
+    { name: "block spreads", trigger: "when a block spreads based on world conditions, EG, when fire spreads, or when mushrooms spread, or when vines grow." },
+    { name: "brewing stand brews", trigger: "when a brewing stand brews a potion." },
+    { name: "brewing stand fueled (with <item>)", trigger: "when a brewing stand receives an item to use as fuel." },
+    { name: "brewing starts", trigger: "when a brewing stand starts brewing a potion." },
+    { name: "bungee player joins network", trigger: "when a player joins the Bungee network (but has not yet entered a server)." },
+    { name: "bungee player leaves network", trigger: "when a player leaves the Bungee network." },
+    { name: "bungee player switches to server", trigger: "when a player switches to a new server on the Bungee network." },
+    { name: "bungee server connects", trigger: "when another server on the Bungee network becomes connected." },
+    { name: "bungee server disconnects", trigger: "when another server on the Bungee network becomes disconnected." },
+    { name: "cauldron level changes", trigger: "when a cauldron's level changes." },
+    { name: "cauldron level raises|lowers", trigger: "when a cauldron's level changes." },
+    { name: "chestshop shop created", trigger: "when a chestshop is created." },
+    { name: "chestshop shop deleted", trigger: "when a chestshop is deleted." },
+    { name: "chestshop transaction", trigger: "when a transaction occurs at a chestshop." },
+    { name: "chunk loads (for the first time)", trigger: "when a new chunk is loaded" },
+    { name: "chunk loads entities", trigger: "when a chunk loads in its entities." },
+    { name: "chunk unloads", trigger: "when a chunk is unloaded" },
+    { name: "chunk unloads entities", trigger: "when a chunk unloads in its entities. Note that this is basically a notification - it's already too late to change entity data." },
+    { name: "clientizen event", trigger: "When the server receives an event from a clientizen client, this requires config option 'Clientizen.process events' in the Depenizen config." },
+    { name: "command", trigger: "when a player, console, or command block/minecart runs a Bukkit command. This happens before any code of established commands, allowing scripts to 'override' existing commands. Note that for the sake of the event line, escaping is used, so 'bukkit:plugins' becomes 'bukkit&coplugins'" },
+    { name: "command unknown", trigger: "when an unknown command is processed by the server." },
+    { name: "console output", trigger: "when any message is printed to console. (Requires <@link mechanism system.redirect_logging> be set true.)" },
+    { name: "crackshot landmine triggered", trigger: "when a CrackShot landmine is triggered by an entity walking through it." },
+    { name: "crackshot player finishes reloading weapon", trigger: "when a player finishes reloading their CrackShot weapon." },
+    { name: "crackshot player fires automatic weapon", trigger: "while a player is firing a fully automatic CrackShot weapon." },
+    { name: "crackshot player fires projectile", trigger: "just before a projectile is launched from a CrackShot weapon." },
+    { name: "crackshot player places landmine", trigger: "when a player places a landmine." },
+    { name: "crackshot player starts firing weapon", trigger: "when a player tries to start firing a CrackShot weapon." },
+    { name: "crackshot player starts reloading weapon", trigger: "when a player starts reloading their CrackShot weapon." },
+    { name: "crackshot player toggles weapon attachment", trigger: "when a player toggles an attachment on a CrackShot weapon." },
+    { name: "crackshot player zooms weapon scope", trigger: "when a player zooms their CrackShot weapon scope." },
+    { name: "crackshot weapon causes explosion", trigger: "when a CrackShot weapon explodes, splits or airstrikes." },
+    { name: "crackshot weapon damages entity", trigger: "when an entity is damaged by a CrackShot weapon." },
+    { name: "crafter crafts <item>", trigger: "when a crafter block crafts an item." },
+    { name: "creeper ignites", trigger: "when a creeper is ignited by flint and steel, or by certain plugin-based activations." },
+    { name: "creeper powered (because <'cause'>)", trigger: "when a creeper is struck by lightning and turned into a powered creeper." },
+    { name: "custom event", trigger: "when called by a script using <@link command customevent>." },
+    { name: "delta time hourly", trigger: "every <count> seconds, minutes, or hours of game calculation time. Default repetitions count of 1. This is specifically based on the rate of time advancement in the game server, which is not necessarily equivalent to the real passage of time (for example, this event may fire slower if the server is lagging). For real time, see <@link event system time>." },
+    { name: "delta time minutely|secondly", trigger: "every <count> seconds, minutes, or hours of game calculation time. Default repetitions count of 1. This is specifically based on the rate of time advancement in the game server, which is not necessarily equivalent to the real passage of time (for example, this event may fire slower if the server is lagging). For real time, see <@link event system time>." },
+    { name: "discord application command", trigger: "when a Discord user uses an application command." },
+    { name: "discord button clicked", trigger: "when a Discord user clicks a button." },
+    { name: "discord channel created", trigger: "when a Discord channel is created." },
+    { name: "discord channel deleted", trigger: "when a Discord channel is created." },
+    { name: "discord command autocomplete", trigger: "when a Discord user queries a slash command option that can be autocompleted." },
+    { name: "discord message deleted", trigger: "when a Discord user deletes a message." },
+    { name: "discord message modified", trigger: "when a Discord user modified a message." },
+    { name: "discord message reaction added", trigger: "when a Discord user added a reaction to a message." },
+    { name: "discord message reaction removed", trigger: "when a Discord user removes a reaction from a message." },
+    { name: "discord message received", trigger: "when a Discord bot receives a message." },
+    { name: "discord modal submitted", trigger: "when a Discord user submits a modal." },
+    { name: "discord selection used", trigger: "when a Discord user uses a selection menu." },
+    { name: "discord slash|message|user command", trigger: "when a Discord user uses an application command." },
+    { name: "discord thread archived", trigger: "when a Discord thread is archived." },
+    { name: "discord thread revealed", trigger: "when a Discord thread is pulled out of archive." },
+    { name: "discord user joins", trigger: "when a Discord user joins a guild." },
+    { name: "discord user leaves", trigger: "when a Discord user leaves a guild." },
+    { name: "discord user nickname changes", trigger: "when a Discord user's nickname change." },
+    { name: "discord user role changes", trigger: "when a Discord user's roles change." },
+    { name: "dragon egg forms", trigger: "when the ender dragon is defeated and the dragon egg forms." },
+    { name: "dragon egg moves", trigger: "when a dragon egg moves." },
+    { name: "ender_dragon changes phase", trigger: "when a dragon's combat phase changes." },
+    { name: "entity destroys <vehicle>", trigger: "when a vehicle is destroyed." },
+    { name: "entity destroys vehicle", trigger: "when a vehicle is destroyed." },
+    { name: "entity enters vehicle", trigger: "when an entity mounts another entity." },
+    { name: "entity exits vehicle", trigger: "when an entity dismounts from another entity." },
+    { name: "entity shoots bow", trigger: "when an entity shoots something out of a bow." },
+    { name: "entity steps on block", trigger: "when a non-player entity steps onto a specific block material. For players, use <@link event player steps on block>." },
+    { name: "entity tamed", trigger: "when an entity is tamed." },
+    { name: "entity teleports", trigger: "when an entity teleports." },
+    { name: "entity transforms", trigger: "when an entity transforms into different entities (including villager infections, slime splitting, etc)." },
+    { name: "essentials player balance changes", trigger: "when a player's balance changes, when using Essentials economy." },
+    { name: "experience bottle breaks", trigger: "when a thrown experience bottle breaks." },
+    { name: "experience orbs merge", trigger: "when two experience orbs are about to merge." },
+    { name: "farmland moisture level changes", trigger: "when a farmland's moisture level changes." },
+    { name: "firework bursts", trigger: "when a firework bursts (explodes)." },
+    { name: "furnace burns <item>", trigger: "when a furnace burns an item used as fuel." },
+    { name: "furnace starts smelting <item>", trigger: "when a furnace starts smelting an item." },
+    { name: "gamerule changes (in <world>)", trigger: "when a gamerule changes." },
+    { name: "generic game event", trigger: "when the minecraft world experiences a generic minecraft game event. This is normally used for sculk sensors." },
+    { name: "gp claim changed", trigger: "when a Grief Prevention claim is modified." },
+    { name: "gp claim created", trigger: "when a Grief Prevention claim is created." },
+    { name: "gp claim deleted", trigger: "when a Grief Prevention claim is deleted." },
+    { name: "gp player enters <'gpclaim'>", trigger: "when a player enters or exits a Grief Prevention claim." },
+    { name: "gp player exits <'gpclaim'>", trigger: "when a player enters or exits a Grief Prevention claim." },
+    { name: "horse jumps", trigger: "when a horse jumps." },
+    { name: "internal bukkit event", trigger: "when the specified internal Bukkit event fires. Useful for testing/debugging, or for interoperation with external plugins that have their own Bukkit events. Get the raw event via 'context.reflect_event'." },
+    { name: "jobs player earns exp for <'job'>", trigger: "when a player performs an action that would cause them to earn Jobs exp for a certain job." },
+    { name: "jobs player earns money for <'job'>", trigger: "when a player performs an action that would cause them to be paid for a certain job." },
+    { name: "jobs player joins <'job'>", trigger: "when a player joins the specified job." },
+    { name: "jobs player leaves <'job'>", trigger: "when a player joins the specified job." },
+    { name: "jobs player levels up <'job'>", trigger: "when a player levels up in the specified job." },
+    { name: "lava|water level changes", trigger: "when a liquid block's level changes. Note that 'liquid spreads' is fired when a liquid first spreads, and 'level changes' is usually fired when it goes down." },
+    { name: "leaves decay", trigger: "when leaves decay." },
+    { name: "libsdisguises disguise <'disguise'>", trigger: "when a entity disguises." },
+    { name: "libsdisguises disguises <'disguise'>", trigger: "when a entity disguises." },
+    { name: "libsdisguises undisguise <'disguise'>", trigger: "when a entity undisguises." },
+    { name: "libsdisguises undisguises <'disguise'>", trigger: "when a entity undisguises." },
+    { name: "lightning strikes", trigger: "when lightning strikes in a world." },
+    { name: "lingering <item> splash", trigger: "when a lingering splash potion breaks open" },
+    { name: "lingering <item> splashes", trigger: "when a lingering splash potion breaks open" },
+    { name: "lingering potion splash", trigger: "when a lingering splash potion breaks open" },
+    { name: "lingering potion splashes", trigger: "when a lingering splash potion breaks open" },
+    { name: "liquid level changes", trigger: "when a liquid block's level changes. Note that 'liquid spreads' is fired when a liquid first spreads, and 'level changes' is usually fired when it goes down." },
+    { name: "liquid spreads", trigger: "when a liquid block spreads." },
+    { name: "loot dispenses from <block>", trigger: "when a block dispenses loot containing multiple items." },
+    { name: "loot generates", trigger: "when loot is generated somewhere in the world (like a vanilla chest being opened for the first time)." },
+    { name: "magicspells <entity> casts <'spell'>", trigger: "when an entity starts to cast a spell." },
+    { name: "magicspells <entity> completes spell", trigger: "when the spell is done and everything has been handled." },
+    { name: "magicspells entity completes spell", trigger: "when the spell is done and everything has been handled." },
+    { name: "magicspells player learns spell", trigger: "when a player is about to learn a spell." },
+    { name: "magicspells player mana change", trigger: "when a player's mana value changes." },
+    { name: "mcmmo player <'skill'> level changes", trigger: "when a player's mcmmo skill level changes." },
+    { name: "mcmmo player activates <'ability'> for <'skill'>", trigger: "when a player activates mcmmo ability." },
+    { name: "mcmmo player deactivates <'ability'> for <'skill'>", trigger: "when a player deactivates mcmmo ability." },
+    { name: "mcmmo player gains xp for <'skill'>", trigger: "when a player gains mcMMO xp." },
+    { name: "mcmmo player levels down <'skill'>", trigger: "when a player loses levels for an mcMMO skill." },
+    { name: "mcmmo player levels up <'skill'>", trigger: "when a player levels up an mcMMO skill." },
+    { name: "mobarena <'arena'> ends", trigger: "when a mobarena ends." },
+    { name: "mobarena <'arena'> starts", trigger: "when a mobarena starts." },
+    { name: "mobarena <'arena'> wave changes", trigger: "when a wave changes in a MobArena." },
+    { name: "mythickeys key pressed", trigger: "When a key is pressed by a client running MythicKeys, if that key is in the MythicKeys config." },
+    { name: "mythickeys key released", trigger: "When a key stops being pressed by a client running MythicKeys, if that key is in the MythicKeys config." },
+    { name: "mythicmob <'mob'> death|killed", trigger: "when a MythicMob dies." },
+    { name: "mythicmob <'mob'> despawns", trigger: "when a MythicMob despawns." },
+    { name: "mythicmob <'mob'> dies", trigger: "when a MythicMob dies." },
+    { name: "mythicmob <'mob'> spawns", trigger: "when a MythicMob spawns." },
+    { name: "noteblock plays note", trigger: "when a NoteBlock plays a note." },
+    { name: "noteblockapi song (<'song'>) ends", trigger: "when a song playing through NoteBlockAPI ends." },
+    { name: "npc begins navigation", trigger: "when an NPC begins, finishes, or cancels navigating." },
+    { name: "npc completes|cancels navigation", trigger: "when an NPC begins, finishes, or cancels navigating." },
+    { name: "npc opens <block>", trigger: "when an NPC opens a door or gate." },
+    { name: "npc spawns", trigger: "when an NPC spawns." },
+    { name: "npc stuck", trigger: "when an NPC's navigator is stuck." },
+    { name: "pig zapped", trigger: "when a pig is zapped by lightning and turned into a pig zombie." },
+    { name: "piglin barter", trigger: "when a piglin completes a barter." },
+    { name: "piston extends", trigger: "when a piston extends." },
+    { name: "piston retracts", trigger: "when a piston retracts." },
+    { name: "player (<'click_type'>) clicks (<item>) in <inventory>", trigger: "when a player clicks in an inventory. Note that you likely will also want to listen to <@link event player drags in inventory>." },
+    { name: "player (first) login", trigger: "when a player logs in to the server. This is during the authentication process, and should NOT be confused with <@link event player joins>." },
+    { name: "player (right clicks <block>", trigger: "when a player clicks on a block or in the air." },
+    { name: "player (right clicks fake entity", trigger: "when a player clicks a fake entity, one that is only shown to the player and not tracked by the server." },
+    { name: "player <item> takes damage", trigger: "when the player damages an item." },
+    { name: "player absorbs experience", trigger: "when a player is absorbing an experience orb." },
+    { name: "player activates riptide", trigger: "when a player activates the riptide effect." },
+    { name: "player afk status changes", trigger: "when a player's afk status changes." },
+    { name: "player animates (<'animation'>)", trigger: "when a player performs an animation." },
+    { name: "player beacon effect applied", trigger: "when a beacon applies an effect to a player." },
+    { name: "player boosts elytra", trigger: "when a player boosts their elytra with a firework rocket while gliding." },
+    { name: "player breaks <material>", trigger: "when a player breaks a block." },
+    { name: "player breaks block", trigger: "when a player breaks a block." },
+    { name: "player breaks held <item>", trigger: "when a player breaks the item they are holding." },
+    { name: "player breaks held item", trigger: "when a player breaks the item they are holding." },
+    { name: "player changes <material>", trigger: "when a player changes a sign." },
+    { name: "player changes armor stand item", trigger: "when a player modifies an armor stand entity." },
+    { name: "player changes framed <item>", trigger: "when a player interacts with an item frame by adding, removing, or rotating the item held in it." },
+    { name: "player changes gamemode (to <'gamemode'>)", trigger: "when a player's gamemode is changed." },
+    { name: "player changes main hand", trigger: "when a player changes their main hand." },
+    { name: "player changes sign", trigger: "when a player changes a sign." },
+    { name: "player changes world", trigger: "when a player moves to a different world." },
+    { name: "player changes xp", trigger: "when a player's experience amount changes." },
+    { name: "player chats", trigger: "when a player chats." },
+    { name: "player chooses arrow", trigger: "when a player chooses an arrow to load a bow/crossbow." },
+    { name: "player client options change", trigger: "when a player changes their client options." },
+    { name: "player closes <inventory>", trigger: "when a player closes an inventory." },
+    { name: "player closes inventory", trigger: "when a player closes an inventory." },
+    { name: "player completes advancement", trigger: "when a player has completed all criteria in an advancement." },
+    { name: "player completes skyblock challenge", trigger: "when a player completes a skyblock challenge." },
+    { name: "player consumes <item>", trigger: "when a player consumes (eats/drinks) an item (like food or potions)." },
+    { name: "player consumes item", trigger: "when a player consumes (eats/drinks) an item (like food or potions)." },
+    { name: "player crafts <item>", trigger: "when a player fully crafts an item." },
+    { name: "player crafts item", trigger: "when a player fully crafts an item." },
+    { name: "player creates shopkeeper", trigger: "when a player creates a shopkeeper." },
+    { name: "player damages <block>", trigger: "when a block is damaged by a player." },
+    { name: "player deep sleeps", trigger: "when a player has slept long enough in a bed to count as being in deep sleep and thus skip the night. Cancelling the event prevents the player from qualifying to skip the night." },
+    { name: "player discovers recipe", trigger: "when a player discovers a new item in the recipe book." },
+    { name: "player drags (<item>) (in <inventory>)", trigger: "when a player drags in an inventory (that is, clicks and then holds the mouse button down while moving the mouse across multiple slots)." },
+    { name: "player drags in inventory", trigger: "when a player drags in an inventory (that is, clicks and then holds the mouse button down while moving the mouse across multiple slots)." },
+    { name: "player edits book", trigger: "when a player edits or signs a book." },
+    { name: "player empties <item>", trigger: "when a player empties a bucket." },
+    { name: "player empties bucket", trigger: "when a player empties a bucket." },
+    { name: "player enters bed", trigger: "when a player enters a bed." },
+    { name: "player enters biome", trigger: "when a player enters or exits a biome." },
+    { name: "player equips <item>", trigger: "when a player (un)equips armor." },
+    { name: "player equips armor", trigger: "when a player (un)equips armor." },
+    { name: "player equips helmet|chestplate|leggings|boots", trigger: "when a player (un)equips armor." },
+    { name: "player exhaustion level increases", trigger: "when a player does an activity that increases their exhaustion level, which increases the rate of hunger." },
+    { name: "player exits biome", trigger: "when a player enters or exits a biome." },
+    { name: "player exits skyblock", trigger: "when a player leaves a skyblock island." },
+    { name: "player fills <item>", trigger: "when a player fills a bucket." },
+    { name: "player fills bucket", trigger: "when a player fills a bucket." },
+    { name: "player fishes (<entity>) (while <'state'>)", trigger: "when a player uses a fishing rod." },
+    { name: "player fishes (<item>) (while <'state'>)", trigger: "when a player uses a fishing rod." },
+    { name: "player flips lectern page", trigger: "when the player flips to a page in a lectern." },
+    { name: "player god mode disabled", trigger: "when a player's god mode status changes." },
+    { name: "player god mode enabled", trigger: "when a player's god mode status changes." },
+    { name: "player god mode status changes", trigger: "when a player's god mode status changes." },
+    { name: "player goes afk", trigger: "when a player's afk status changes." },
+    { name: "player granted advancement criterion", trigger: "when a player is granted a single criterion for an advancement. To fire when ALL the criteria for an advancement is met, use <@link event player completes advancement>" },
+    { name: "player hears sound", trigger: "when a player receives a sound packet from the server." },
+    { name: "player holds item", trigger: "when a player scrolls through their hotbar." },
+    { name: "player input", trigger: "when a player sends updated keyboard/gamepad movement control input to the server." },
+    { name: "player inventory slot changes", trigger: "when the item in a slot of a player's inventory changes. Note that this fires for every item in the player's inventory when they join." },
+    { name: "player item takes damage", trigger: "when the player damages an item." },
+    { name: "player jail status changes", trigger: "when a player's jail status changes." },
+    { name: "player jailed", trigger: "when a player's jail status changes." },
+    { name: "player join", trigger: "when a player joins the server." },
+    { name: "player joins", trigger: "when a player joins the server." },
+    { name: "player jumps", trigger: "when a player jumps." },
+    { name: "player kicked (for flying)", trigger: "when a player is kicked from the server." },
+    { name: "player leashes <entity>", trigger: "when a player leashes an entity." },
+    { name: "player leashes entity", trigger: "when a player leashes an entity." },
+    { name: "player leaves bed", trigger: "when a player leaves a bed." },
+    { name: "player left) clicks <block>", trigger: "when a player clicks on a block or in the air." },
+    { name: "player left) clicks fake entity", trigger: "when a player clicks a fake entity, one that is only shown to the player and not tracked by the server." },
+    { name: "player levels up (from <'level'>) (to <'level'>)", trigger: "when a player levels up." },
+    { name: "player locale change", trigger: "when a player changes their locale in their client settings." },
+    { name: "player logs in (for the first time)", trigger: "when a player logs in to the server. This is during the authentication process, and should NOT be confused with <@link event player joins>." },
+    { name: "player lowers|toggles <item>", trigger: "when a player starts or stops holding up an item, such as a shield, spyglass, or crossbow." },
+    { name: "player mends <item>", trigger: "when an XP orb is used to repair an item with the Mending enchantment in the player's inventory." },
+    { name: "player mends item", trigger: "when an XP orb is used to repair an item with the Mending enchantment in the player's inventory." },
+    { name: "player mute status changes", trigger: "when a player is muted or un-muted." },
+    { name: "player muted", trigger: "when a player is muted or un-muted." },
+    { name: "player names <entity>", trigger: "when a player attempts to rename an entity with a name tag." },
+    { name: "player opens <inventory>", trigger: "when a player opens an inventory. (EG, chests, not the player's main inventory.)" },
+    { name: "player opens inventory", trigger: "when a player opens an inventory. (EG, chests, not the player's main inventory.)" },
+    { name: "player opens sign", trigger: "When a player opens a sign (eg after placing a sign, or by clicking on it to edit it)." },
+    { name: "player picks up launched arrow", trigger: "when a player picks up a launched arrow projectile entity that is embedded into the ground. Will not necessarily fire for creative players." },
+    { name: "player places <hanging>", trigger: "when a hanging entity (painting or itemframe) is placed." },
+    { name: "player places <item>", trigger: "when a player places a block." },
+    { name: "player places block", trigger: "when a player places a block." },
+    { name: "player prelogin", trigger: "when a player starts to log in to the server. This is during the EARLY authentication process, and should NOT be confused with <@link event player joins>." },
+    { name: "player prepares <item> enchant", trigger: "when a player prepares to enchant an item." },
+    { name: "player prepares anvil craft <item>", trigger: "when a player prepares an anvil to craft an item." },
+    { name: "player prepares anvil craft item", trigger: "when a player prepares an anvil to craft an item." },
+    { name: "player prepares grindstone craft <item>", trigger: "when a player prepares to grind an item." },
+    { name: "player prepares item enchant", trigger: "when a player prepares to enchant an item." },
+    { name: "player prepares smithing <item>", trigger: "when a player prepares to upgrade an item on a smithing table." },
+    { name: "player prepares smithing item", trigger: "when a player prepares to upgrade an item on a smithing table." },
+    { name: "player quit", trigger: "when a player quit the server." },
+    { name: "player quits", trigger: "when a player quit the server." },
+    { name: "player raises <item>", trigger: "when a player starts or stops holding up an item, such as a shield, spyglass, or crossbow." },
+    { name: "player receives actionbar", trigger: "when a player receives any actionbar from the server." },
+    { name: "player receives chunk unload", trigger: "when a Player receives a chunk unload packet. Should only be used for packet/clientside related stuff. Not intended for modifying server side. Generally prefer <@link event chunk unloads> in most cases." },
+    { name: "player receives commands", trigger: "when the list of available server commands is sent to the player for tab completion." },
+    { name: "player receives links", trigger: "when a player receives a list of server links." },
+    { name: "player receives message", trigger: "when a player receives any chat message from the server. This does not normally include *player* chat, instead prefer <@link event player chats> for that." },
+    { name: "player receives packet", trigger: "when a player receives a packet from the server." },
+    { name: "player receives tablist update", trigger: "when a player receives a tablist update." },
+    { name: "player respawns (at bed)", trigger: "when a player respawns." },
+    { name: "player respawns elsewhere", trigger: "when a player respawns." },
+    { name: "player returns from afk", trigger: "when a player's afk status changes." },
+    { name: "player right clicks <entity>", trigger: "when a player right clicks on an entity." },
+    { name: "player scrolls their hotbar", trigger: "when a player scrolls through their hotbar." },
+    { name: "player selects loom pattern", trigger: "when a player selects a loom pattern." },
+    { name: "player selects stonecutter recipe", trigger: "when a player selects a recipe in a stonecutter." },
+    { name: "player sends packet", trigger: "when a player sends a packet to the server." },
+    { name: "player sets spawn", trigger: "when a player's spawn point changes." },
+    { name: "player shears <'color'> sheep", trigger: "when a player shears an entity." },
+    { name: "player shears <entity>", trigger: "when a player shears an entity." },
+    { name: "player shield disables", trigger: "When a players shield is disabled." },
+    { name: "player signs book", trigger: "when a player edits or signs a book." },
+    { name: "player smiths <item>", trigger: "when a player upgrades an item on a smithing table." },
+    { name: "player smiths item", trigger: "when a player upgrades an item on a smithing table." },
+    { name: "player spectates <entity>", trigger: "when a player starts spectating an entity." },
+    { name: "player stands on (<material>)", trigger: "when a player stands on a physical-interactable block (such as a pressure plate, tripwire, or redstone ore)." },
+    { name: "player stands on material", trigger: "when a player stands on a physical-interactable block (such as a pressure plate, tripwire, or redstone ore)." },
+    { name: "player starts flying", trigger: "when a player starts or stops flying." },
+    { name: "player starts|stops sneaking", trigger: "when a player starts or stops sneaking." },
+    { name: "player starts|stops sprinting", trigger: "when a player starts or stops sprinting." },
+    { name: "player statistic <'statistic'> increments", trigger: "when a player's statistics increment." },
+    { name: "player statistic increments", trigger: "when a player's statistics increment." },
+    { name: "player steers <entity>", trigger: "every tick that a player is controlling a vehicle. Use <@link event player input> on MC 1.21+." },
+    { name: "player steers entity", trigger: "every tick that a player is controlling a vehicle. Use <@link event player input> on MC 1.21+." },
+    { name: "player steps on <material>", trigger: "when a player steps onto a specific block material." },
+    { name: "player steps on block", trigger: "when a player steps onto a specific block material." },
+    { name: "player stops damaging <block>", trigger: "when a block stops being damaged by a player." },
+    { name: "player stops flying", trigger: "when a player starts or stops flying." },
+    { name: "player stops spectating (<entity>)", trigger: "when a player stops spectating an entity." },
+    { name: "player swaps items", trigger: "when a player swaps the items in their main and off hands." },
+    { name: "player takes <item> from furnace", trigger: "when a player takes an item from a furnace." },
+    { name: "player takes <item> from lectern", trigger: "when a player takes a book from a lectern." },
+    { name: "player takes item from furnace", trigger: "when a player takes an item from a furnace." },
+    { name: "player takes item from lectern", trigger: "when a player takes a book from a lectern." },
+    { name: "player tames <entity>", trigger: "when an entity is tamed." },
+    { name: "player tames entity", trigger: "when an entity is tamed." },
+    { name: "player throws (hatching egg", trigger: "when a player throws an egg - this event specifically fires when the egg hits, for the initial throw event use <@link event projectile launched>." },
+    { name: "player throws non-hatching) egg", trigger: "when a player throws an egg - this event specifically fires when the egg hits, for the initial throw event use <@link event projectile launched>." },
+    { name: "player toggles flying", trigger: "when a player starts or stops flying." },
+    { name: "player toggles sneaking", trigger: "when a player starts or stops sneaking." },
+    { name: "player toggles sprinting", trigger: "when a player starts or stops sprinting." },
+    { name: "player tracks <entity>", trigger: "when a player starts or stops tracking an entity. An entity is tracked/untracked by a player's client when the player moves in/out of its <@link mechanism EntityTag.tracking_range>." },
+    { name: "player trades with merchant", trigger: "when a player trades with a merchant (villager)." },
+    { name: "player tries to attack <entity>", trigger: "when the player tries to attack an entity. This occurs before any of the damage logic, so cancelling this event will prevent any sort of sounds from being played when attacking." },
+    { name: "player triggers raid", trigger: "when a player triggers a village raid." },
+    { name: "player un-jailed", trigger: "when a player's jail status changes." },
+    { name: "player un-muted", trigger: "when a player is muted or un-muted." },
+    { name: "player unequips <item>", trigger: "when a player (un)equips armor." },
+    { name: "player unequips armor", trigger: "when a player (un)equips armor." },
+    { name: "player unequips helmet|chestplate|leggings|boots", trigger: "when a player (un)equips armor." },
+    { name: "player unjailed", trigger: "when a player's jail status changes." },
+    { name: "player unmuted", trigger: "when a player is muted or un-muted." },
+    { name: "player untracks <entity>", trigger: "when a player starts or stops tracking an entity. An entity is tracked/untracked by a player's client when the player moves in/out of its <@link mechanism EntityTag.tracking_range>." },
+    { name: "player uses portal", trigger: "when a player enters a portal." },
+    { name: "player uses recipe book", trigger: "when a player interacts with their recipe book." },
+    { name: "player walks", trigger: "when a player moves in the slightest." },
+    { name: "player walks over <'location'>", trigger: "when a player walks over a noted location. In most cases, it is preferable to use <@link event player enters area> with a small cuboid." },
+    { name: "player walks over notable", trigger: "when a player walks over a noted location. In most cases, it is preferable to use <@link event player enters area> with a small cuboid." },
+    { name: "plotsquared player claims <'plotsquaredplot'>", trigger: "when a player claims a plot." },
+    { name: "plotsquared player enters <'plotsquaredplot'>", trigger: "when a player enters a plot." },
+    { name: "plotsquared player exits <'plotsquaredplot'>", trigger: "when a player leaves a plot." },
+    { name: "plotsquared player leaves <'plotsquaredplot'>", trigger: "when a player leaves a plot." },
+    { name: "plotsquared plot clear <'plotsquaredplot'>", trigger: "when a plot is cleared." },
+    { name: "plotsquared plot clears <'plotsquaredplot'>", trigger: "when a plot is cleared." },
+    { name: "portal created (because <'reason'>)", trigger: "when a portal is created." },
+    { name: "potion splash", trigger: "when a splash potion breaks open." },
+    { name: "potion splashes", trigger: "when a splash potion breaks open." },
+    { name: "pre script reload", trigger: "immediately before Denizen scripts are reloaded." },
+    { name: "projectile launched", trigger: "when a projectile is launched." },
+    { name: "proxy server (<'command'>) command", trigger: "when a player runs a command on the bungee proxy server." },
+    { name: "proxy server list ping", trigger: "when the bungeecord server is pinged and will return server details." },
+    { name: "pvparena player exits", trigger: "when a player exit a pvparena (won, loose, leave, disconnect etc.)" },
+    { name: "pvparena player joins", trigger: "when a player joins a pvparena." },
+    { name: "pvparena player leaves", trigger: "when a player leaves a pvparena." },
+    { name: "pvparena starts", trigger: "when a pvparena starts." },
+    { name: "quests player changes <'quest'> stage", trigger: "when a player changes stage in a quest from the Quests plugin. Note that stages don't have unique IDs." },
+    { name: "quests player completes <'quest'>", trigger: "when a player completes a quest from the Quests plugin." },
+    { name: "quests player fails <'quest'>", trigger: "when a player fails a quest from the Quests plugin." },
+    { name: "quests player starts <'quest'>", trigger: "when a player starts a quest from the Quests plugin." },
+    { name: "raid finishes", trigger: "when a village raid finishes normally." },
+    { name: "raid spawns wave", trigger: "when a village raid spawns a new wave of raiders." },
+    { name: "raid stops", trigger: "when a village raid stops for any reason." },
+    { name: "redis pubsub message", trigger: "when a subscribed redis connection receives a published message, see <@link command Redis>." },
+    { name: "redstone recalculated", trigger: "when a redstone wire is recalculated." },
+    { name: "reload scripts", trigger: "when Denizen scripts are reloaded. Not triggered on initial load." },
+    { name: "residence deleted", trigger: "when a Residence gets deleted." },
+    { name: "residence player creates residence", trigger: "when a player creates a Residence." },
+    { name: "residence player enters <'residence'>", trigger: "when a player enters a Residence." },
+    { name: "residence player exits <'residence'>", trigger: "when a player exits a Residence." },
+    { name: "residence raid ends", trigger: "when a Residence raid ends." },
+    { name: "residence raid starts", trigger: "when players start raiding a Residence." },
+    { name: "resource pack status", trigger: "when a player accepts, denies, successfully loads, or fails to download a resource pack." },
+    { name: "script generates error", trigger: "when a script generates an error." },
+    { name: "script reload", trigger: "when Denizen scripts are reloaded. Not triggered on initial load." },
+    { name: "scripts loaded", trigger: "when Denizen scripts are loaded, but on reloaded and on initial load." },
+    { name: "sentinel npc attacks", trigger: "when a Sentinel-powered NPC attacks a target." },
+    { name: "sentinel npc has no more targets", trigger: "when a Sentinel-powered NPC has no more targets to fight and can return to normal idle behavior." },
+    { name: "server generates exception", trigger: "when an exception occurs on the server." },
+    { name: "server list ping", trigger: "when the server is pinged for a client's server list." },
+    { name: "server prestart", trigger: "before the server finishes starting... fired after some saves are loaded, but before other data is loaded. Use with extreme caution." },
+    { name: "server resources reloaded", trigger: "when vanilla resources (such as datapacks) are reloaded (by vanilla commands or by plugins). If you mess with datapacks often, it may be helpful to run <@link command reload> in this event." },
+    { name: "server start", trigger: "when the server starts." },
+    { name: "sheep dyed (<'color'>)", trigger: "when a sheep is dyed." },
+    { name: "sheep regrows wool", trigger: "when a sheep regrows wool." },
+    { name: "shopkeeper trade", trigger: "when a trade with a shopkeeper is completed. If you intend to cancel this event, use <@link event ShopKeeperTradeInitiatedScriptEvent> instead." },
+    { name: "shopkeepers player tries trading", trigger: "when a trade with a shopkeeper is initiated." },
+    { name: "shutdown", trigger: "when the server is shutting down." },
+    { name: "skeleton horse trap", trigger: "when a player gets too close to a trapped skeleton horse and triggers the trap." },
+    { name: "skillapi player downgrades <'skill'>", trigger: "when a player downgrades a skill in SkillAPI." },
+    { name: "skillapi player levels up", trigger: "when a player levels up in SkillAPI." },
+    { name: "skillapi player unlocks <'skill'>", trigger: "when a player unlocks a skill in SkillAPI." },
+    { name: "skillapi player upgrades <'skill'>", trigger: "when a player upgrades a skill in SkillAPI." },
+    { name: "skyblock island created", trigger: "when a new skyblock is created." },
+    { name: "skyblock island reset", trigger: "when a new skyblock is reset." },
+    { name: "skyblock player enters skyblock", trigger: "when a player goes to a skyblock island." },
+    { name: "slime splits (into <'#'>)", trigger: "when a slime splits into smaller slimes." },
+    { name: "spawn changes", trigger: "when the world's spawn point changes." },
+    { name: "spawner spawns <entity>", trigger: "when an entity spawns from a monster spawner." },
+    { name: "sponge absorbs water", trigger: "when a sponge block absorbs water." },
+    { name: "system time <'HH:MM'>", trigger: "when the system time changes to the specified value. The system time is the real world time set in the server's operating system. It is not necessarily in sync with the game server time, which may vary (for example, when the server is lagging). For events based on in-game time passage, use <@link event delta time> or <@link command wait>." },
+    { name: "system time hourly", trigger: "when the system time changes to the specified value. The system time is the real world time set in the server's operating system. It is not necessarily in sync with the game server time, which may vary (for example, when the server is lagging). For events based on in-game time passage, use <@link event delta time> or <@link command wait>." },
+    { name: "system time minutely|secondly", trigger: "when the system time changes to the specified value. The system time is the real world time set in the server's operating system. It is not necessarily in sync with the game server time, which may vary (for example, when the server is lagging). For events based on in-game time passage, use <@link event delta time> or <@link command wait>." },
+    { name: "tab complete", trigger: "when a player or the console is sent a list of available tab completions." },
+    { name: "target block hit", trigger: "when a target block is hit by a projectile such as an arrow." },
+    { name: "thunder begins|clears", trigger: "when thunder starts or stops in a world." },
+    { name: "thunder changes", trigger: "when thunder starts or stops in a world." },
+    { name: "tick", trigger: "every single tick." },
+    { name: "time <'0-23'> (in <world>)", trigger: "when the current time changes in a world (once per mine-hour)." },
+    { name: "time changes (in <world>)", trigger: "when the current time changes in a world (once per mine-hour)." },
+    { name: "tnt primes", trigger: "when TNT is activated and will soon explode." },
+    { name: "towny player claims plot", trigger: "when a player tries to claim a new Towny plot or outpost." },
+    { name: "towny player creates town", trigger: "when a player tries to create a Towny town." },
+    { name: "towny player enters <'town'>", trigger: "when a player enters a Towny Town." },
+    { name: "towny player exits <'town'>", trigger: "when a player exits a Towny Town." },
+    { name: "towny player joins town", trigger: "when a player joins a Towny town." },
+    { name: "towny player leaves town", trigger: "when a player is removed from a Towny town or when a Towny town is dissolved." },
+    { name: "towny town created", trigger: "after all checks are complete and a Towny town is fully created." },
+    { name: "vault changes state", trigger: "when a vault block's state changes. A list of states can be found at <@link url https://jd.papermc.io/paper/org/bukkit/block/data/type/Vault.State.html>." },
+    { name: "vault displays <item>", trigger: "when a vault block displays an item." },
+    { name: "vehicle collides with <entity>", trigger: "when a vehicle collides with an entity." },
+    { name: "vehicle collides with <material>", trigger: "when a vehicle collides with a block." },
+    { name: "vehicle collides with block", trigger: "when a vehicle collides with a block." },
+    { name: "vehicle collides with entity", trigger: "when a vehicle collides with an entity." },
+    { name: "vehicle created", trigger: "when a vehicle is created." },
+    { name: "vehicle destroyed", trigger: "when a vehicle is destroyed." },
+    { name: "vehicle moves", trigger: "when a vehicle moves in the slightest." },
+    { name: "villager acquires trade", trigger: "when a villager acquires a new trade." },
+    { name: "villager changes profession", trigger: "when a villager changes profession." },
+    { name: "villager replenishes trade", trigger: "when a villager replenishes a trade. A trade being \"replenished\" means its \"uses\" value is reset to \"0\"." },
+    { name: "votifier vote", trigger: "when a Votifier vote is made." },
+    { name: "warden changes anger level", trigger: "when a warden changes its anger level. (In practice, only fires when increasing)." },
+    { name: "weather changes (in <world>)", trigger: "when weather changes in a world." },
+    { name: "weather rains|clears (in <world>)", trigger: "when weather changes in a world." },
+    { name: "webserver web request", trigger: "when a webserver opened by <@link command webserver> receives a connection request." },
+];
+
+/**
+ * Whether the line at `lineIndex` sits inside the `events:` block of a `world` container.
+ *
+ * Scans upward to the enclosing container -- the first non-indented, non-empty line -- and
+ * requires BOTH that an `events:` key was passed on the way and that the container declares
+ * `type: world`. Offering 527 event lines anywhere else would bury every other suggestion.
+ */
+export function isInWorldEvents(lines: string[], lineIndex: number): boolean {
+    const currentIndent = indentOf(lines[lineIndex] ?? '');
+    let needIndent = currentIndent;
+    let firstAncestorSeen = false;
+    let titleIndex = -1;
+    for (let i = Math.min(lineIndex, lines.length - 1) - 1; i >= 0; i--) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        if (trimmed.length === 0 || trimmed.startsWith('#')) {
+            continue;
+        }
+        const indent = indentOf(line);
+        // Siblings and anything deeper are not ancestors -- skip them. This is what makes the
+        // `type:` key, which sits at the SAME indent as `events:`, irrelevant here: an earlier
+        // version treated it as closing the block and so never matched anything.
+        if (indent >= needIndent) {
+            continue;
+        }
+        if (indent === 0) {
+            titleIndex = i;
+            break;
+        }
+        if (!firstAncestorSeen) {
+            // The IMMEDIATE parent must be the events key. Requiring that -- rather than "some
+            // ancestor is events:" -- is what stops event lines being offered inside a command
+            // list, where the parent is the event line itself and commands are what belongs.
+            firstAncestorSeen = true;
+            if (!/^\s*events:\s*$/i.test(line)) {
+                return false;
+            }
+        }
+        needIndent = indent;
+    }
+    if (!firstAncestorSeen || titleIndex === -1) {
+        return false;
+    }
+    // The container must declare `type: world`.
+    for (let j = titleIndex + 1; j < lines.length; j++) {
+        const inner = lines[j];
+        if (inner.trim().length === 0) {
+            continue;
+        }
+        if (indentOf(inner) === 0) {
+            break;
+        }
+        const typeMatch = /^\s*type:\s*(\S+)\s*$/i.exec(inner);
+        if (typeMatch !== null) {
+            return typeMatch[1].toLowerCase() === 'world';
+        }
+    }
+    return false;
+}
+
+/** Leading spaces, counting a tab as four. */
+function indentOf(line: string): number {
+    let n = 0;
+    for (const ch of line) {
+        if (ch === ' ') { n++; }
+        else if (ch === '\t') { n += 4; }
+        else { break; }
+    }
+    return n;
+}
+
+/**
+ * Turns a documented event pattern into a VS Code snippet body.
+ *
+ * `<block> cooks <item> (into <item>)` becomes `${1:block} cooks ${2:item}` -- placeholders
+ * become tabstops the author tabs through, and OPTIONAL groups are dropped, because dropping
+ * them yields the minimal valid form of the event line and a reader can always add them back.
+ */
+export function eventSnippet(name: string): string {
+    // Drop `(...)` optional groups, then tidy the spacing they leave behind.
+    let body = name.replace(/\s*\([^)]*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+    let index = 0;
+    // `<'structure/plant'>` and `<block>` both become tabstops; the quotes are meta notation.
+    body = body.replace(/<'?([^<>]*?)'?>/g, (_match, inner: string) => {
+        index++;
+        return '${' + index + ':' + inner.replace(/[$}\\]/g, '\\$&') + '}';
+    });
+    return body;
+}
+
+/**
+ * The switches whose values are a documented, closed set — and ONLY those.
+ *
+ * FEATURE-IDEAS.md idea 9, user request 2026-09-03. Every value here is read out of the meta rather
+ * than curated, and the note's claim that this "genuinely needs a written-down list" was wrong:
+ *
+ *   - `bukkit_priority` — the language entry *Bukkit Event Priority* states them outright: "Valid
+ *     priorities, in order of execution, are: LOWEST, LOW, NORMAL, HIGH, HIGHEST, MONITOR."
+ *   - `cancelled` — *Script Event Cancellation*: 'can take a "cancelled:<true/false>" argument'.
+ *   - `ignorecancelled` — the SAME sentence documents this one as 'a "ignorecancelled:true"
+ *     argument', with no false form. So only `true` is offered. That is a deliberate under-offer,
+ *     following `completeObjectTypeNames`' rule: offering a value the documentation does not
+ *     describe is the worse mistake, and `false` still works if typed.
+ *
+ * THE OMISSIONS ARE THE DESIGN. The other global switches — `server_flagged`, `flagged`,
+ * `permission`, `location_flagged`, `assigned`, `in`, `chance`, `priority`, `every` — take flag
+ * names, permission keys, script names, areas, percentages and numbers. None is a closed set, so
+ * they are absent and the editor's ordinary suggestions are left alone there. Offering nothing
+ * beats offering a guess.
+ *
+ * Priorities are spelled in the upper case the meta enumerates them in; Denizen matches switch
+ * values case-insensitively, and the same entry writes the default as "normal".
+ */
+export const EVENT_SWITCH_VALUES: ReadonlyMap<string, readonly string[]> = new Map([
+    ['bukkit_priority', ['LOWEST', 'LOW', 'NORMAL', 'HIGH', 'HIGHEST', 'MONITOR']],
+    ['cancelled', ['true', 'false']],
+    ['ignorecancelled', ['true']]
+]);
+
+/** A switch whose value the cursor is inside, and how much of that value is written. */
+export interface EventSwitchValue {
+    /** The switch name, lowercased. */
+    switchName: string;
+    /** The value text typed so far, which is what a suggestion replaces. */
+    typed: string;
+}
+
+/**
+ * The switch value the cursor sits in, or null when it is not in one this module can complete.
+ *
+ * WHY A SECOND PARSER RATHER THAN WIDENING `parseEventLinePrefix`: that function's pattern excludes
+ * `:` on purpose, so it returns null the instant a switch is written. Widening it would make the
+ * EVENT-NAME list appear inside a switch value, where none of the 527 names belongs. The two are
+ * mutually exclusive by construction, which is exactly what is wanted.
+ *
+ * Only the last space-separated token is examined, because a switch is written `name:value` with no
+ * spaces inside either half; the event body and any earlier switches are irrelevant to it.
+ *
+ * A token holding a SECOND colon is refused. `assigned:my:script` is not a switch this completes,
+ * and more importantly the trailing `:` that closes an event line (`... cancelled:true:`) must not
+ * be read as the start of another value.
+ */
+export function parseEventSwitchValue(linePrefix: string): EventSwitchValue | null {
+    if (/^\s*-/.test(linePrefix)) {
+        return null;
+    }
+    const token = linePrefix.slice(linePrefix.lastIndexOf(' ') + 1);
+    const colon = token.indexOf(':');
+    if (colon === -1) {
+        return null;
+    }
+    const switchName = token.slice(0, colon).toLowerCase();
+    const typed = token.slice(colon + 1);
+    if (typed.includes(':') || !EVENT_SWITCH_VALUES.has(switchName)) {
+        return null;
+    }
+    return { switchName, typed };
+}
+
+/** What the author has typed so far on an event line. */
+export interface EventLinePrefix {
+    /** Whether an `on `/`after ` prefix is already written. */
+    hasPrefix: boolean;
+    /** The part after that prefix -- what the event name should be matched against. */
+    typed: string;
+}
+
+/**
+ * Splits the text before the cursor into its `on `/`after ` prefix and the rest.
+ *
+ * THE PREFIX IS NOT PART OF THE EVENT NAME. Denizen writes event lines as `on player joins:`,
+ * but the meta documents the event as `player joins`. Matching the whole typed text therefore
+ * found nothing the moment the author typed `on` -- which is how every event line starts -- and
+ * a replacement range covering the prefix would have deleted it on accept.
+ *
+ * Returns null when the line cannot be the beginning of an event line at all (a `- ` command, or
+ * text with characters no event name contains).
+ */
+export function parseEventLinePrefix(linePrefix: string): EventLinePrefix | null {
+    if (/^\s*-/.test(linePrefix)) {
+        return null;
+    }
+    const match = /^\s*(?:(on|after)\s+)?([A-Za-z0-9_<>'/ ]*)$/i.exec(linePrefix);
+    if (match === null) {
+        return null;
+    }
+    return { hasPrefix: match[1] !== undefined, typed: match[2] };
+}

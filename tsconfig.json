@@ -5,7 +5,9 @@
 		"outDir": "out",
 		"lib": ["es2021"],
 		"sourceMap": true,
-		"rootDir": "src"
+		"rootDir": "src",
+		"esModuleInterop": true,
+		"moduleResolution": "node16"
 	},
-	"exclude": ["node_modules", ".vscode-test"]
+	"exclude": ["node_modules", ".vscode-test", "vitest.config.ts", "src/**/*.test.ts"]
 }

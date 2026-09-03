@@ -1,0 +1,510 @@
+// Tag and argument checking, ported from SharpDenizenTools' ScriptChecker.cs:
+//   ScriptCheckContext      :772-785
+//   ContainsObjectNotation  :1343-1362
+//   CheckSingleArgument     :576-624   (Task 3)
+//   CheckSingleDataLine     :630-637   (Task 3)
+//   CheckSingleTag          :426-525   (Task 4)
+//
+// THE "checker/ IMPORTS NOTHING" RULE ENDS WITH THIS MODULE, deliberately. It held while the
+// checker was pure line-level string processing. Tag checking genuinely needs the meta --
+// `Meta.TagBases` and `Meta.TagParts` (ScriptChecker.cs:437, :472), `TagHelper.Parse` (:428) and
+// `TagTracer` (:495) -- so this file imports from ../metaDocs and ../providers.
+//
+// The invariant that still holds, and the one that actually matters, is unchanged: NO
+// `vscode-languageserver`, NO `/node`, NO `vscode`, NO I/O. Everything here stays a pure
+// function of its inputs, so it remains unit-testable without a language server.
+//
+// NOTHING CALLS THIS YET. In the C# these functions are driven by `CheckAllContainers`' nested
+// `checkAsScript` (:975 onwards), which is Phase 2C-6. Until then this module is complete,
+// tested, and unreachable from `run()`.
+
+// `import type` (not a plain import): scriptChecker.ts will import this module for real once
+// Phase 2C-6 wires it in, so a value import here would close a require() cycle at runtime. Same
+// pattern as lineChecks.ts, containerGather.ts and containerConvert.ts.
+import type { ScriptChecker } from './scriptChecker';
+import { parseTag } from '../providers/tagHelper';
+import { traceTag } from '../providers/tagTracer';
+import type { TagPart } from '../providers/tagHelper';
+import { before, toLowerFast } from './frenetic';
+// checkTagParam only. No cycle: containerConvert does not import this module, and eventValidators
+// imports nothing from checker/ but ./frenetic and ./advancedMatcher.
+import { contextValidatedGetScriptFor } from './containerConvert';
+import { INVENTORY_MATCHERS } from './eventValidators';
+
+/**
+ * Context for checking a single script container. Ported from ScriptChecker.cs:772-785.
+ *
+ * The two "unknowable" flags are the reason this is a class rather than a pair of sets. A script
+ * that injects something the checker cannot resolve has definitions it cannot possibly know
+ * about; `CheckSingleTag` (:451, :463) reads these flags and suppresses `def_of_nothing` and
+ * `entry_of_nothing` ENTIRELY rather than emitting a warning per tag. Without them, one
+ * unresolvable inject would paint a whole script red.
+ */
+export class ScriptCheckContext {
+    /** Known definition names. (ScriptChecker.cs:775) */
+    definitions: Set<string> = new Set<string>();
+    /** Known save-entry names. (:778) */
+    saveEntries: Set<string> = new Set<string>();
+    /** Injects or other issues make definition names unknowable. (:781) */
+    hasUnknowableDefinitions = false;
+    /** Injects or other issues make save-entry names unknowable. (:784) */
+    hasUnknowableSaveEntries = false;
+}
+
+/**
+ * The last letter of every real ObjectTag prefix, i.e. the character that may legally sit
+ * directly before the `@` of raw object notation. Ported from ScriptChecker.cs:1338
+ * (`OBJECT_NOTATION_LAST_LETTER_MATCHER`), transcribed character by character.
+ *
+ * Lowercase only, and `AsciiMatcher` does not fold case, so `E@1` is NOT object notation.
+ */
+const OBJECT_NOTATION_LAST_LETTERS = 'mdlipqsebhounwr';
+
+/** A half-open character range, matching what C#'s `Range` gives its consumer at :583-584. */
+export interface CharRange {
+    /** Index of the first qualifying letter. */
+    start: number;
+    /** Index of the LAST qualifying `@`. */
+    end: number;
+}
+
+/**
+ * Whether a line contains raw object notation, and where.
+ * Ported from ScriptChecker.cs:1343-1362.
+ *
+ * Returns the widest span between the first qualifying letter and the last qualifying `@` in the
+ * line -- `Math.Min`/`Math.Max` across every match, not one range per match, so a line with two
+ * notations reports a single range covering everything between them.
+ *
+ * NOTE `end` is the index OF the '@', not one past it. LSP ranges are end-exclusive, so the
+ * published squiggle stops just before the '@' and covers only the type letter. That is what the
+ * C# does; it is not corrected here, because no user has reported it and the last three range
+ * corrections in this port were each taken as an explicit ruling.
+ */
+export function containsObjectNotation(line: string): CharRange | null {
+    // ScriptChecker.cs:1345-1347
+    let first = line.length;
+    let last = -1;
+    let atIndex = -1;
+    // ScriptChecker.cs:1348-1356
+    while ((atIndex = line.indexOf('@', atIndex + 1)) !== -1) {
+        // The `atIndex > 0` guard is LOAD-BEARING IN C# AND INERT HERE, and is kept for
+        // fidelity. C#'s `line[-1]` throws IndexOutOfRange; JS's is `undefined`, and
+        // `'mdlipqsebhounwr'.includes(undefined)` coerces to a search for the substring
+        // "undefined" and is therefore always false. Deleting the guard is an equivalent mutant
+        // in TypeScript -- verified over 55,986 inputs rather than argued -- so no test can
+        // cover it, and it stays because relying on that coercion would be a trap for whoever
+        // ports the next line.
+        if (atIndex > 0 && OBJECT_NOTATION_LAST_LETTERS.includes(line[atIndex - 1])) {
+            first = Math.min(first, atIndex - 1);
+            last = Math.max(last, atIndex);
+        }
+    }
+    // ScriptChecker.cs:1357-1361. `last` is the sentinel the C# chose; `first` would do just as
+    // well, since the two are only ever assigned together inside the `if` above -- swapping them
+    // is a second equivalent mutant, verified the same way. Following the C#.
+    if (last !== -1) {
+        return { start: first, end: last };
+    }
+    return null;
+}
+
+/** The characters that open or close a tag, for the range of `uneven_tags` (ScriptChecker.cs:568). */
+const TAG_MARK_CHARS = ['<', '>'];
+
+/** C#'s `string.IndexOfAny(char[])`: the lowest index at which any of `chars` occurs, else -1. */
+function indexOfAny(text: string, chars: string[]): number {
+    for (let i = 0; i < text.length; i++) {
+        if (chars.includes(text[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** C#'s `string.LastIndexOfAny(char[])`. */
+function lastIndexOfAny(text: string, chars: string[]): number {
+    for (let i = text.length - 1; i >= 0; i--) {
+        if (chars.includes(text[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/** Counts occurrences of a single character. C#'s `string.CountCharacter` (FreneticUtilities). */
+function countCharacter(text: string, ch: string): number {
+    let count = 0;
+    for (const c of text) {
+        if (c === ch) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * Called for each tag found inside an argument. Task 4's `checkSingleTag` is the real one; the
+ * parameter exists so the extraction loop can be tested on its own, and so this module has no
+ * forward reference to a function defined below it.
+ */
+export type TagHandler = (line: number, startChar: number, tag: string, context: ScriptCheckContext | null) => void;
+
+/**
+ * Performs the necessary checks on a single argument. Ported from ScriptChecker.cs:576-624.
+ *
+ * @param isCommand whether this argument is a command line rather than one of its arguments;
+ *   suppresses the object-notation check only (:578).
+ * @param onTag what to do with each extracted tag. Defaults to Task 4's `checkSingleTag`.
+ */
+export function checkSingleArgument(
+    checker: ScriptChecker,
+    line: number,
+    startChar: number,
+    argument: string,
+    context: ScriptCheckContext | null,
+    isCommand: boolean,
+    onTag: TagHandler
+): void {
+    // ScriptChecker.cs:578-587
+    if (argument.includes('@') && !isCommand) {
+        const range = containsObjectNotation(argument);
+        if (range !== null) {
+            checker.warn(
+                checker.warnings,
+                line,
+                'raw_object_notation',
+                'This line appears to contain raw object notation. There is almost always a better way to write a line than using raw object notation. Consider the relevant object constructor tags.',
+                startChar + range.start,
+                startChar + range.end
+            );
+        }
+    }
+    // ScriptChecker.cs:588. `<-` and `:->` are Denizen operators, not tag marks, and without
+    // this every line using one would report uneven tags.
+    //
+    // BOTH SUBSTITUTIONS ARE LENGTH-PRESERVING ON PURPOSE -- `<-` (2) becomes `al` (2), `:->`
+    // (3) becomes `arr` (3) -- because every index taken below is into `argNoArrows` while the
+    // offsets handed out are into the caller's original text. Shorten either replacement and
+    // every tag offset in the argument silently shifts.
+    const argNoArrows = argument.replaceAll('<-', 'al').replaceAll(':->', 'arr');
+    // ScriptChecker.cs:589-594. NOTE the asymmetry: the COUNT is taken on `argNoArrows`, the
+    // RANGE on the original `argument`.
+    if (argument.length > 2 && countCharacter(argNoArrows, '<') !== countCharacter(argNoArrows, '>')) {
+        const start = startChar + indexOfAny(argument, TAG_MARK_CHARS);
+        const end = startChar + lastIndexOfAny(argument, TAG_MARK_CHARS);
+        checker.warn(checker.warnings, line, 'uneven_tags', 'Uneven number of tag marks (forgot to close a tag?).', start, end);
+    }
+    // ScriptChecker.cs:595-623: walk every top-level tag in the argument.
+    let tagIndex = argNoArrows.indexOf('<');
+    while (tagIndex !== -1) {
+        // ScriptChecker.cs:598-615. A COUNTER, not a flag, so a nested tag does not end the
+        // outer one early -- `<player.flag[<[x]>]>` is one tag, and its inner tag is reached by
+        // checkSingleTag recursing through the parameter.
+        let bracks = 0;
+        let endIndex = -1;
+        for (let i = tagIndex; i < argNoArrows.length; i++) {
+            if (argNoArrows[i] === '<') {
+                bracks++;
+            }
+            if (argNoArrows[i] === '>') {
+                bracks--;
+                if (bracks === 0) {
+                    endIndex = i;
+                    break;
+                }
+            }
+        }
+        // ScriptChecker.cs:616-619: an unclosed tag ends the scan. Anything already found was
+        // reported; the remainder is not guessed at.
+        if (endIndex === -1) {
+            break;
+        }
+        // ScriptChecker.cs:620-621. The offset is `tagIndex + 1`, i.e. the first character
+        // INSIDE the '<', because every range checkSingleTag reports is relative to the tag text.
+        const tag = argNoArrows.substring(tagIndex + 1, endIndex);
+        onTag(line, startChar + tagIndex + 1, tag, context);
+        // ScriptChecker.cs:622: resume AFTER the closing mark. Resuming from `tagIndex + 1`
+        // would re-enter the tag just consumed and report its inner tags a second time.
+        tagIndex = argNoArrows.indexOf('<', endIndex);
+    }
+}
+
+/**
+ * Performs the necessary checks on a single data key line. Ported from ScriptChecker.cs:630-637.
+ *
+ * A data line is also an argument, so the argument checks run underneath (:636).
+ */
+export function checkSingleDataLine(
+    checker: ScriptChecker,
+    line: number,
+    startChar: number,
+    argument: string,
+    context: ScriptCheckContext | null,
+    onTag: TagHandler
+): void {
+    // ScriptChecker.cs:632-635. NOTE the asymmetry -- `Contains('"')` but `StartsWith('\'')`.
+    // A double quote anywhere is suspicious; a single quote only matters at the start, because
+    // an apostrophe inside a word ("don't") is ordinary text.
+    if (argument.includes('"') || argument.startsWith("'")) {
+        checker.warn(
+            checker.minorWarnings,
+            line,
+            'invalid_data_line_quotes',
+            "Data lines should not be quoted. You can use '<empty>' to make an empty line, or '<&dq>' to make a raw double-quote symbol, or '<&sq>' to make a raw single-quote.",
+            startChar,
+            startChar + argument.length
+        );
+    }
+    // ScriptChecker.cs:636
+    checkSingleArgument(checker, line, startChar, argument, context, false, onTag);
+}
+
+/**
+ * Performs the necessary checks on a single tag. Ported from ScriptChecker.cs:426-525.
+ *
+ * Eight warning keys come out of this, plus the two the tag tracer raises through its callbacks
+ * (restored in Phase 2C-4 Task 1). All go onto `warnings` except `deprecated_tag_part`, which is
+ * a `minorWarning`.
+ */
+export function checkSingleTag(
+    checker: ScriptChecker,
+    line: number,
+    startChar: number,
+    tag: string,
+    context: ScriptCheckContext | null
+): void {
+    const meta = checker.meta;
+    // NOT IN THE C#, which reads an ambient `MetaDocs.CurrentMeta` that is always present.
+    // Diagnostics here run from the first keystroke, while meta is still downloading, and every
+    // check below is a comparison AGAINST the meta -- with none loaded, `tagBases` is empty and
+    // the bad_tag_base branch would fire for every tag in the file. Checking nothing is the only
+    // honest answer until the docs arrive.
+    if (meta === null) {
+        return;
+    }
+    // ScriptChecker.cs:428-431. The parse error's range is the WHOLE tag: at parse-failure time
+    // there are no reliable part offsets to point at.
+    const parsed = parseTag(tag, (s) => {
+        checker.warn(checker.warnings, line, 'tag_format_break', `Tag parse error: ${s}`, startChar, startChar + tag.length);
+    });
+    // ScriptChecker.cs:432-435
+    const warnPart = (part: TagPart, key: string, message: string): void => {
+        checker.warn(checker.warnings, line, key, message, startChar + part.startChar, startChar + part.endChar);
+    };
+    // The tag handler for the two recursive `checkSingleArgument` calls below. A closure rather
+    // than a module-level function because `checkSingleArgument` takes the handler as a
+    // parameter -- which is what let Task 3 test the extraction loop without tag resolution --
+    // and the checker has to be bound in.
+    const recurse: TagHandler = (l, s, t, c) => checkSingleTag(checker, l, s, t, c);
+    // ScriptChecker.cs:436
+    const tagName = toLowerFast(parsed.parts[0].text);
+    // ScriptChecker.cs:437-444. NOTE the `else if`: a base that is not known at all gets
+    // bad_tag_base and NOTHING else, even when its name ends in "tag".
+    // The `tagName.length > 0` guard is what exempts `<[definition]>`, whose base is empty.
+    if (!meta.tagBases.has(tagName) && tagName.length > 0) {
+        warnPart(parsed.parts[0], 'bad_tag_base', `Invalid tag base \`${tagName.replaceAll('`', "'")}\` (check \`!tag ...\` to find valid tags).`);
+    }
+    else if (tagName.endsWith('tag')) {
+        warnPart(parsed.parts[0], 'xtag_notation', "'XTag' notation is for documentation purposes, and is not to be used literally in a script. (replace the 'XTag' text with a valid real tagbase that returns a tag of that type).");
+    }
+    // ScriptChecker.cs:445-456: a definition tag, written either as `<[x]>` or `<definition[x]>`.
+    if (tagName === '' || tagName === 'definition') {
+        const param = parsed.parts[0].parameter;
+        if (param !== null) {
+            // `.Before('.')` -- `<[map.key]>` reads INTO a definition called `map`, so only the
+            // part before the first dot is the name being looked up.
+            const name = before(toLowerFast(param), '.');
+            if (context !== null && !context.definitions.has(name) && !context.hasUnknowableDefinitions) {
+                warnPart(parsed.parts[0], 'def_of_nothing', 'Definition tag points to non-existent definition (typo, or bad copypaste?).');
+            }
+        }
+    }
+    // ScriptChecker.cs:457-468: a save-entry tag.
+    //
+    // The `else` is the C#'s and is kept, but it decides nothing: `tagName` cannot be both
+    // ''/'definition' and 'entry', and the branch above does not reassign it, so turning this
+    // into a plain `if` is an equivalent mutant. Noted so the next audit does not chase it.
+    else if (tagName === 'entry') {
+        const param = parsed.parts[0].parameter;
+        if (param !== null) {
+            // NOTE: lowercased but NOT cut at '.', where the definition branch above IS cut.
+            // An asymmetry in the C#, ported as-is.
+            const name = toLowerFast(param);
+            if (context !== null && !context.saveEntries.has(name) && !context.hasUnknowableSaveEntries) {
+                warnPart(parsed.parts[0], 'entry_of_nothing', 'entry[...] tag points to non-existent save entry (typo, or bad copypaste?).');
+            }
+        }
+    }
+    // ScriptChecker.cs:469-483: every part after the base.
+    for (let i = 1; i < parsed.parts.length; i++) {
+        const part = parsed.parts[i];
+        if (!meta.tagParts.has(part.text)) {
+            // :474 -- the FIRST part after `entry` or `context` is exempt, and only the first.
+            // A context key's name cannot be known from the meta, and `<context.whatever>` is
+            // the commonest construct in a world script; without this every one would warn.
+            // The SECOND part is not exempt, so a real typo after the first is still caught.
+            if (i !== 1 || (tagName !== 'entry' && tagName !== 'context')) {
+                warnPart(part, 'bad_tag_part', `Invalid tag part \`${part.text.replaceAll('`', "'")}\` (check \`!tag ...\` to find valid tags).`);
+                // NESTED inside the bad-part branch: a documented part ending in "tag" is fine,
+                // an undocumented one draws BOTH warnings.
+                if (part.text.endsWith('tag')) {
+                    warnPart(part, 'xtag_notation', "'XTag' notation is for documentation purposes, and is not to be used literally in a script. (replace the 'XTag' text with a valid real tagbase that returns a tag of that type).");
+                }
+            }
+        }
+    }
+    // ScriptChecker.cs:484-490: a tag parameter is an argument in its own right, so tags nested
+    // inside it get checked too. The offset skips the part text and its opening '['.
+    for (const part of parsed.parts) {
+        if (part.parameter !== null) {
+            checkSingleArgument(checker, line, startChar + part.startChar + part.text.length + 1, part.parameter, context, false, recurse);
+        }
+    }
+    // ScriptChecker.cs:491-494: so is a fallback. The `+ 2` steps over the `||`.
+    if (parsed.fallback !== null) {
+        checkSingleArgument(checker, line, startChar + parsed.endChar + 2, parsed.fallback, context, false, recurse);
+    }
+    // ScriptChecker.cs:495-502. The tracer's two diagnostics; its callbacks were restored in
+    // Phase 2C-4 Task 1 specifically for this.
+    const trace = traceTag(meta, parsed, {
+        error: (s) => {
+            checker.warn(checker.warnings, line, 'tag_trace_failure', `Tag tracer: ${s}`, startChar, startChar + tag.length);
+        },
+        // NOTE the list: minorWarnings, unlike every other key in this function. A deprecated
+        // tag still works; it is a nudge, not a problem.
+        deprecation: (s, part) => {
+            checker.warn(checker.minorWarnings, line, 'deprecated_tag_part', s, startChar + part.startChar, startChar + part.startChar + part.text.length);
+        }
+    });
+    // ScriptChecker.cs:503-524. GATED ON THE WORKSPACE, and that is the whole point: every check
+    // in `checkTagParam` asks "is this a real item/entity/procedure OR a script in this workspace
+    // that defines one", so without cross-file data it would report every script-defined item as
+    // invalid. Before Phase 2D `surroundingWorkspace` was always null and this was unreachable.
+    if (checker.surroundingWorkspace !== null) {
+        for (let i = 0; i < parsed.parts.length; i++) {
+            const part = parsed.parts[i];
+            const possible = trace.possibleTags.get(i) ?? [];
+            // ONLY WHEN EXACTLY ONE tag matched. With two or more candidates the parameter's
+            // required type is ambiguous, and guessing would invent warnings on valid scripts.
+            if (possible.length !== 1) {
+                continue;
+            }
+            const actualTag = possible[0];
+            const format = actualTag.parsedFormat;
+            // `Parts.Count <= 2` restricts this to simple tags -- a base plus at most one part --
+            // where the last documented part is unambiguously the one carrying the parameter.
+            if (format !== null && format.parts.length <= 2 && part.parameter !== null && part.parameter.length > 0) {
+                const metaPart = format.parts[format.parts.length - 1];
+                // A documented parameter starting with '<' names a TYPE, e.g. `<material>`. One
+                // spelled out literally is prose, not a type to check against.
+                //
+                // EQUIVALENT MUTANT, and expected to survive: dropping this test changes nothing,
+                // because every `case` in `checkTagParam` is a string beginning with '<', so a
+                // literal parameter falls through the switch and does nothing anyway. Kept for the
+                // C#'s shape and because it says the intent out loud.
+                if (metaPart.parameter !== null && metaPart.parameter.startsWith('<')) {
+                    // ANOTHER EQUIVALENT MUTANT: the fold is a second application. `parseTag`
+                    // already folds the whole tag (tagHelper.ts:62), exactly as `TagHelper.Parse`
+                    // does at TagHelper.cs:21, and toLowerFast is idempotent -- so `material[STONE]`
+                    // arrives here spelled `stone`. The C# is in the same position at :515.
+                    const input = toLowerFast(before(part.parameter, '['));
+                    // A tag-built parameter is unknowable; skip rather than guess.
+                    if (!input.includes('<')) {
+                        checkTagParam(checker, part, metaPart, input, warnPart);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Characters allowed in a simple note name. (ScriptChecker.cs:528, `AllowedSimpleNoteName`) */
+const ALLOWED_SIMPLE_NOTE_NAME = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+
+/** Whether every character of `text` is allowed in a simple note name. Vacuously true when empty. */
+function isOnlySimpleNoteName(text: string): boolean {
+    for (const ch of text) {
+        if (!ALLOWED_SIMPLE_NOTE_NAME.includes(ch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Checks a single tag parameter against the type its documentation demands.
+ * Ported from ScriptChecker.cs:531-566.
+ *
+ * Every arm has the same shape: the value is valid if it is a known Minecraft name OR a script in
+ * the workspace that defines one. The second half is why this needs Phase 2D -- `- define x
+ * my_custom_sword` is perfectly valid when `my_custom_sword` is an item script two files away.
+ *
+ * THE RANGE COMES FROM THE WRONG PART, and that is a C# defect ported as-is. `warnPart` is called
+ * with `metaPart` -- a part of the DOCUMENTED tag syntax -- while the message quotes `part`, the
+ * one in the user's script. So the offsets are indices into the documentation string, added to the
+ * script tag's start, and the underline lands wherever that arithmetic happens to point. Only the
+ * highlight is affected; line, key and message are all correct. Correcting it would be a
+ * deliberate deviation and needs a ruling, so it is documented instead.
+ *
+ * `extraData` null is a real cold-start state, as everywhere else: the C# reads `Meta.Data`
+ * unguarded, but this port loads the enum data on its own promise and must degrade to checking
+ * nothing rather than reporting every material as invalid while it downloads.
+ */
+function checkTagParam(checker: ScriptChecker, part: TagPart, metaPart: TagPart, input: string, warnPart: (part: TagPart, key: string, message: string) => void): void {
+    const data = checker.extraData;
+    if (data === null) {
+        return;
+    }
+    const safeText = part.text.replaceAll('`', "'");
+    const safeParam = (part.parameter ?? '').replaceAll('`', "'");
+    switch (metaPart.parameter) {
+        // ScriptChecker.cs:535-540. NOTE `book` as well as `item`: a book script is an item.
+        case '<material>':
+            if (!data.items.has(input) && !data.blocks.has(input)
+                && contextValidatedGetScriptFor(checker, input, 'item') === null
+                && contextValidatedGetScriptFor(checker, input, 'book') === null) {
+                warnPart(metaPart, 'invalid_tag_material', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Material, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:541-546. Items only -- a block name is NOT accepted here, which is the
+        // one difference from the material case above.
+        case '<item>':
+            if (!data.items.has(input)
+                && contextValidatedGetScriptFor(checker, input, 'item') === null
+                && contextValidatedGetScriptFor(checker, input, 'book') === null) {
+                warnPart(metaPart, 'invalid_tag_item', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Item, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:547-552
+        case '<entity>':
+            if (!data.entities.has(input) && contextValidatedGetScriptFor(checker, input, 'entity') === null) {
+                warnPart(metaPart, 'invalid_tag_entity', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Entity, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:553-558. The third disjunct has no equivalent in the other arms: any
+        // plain alphanumeric word is accepted, because an inventory can be a NOTED one whose name
+        // the checker cannot see. It makes this check very weak, and deliberately so.
+        //
+        // WEAK ENOUGH THAT THE LABEL SET IS DEAD: all 34 entries of INVENTORY_MATCHERS are
+        // themselves valid simple note names, so `isOnlySimpleNoteName` accepts every one of them
+        // and the first disjunct can never be the deciding factor. Measured, and an equivalent
+        // mutant. The check that remains is really "is this a simple word, or an inventory script".
+        // Kept because the C# has it and because a future narrowing of the note alphabet would
+        // make it live again.
+        case '<inventory>':
+            if (!INVENTORY_MATCHERS.has(input)
+                && contextValidatedGetScriptFor(checker, input, 'inventory') === null
+                && !isOnlySimpleNoteName(input)) {
+                warnPart(metaPart, 'invalid_tag_inventory', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Inventory, but is not.`);
+            }
+            break;
+        // ScriptChecker.cs:559-564. The only arm with no enum half at all -- a procedure is always
+        // a script, so the workspace lookup is the entire check.
+        case '<procedure_script_name>':
+            if (contextValidatedGetScriptFor(checker, input, 'procedure') === null) {
+                warnPart(metaPart, 'invalid_tag_procedure', `Tag part \`${safeText}\` has parameter \`${safeParam}\` which has to be a valid Procedure script name, but is not.`);
+            }
+            break;
+    }
+}

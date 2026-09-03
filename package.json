@@ -1,15 +1,26 @@
 {
     "name": "refined-denizenscript",
     "displayName": "refined DenizenScript",
-    "description": "Refined The Denizen scripting language.",
+    "description": "Denizen scripting for VS Code — highlighting, completion, hover and diagnostics, with an optional .NET-free language server.",
     "author": "Humusus_ and DenizenTeam",
-    "version": "1.4.11",
+    "version": "2.0.0",
     "publisher": "humusus",
     "license": "MIT",
     "repository": "https://github.com/Humususus/refined-denizenScript",
+    "bugs": {
+        "url": "https://github.com/Humususus/refined-denizenScript/issues"
+    },
+    "homepage": "https://github.com/Humususus/refined-denizenScript#readme",
+    "keywords": [
+        "denizen",
+        "denizenscript",
+        "dsc",
+        "minecraft",
+        "spigot"
+    ],
     "icon": "logo.png",
     "engines": {
-        "vscode": "^1.34.0"
+        "vscode": "^1.67.0"
     },
     "categories": [
         "Programming Languages"
@@ -43,6 +54,26 @@
             {
                 "command": "refinedDenizenscript.undoEscapeOrBackspace",
                 "title": "Refined DenizenScript: Undo Escape or Backspace"
+            },
+            {
+                "command": "refinedDenizenscript.muteDiagnosticsInSelection",
+                "title": "Refined DenizenScript: Mute Diagnostics in Selection"
+            },
+            {
+                "command": "refinedDenizenscript.unmuteDiagnostics",
+                "title": "Refined DenizenScript: Unmute Diagnostics"
+            },
+            {
+                "command": "refinedDenizenscript.expandMapTag",
+                "title": "Refined DenizenScript: Expand Map/List Tag"
+            },
+            {
+                "command": "refinedDenizenscript.typeSpaceOrSeparator",
+                "title": "Refined DenizenScript: Type Space or Tag Separator"
+            },
+            {
+                "command": "refinedDenizenscript.evaluateMathTag",
+                "title": "Refined DenizenScript: Evaluate Math Tag"
             }
         ],
         "keybindings": [
@@ -65,6 +96,17 @@
                 "command": "refinedDenizenscript.undoEscapeOrBackspace",
                 "key": "backspace",
                 "when": "editorTextFocus && editorLangId == denizenscript"
+            },
+            {
+                "command": "refinedDenizenscript.expandMapTag",
+                "key": "ctrl+alt+d e",
+                "mac": "cmd+alt+d e",
+                "when": "editorTextFocus && editorLangId == denizenscript"
+            },
+            {
+                "command": "refinedDenizenscript.typeSpaceOrSeparator",
+                "key": "space",
+                "when": "editorTextFocus && !editorReadonly && !suggestWidgetVisible && !inSnippetMode && editorLangId == denizenscript"
             }
         ],
         "menus": {
@@ -76,6 +118,18 @@
                 {
                     "command": "refinedDenizenscript.createScriptFile",
                     "group": "navigation@51"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "refinedDenizenscript.muteDiagnosticsInSelection",
+                    "when": "editorLangId == denizenscript",
+                    "group": "denizenscript@10"
+                },
+                {
+                    "command": "refinedDenizenscript.unmuteDiagnostics",
+                    "when": "editorLangId == denizenscript",
+                    "group": "denizenscript@11"
                 }
             ]
         },
@@ -120,6 +174,34 @@
                     "type": "string",
                     "default": "|+=#_@/",
                     "description": "Header comment symbols."
+                },
+                "denizenscript.autoInsertTagSeparators": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Pressing space directly inside a <map[...]> types ';' and inside a <list[...]> types '|'. Never fires inside a quoted value, outside those two tags, or where there is nothing to separate. One Backspace turns the separator back into a plain space."
+                },
+                "denizenscript.inlineArgumentHints": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show the arguments a command still accepts as grey text at the end of the line you are editing. Only the line the caret is on is annotated.\n\nTo keep them but see them **on demand only**, leave this on and set `#editor.inlayHints.enabled#` to `offUnlessPressed` — the hint then appears while you hold `Ctrl+Alt`.\n\nNeeds the TypeScript language server engine: the C# engine has no signature-help implementation, so nothing is shown there."
+                },
+                "denizenscript.evaluateMathTags": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Hovering an arithmetic tag such as `<element[1].sub[<element[2].mul[3]>]>` shows what it works out to. Anything the server would have to answer — definitions, flags, `<player...>` — is listed as a value to supply instead of being guessed at; the **Evaluate Math Tag** command asks for those and shows the result.\n\nA result that is not exactly representable is labelled as rounded: Denizen's internal number representation cannot be determined from its documentation, so the exact digits are not promised."
+                },
+                "denizenscript.server.engine": {
+                    "type": "string",
+                    "enum": [
+                        "csharp",
+                        "typescript"
+                    ],
+                    "enumDescriptions": [
+                        "The existing stable .NET language server.",
+                        "Experimental TypeScript rewrite providing command and command-argument completion, argument-value completion from Minecraft enums (sounds, materials, entities, and more), tag completion (tag bases and tag parts, narrowed to the preceding part's return type unless denizenscript.server.tagTracing is off), and tag-parameter completion inside a tag's square brackets (documented enums such as <material> and <statistic>, mechanism names and mechanism=value pairs, and documented option lists), plus hover for commands and container types; parameter values that name a script container are not offered yet (they need workspace tracking), flag names inside <player.flag[ come from the editor's own workspace index rather than the server, and there is still no event completion, and no tag hover or tag deprecation warnings. Diagnostics now cover 23 checks in three layers: the line-level checks (braced syntax, raw tabs, old <def[...]> syntax, useless/invalid lines, stray end-of-line spaces, TODO comments, and the section symbol used for color codes), the container structure checks (duplicate keys, duplicate script names, empty sections and command sections, and nine spacing and line-shape problems), and the container validity checks (missing content, missing 'type' key, unknown container type). Unlike the C# engine it recognises 'type: dialog' containers. TAG AND COMMAND CHECKING IS NOT WIRED UP YET, so an undefined <[definition]> or a garbage tag is still not reported; event validation, tag hover, cross-file workspace analysis and YAML validation are also absent, so the C# engine still reports strictly more."
+                    ],
+                    "default": "csharp",
+                    "description": "Which Denizen language server engine to use."
                 },
                 "denizenscript.theme_colors.comment_todo": {
                     "type": "string",
@@ -276,6 +358,24 @@
                     "default": "",
                     "description": "Optional list of extra meta sources (direct zip links), separated by | pipes."
                 },
+                "denizenscript.server.extra_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "markdownDescription": "Extra meta documentation sources (direct .zip archive URLs) to load alongside the official Denizen sources.\n\nThey are loaded **after** the official ones, so a command or tag defined in both is taken from yours — that is how a fork overrides the upstream definition. Anything your fork *removes* is a different matter: loading is additive, so the upstream entry survives. Use `#denizenscript.server.replace_default_sources#` for that.\n\nOnly used by the TypeScript language server engine (`denizenscript.server.engine: \"typescript\"`); the C# engine uses `denizenscript.extra_sources` instead."
+                },
+                "denizenscript.server.replace_default_sources": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use denizenscript.server.extra_sources INSTEAD of the official Denizen sources rather than alongside them. For a Denizen fork: loading a fork additively can only ever ADD to the official meta, so anything the fork REMOVED is still offered by completion and still accepted by the checker. Ignored when extra_sources is empty. Only affects the TypeScript engine, and is read once when the server starts, so changing it requires a window reload."
+                },
+                "denizenscript.server.tagTracing": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Narrow tag completions to the tags valid for the traced return type of the preceding tag part, instead of offering every tag part that exists. Turn this off to always see the full list — useful when a tag's real runtime type differs from its documented one, such as a flag or definition holding an object of another type. Only affects the TypeScript engine, and is read once when the server starts, so changing it requires a window reload to take effect."
+                },
                 "refinedDenizenscript.update.githubRepo": {
                     "type": "string",
                     "default": "Humususus/refined-denizenScript",
@@ -301,23 +401,37 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Whether to output debug logs for syntax folding."
+                },
+                "refinedDenizenscript.mapTag.showExpandLens": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show a clickable 'Expand tag' lens above lines containing a multi-entry <map[...]> or <list[...]> tag. The expanded view is editable and writes back as a single line; the file never holds the multi-line form, which Denizen's parser would reject."
                 }
             }
         }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./ --skipLibCheck",
-        "package": "vsce package"
+        "compile": "node node_modules/typescript/bin/tsc -p ./ --skipLibCheck",
+        "test": "node node_modules/vitest/vitest.mjs run",
+        "verify": "node scripts/verify-grammar.js && node scripts/verify-snippets.js && node scripts/verify-event-switches.js",
+        "vsix": "node scripts/build-vsix.js",
+        "package": "node scripts/build-vsix.js"
     },
     "devDependencies": {
+        "@types/adm-zip": "^0.5.7",
+        "@types/node": "^22.10.0",
+        "@types/vscode": "^1.67.0",
         "@vscode/vsce": "^2.15.0",
-        "@types/node": "^16.7.7",
-        "@types/vscode": "^1.34.0",
-        "typescript": "^4.9.5"
+        "typescript": "^4.9.5",
+        "vitest": "^3.0.5"
     },
     "dependencies": {
-        "vscode-languageclient": "^7.0.0"
+        "adm-zip": "^0.5.16",
+        "vscode-languageclient": "^7.0.0",
+        "vscode-languageserver": "^10.1.0",
+        "vscode-languageserver-textdocument": "^1.0.12",
+        "yaml": "^2.9.0"
     },
     "extensionDependencies": [
         "ms-dotnettools.vscode-dotnet-runtime"

@@ -26,8 +26,9 @@
         "comments": {
             "patterns": [
                 {
+                    "comment": "ANCHORED AT THE START OF THE LINE, and that anchor is load-bearing. Denizen has no end-of-line comment: ScriptChecker.cs:184 tests the TRIMMED line with StartsWith('#'), so a '#' anywhere else is ordinary argument text. Unanchored, this rule ran before every other pattern in the file and greyed out the rest of any line holding a '#' -- a hex colour such as <&color[#FF0000]>, a '#' inside a quoted string, or a channel name.",
                     "name": "comment.line.number-sign.denizenscript",
-                    "match": "#.*$"
+                    "match": "^\\s*#.*$"
                 }
             ]
         },
@@ -93,20 +94,67 @@
         "commands": {
             "patterns": [
                 {
-                    "name": "keyword.control.denizenscript",
-                    "match": "^\\s*-\\s+([A-Za-z_][A-Za-z0-9_-]*)\\b",
-                    "captures": {
+                    "comment": "A begin/end block rather than a single match, so the REST of a command line can be scoped too. As one match it coloured the command name and stopped, leaving `targets:` and `format:` in `- narrate hi targets:<player> format:x` as plain text. The block ends at end of line: Denizen commands are single-line, and a continuation line is an argument block the parser treats separately.",
+                    "name": "meta.command.denizenscript",
+                    "begin": "^\\s*(-)\\s+([~^]?)([A-Za-z_][A-Za-z0-9_-]*)\\b",
+                    "end": "$",
+                    "beginCaptures": {
                         "1": {
+                            "name": "keyword.control.denizenscript"
+                        },
+                        "2": {
+                            "name": "keyword.operator.denizenscript"
+                        },
+                        "3": {
                             "name": "support.function.denizenscript"
                         }
-                    }
-                },
+                    },
+                    "patterns": [
+                        {
+                            "comment": "Order matters: tags and strings first, so a ':' inside either is never read as an argument prefix.",
+                            "include": "#tags"
+                        },
+                        {
+                            "include": "#strings"
+                        },
+                        {
+                            "include": "#definitionArgument"
+                        },
+                        {
+                            "include": "#argumentPrefix"
+                        },
+                        {
+                            "include": "#operators"
+                        }
+                    ]
+                }
+            ]
+        },
+        "definitionArgument": {
+            "patterns": [
                 {
-                    "name": "variable.other.definition.denizenscript",
+                    "comment": "`def.name:value` on a run-like command. Listed before #argumentPrefix because that rule would otherwise claim `def.name` as an ordinary prefix and lose the distinction.",
                     "match": "\\bdef\\.([A-Za-z_][A-Za-z0-9_]*)\\b",
+                    "name": "variable.other.definition.denizenscript",
                     "captures": {
                         "1": {
                             "name": "variable.other.readwrite.denizenscript"
+                        }
+                    }
+                }
+            ]
+        },
+        "argumentPrefix": {
+            "patterns": [
+                {
+                    "comment": "The `targets:` half of a prefixed argument. Two guards keep it off things that merely contain a colon: a lookbehind for whitespace, so it only fires where an argument STARTS and never mid-word; and a lookahead for a non-space, so the block-opening colon of `- if <[x]> == y:` is left to #operators rather than turning `y` into an argument name.",
+                    "match": "(?<=\\s)([A-Za-z_][A-Za-z0-9_.]*)(:)(?=\\S)",
+                    "captures": {
+                        "1": {
+                            "name": "entity.other.attribute-name.denizenscript"
+                        },
+                        "2": {
+                            "name": "punctuation.separator.key-value.denizenscript"
                         }
                     }
                 }
@@ -145,8 +193,9 @@
                     }
                 },
                 {
+                    "comment": "The value half gets its own sub-patterns so a tag or a quoted string written on a key line is highlighted as one. Without them this capture swallowed the whole value flat, so `display name: <&b>Test` showed the tag in the plain value colour -- and key lines are where display names, formats and titles are written, which is exactly where tags are commonest. The value also runs to end of line rather than stopping at '#': Denizen has no end-of-line comment (see the note in #comments).",
                     "name": "meta.mapping.value.denizenscript",
-                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^#\\r\\n]*)",
+                    "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_ -]*)(:\\s*)([^\\r\\n]*)",
                     "captures": {
                         "2": {
                             "name": "entity.name.section.denizenscript"
@@ -155,7 +204,15 @@
                             "name": "entity.name.section.denizenscript"
                         },
                         "4": {
-                            "name": "constant.language.denizenscript"
+                            "name": "constant.language.denizenscript",
+                            "patterns": [
+                                {
+                                    "include": "#tags"
+                                },
+                                {
+                                    "include": "#strings"
+                                }
+                            ]
                         }
                     }
                 },
