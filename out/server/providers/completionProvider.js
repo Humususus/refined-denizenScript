@@ -9,6 +9,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.provideCompletions = exports.completeTag = exports.completeKeyLineValues = exports.completeEnumValues = exports.completeCommandArguments = exports.completeCommandNames = void 0;
 const vscode_languageserver_1 = require("vscode-languageserver");
+const eventLineMatch_1 = require("../checker/eventLineMatch");
 const describe_1 = require("./describe");
 const cursorContext_1 = require("./cursorContext");
 const tagContext_1 = require("./tagContext");
@@ -759,6 +760,67 @@ function lastTopLevelArgStart(trimmed) {
     return argStart;
 }
 /**
+ * How many lines `<context.[...]>` narrowing scans upward hunting for its enclosing event line.
+ *
+ * A cap rather than an unbounded walk, because unlike everything else on this hot path (which
+ * looks at the current line or a fixed table) this reads backwards through the whole document.
+ * 400 lines comfortably covers any realistic event body -- the corpus this port has been measured
+ * against tops out at 1216 lines across a WHOLE FILE of 44 containers -- and bounds the worst case
+ * for a `<context.` typed somewhere with no enclosing event at all (a task container, or a
+ * malformed script) to a fixed cost instead of the whole document.
+ */
+const CONTEXT_EVENT_SEARCH_LIMIT = 400;
+/**
+ * The event whose body contains `line`, or null if none is found within
+ * `CONTEXT_EVENT_SEARCH_LIMIT` lines above it.
+ *
+ * WALKS UPWARD LOOKING FOR THE NEAREST LINE THAT MATCHES, with no indentation bookkeeping, and
+ * that absence is deliberate rather than a shortcut. An event's body is every line between it and
+ * the next sibling `on `/`after ` line (or a dedent past both), so the nearest matching line above
+ * the cursor is always the enclosing one -- reaching a SIBLING event first would require the
+ * cursor to already be outside the original event's body, at which point that sibling genuinely is
+ * the enclosing event. `matchEventLine`'s full-match-only rule is what keeps this safe: a
+ * false-positive match against ordinary command text would need that text to fully resolve to a
+ * documented could-matcher, which command lines do not (they have no colon-terminated `on `/
+ * `after ` shape to begin with).
+ */
+function findEnclosingEvent(docs, text, line) {
+    const lines = text.split(/\r?\n/);
+    const start = Math.min(line, lines.length - 1);
+    const limit = Math.max(0, start - CONTEXT_EVENT_SEARCH_LIMIT);
+    for (let i = start; i >= limit; i--) {
+        const evt = (0, eventLineMatch_1.matchEventLine)(docs, lines[i]);
+        if (evt !== null) {
+            return evt;
+        }
+    }
+    return null;
+}
+/**
+ * Completions for `<context.[...]>`, narrowed to the enclosing event's own documented context
+ * names — user request 2026-09-03: "в <context. выводится все теги а не только те что в ивенте".
+ *
+ * Mirrors `completeTag`'s flat-branch shape (same range math, same `Property` kind) rather than
+ * routing through it, because the source here is a plain string list (`contextNamesForEvent`), not
+ * `docs.tagParts`/`docs.tags` — there is no `MetaTag` to attach as `documentation`.
+ */
+function completeContextTagNames(evt, tag, line) {
+    const prefix = tag.lastComponent.toLowerCase();
+    const range = {
+        start: { line, character: tag.lastComponentStart },
+        end: { line, character: tag.lastComponentStart + tag.lastComponent.length }
+    };
+    const results = [];
+    for (const name of (0, eventLineMatch_1.contextNamesForEvent)(evt)) {
+        if (!name.startsWith(prefix)) {
+            continue;
+        }
+        const textEdit = { range, newText: name };
+        results.push({ label: name, kind: vscode_languageserver_1.CompletionItemKind.Property, textEdit, detail: `context.${name}` });
+    }
+    return results;
+}
+/**
  * Tag-parameter and tag-part completion for an argument, shared by the command-line and key-line
  * paths. Returns `null` when the cursor is not inside an open tag, so each caller can decide what
  * to do next — the command path falls through to argument names and enums, the key line has
@@ -768,7 +830,7 @@ function lastTopLevelArgStart(trimmed) {
  * begin with (TextDocumentService.cs:421 serves both kinds of line from one block), and having
  * two here is exactly how the key line came to lose tag completion.
  */
-function completeTagAt(docs, extra, argThusFar, argStart, line, trace, workspace) {
+function completeTagAt(docs, extra, argThusFar, argStart, line, trace, workspace, text) {
     const paramCtx = (0, tagContext_1.findTagParamAtCursor)(argThusFar, argStart);
     if (paramCtx !== null) {
         const paramResults = completeTagParameter(docs, extra, paramCtx, line, workspace);
@@ -782,6 +844,32 @@ function completeTagAt(docs, extra, argThusFar, argStart, line, trace, workspace
     }
     const tagCtx = (0, tagContext_1.findTagAtCursor)(argThusFar, argStart);
     if (tagCtx !== null) {
+        // <context.[...]> IS ALWAYS THIS SHAPE: one component past the bare `context` base, since
+        // Denizen's context values are flat names (`<context.location>`), never their own further
+        // dotted path — confirmed against the live meta, 0 of 2001 documented names contain a dot.
+        // Checked before `completeTag`, not after its flat-branch fallback, because that fallback
+        // is exactly the bug being fixed here: `<context.` traces to no object type at all
+        // (TagTracer.cs has nothing to trace `context` to), so it always fell through to every
+        // documented tag part -- 1871 of them, none of which is ever a context name.
+        //
+        // THE STRING COMPARISON ALONE ALREADY EXCLUDES A DEEPER COMPONENT, with no separate
+        // componentCount check needed: `beforeLastComponent` is defined as everything before the
+        // LAST dot, so at `<context.location.` it reads "context.location" (dot and all), never
+        // the bare "context" this compares against. A componentCount===1 guard here would be
+        // dead weight enforcing something the string shape already guarantees -- tried and
+        // confirmed by mutation: removing it changes no test's outcome.
+        if (tagCtx.beforeLastComponent.toLowerCase() === 'context') {
+            const evt = findEnclosingEvent(docs, text, line);
+            // A resolved event's own (possibly empty) context list is trusted over the flat
+            // fallback -- an event genuinely documenting no context should offer nothing here
+            // rather than every tag part in the meta, which would claim tags as context values
+            // that this specific event does not provide. Only when NO enclosing event can be
+            // found at all does this fall through to `completeTag`'s existing flat behaviour,
+            // preserving it for `<context.` written somewhere this cannot identify.
+            if (evt !== null) {
+                return completeContextTagNames(evt, tagCtx, line);
+            }
+        }
         return completeTag(docs, tagCtx, line, trace);
     }
     return null;
@@ -858,7 +946,7 @@ function provideCompletions(docs, extra, text, offset, line, trace = true, works
         // `null` means "no open tag at the cursor" -- on a key line there is nothing else left
         // to offer, so it becomes the empty list rather than falling through to the
         // command-argument branch, which has no command to work from.
-        return (_a = completeTagAt(docs, extra, ctx.trimmed.substring(argStart), ctx.indent + argStart, line, trace, workspace)) !== null && _a !== void 0 ? _a : [];
+        return (_a = completeTagAt(docs, extra, ctx.trimmed.substring(argStart), ctx.indent + argStart, line, trace, workspace, text)) !== null && _a !== void 0 ? _a : [];
     }
     if (ctx.typingName) {
         return completeCommandNames(docs, ctx.name);
@@ -893,7 +981,7 @@ function provideCompletions(docs, extra, text, offset, line, trace = true, works
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
-    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace);
+    const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace, text);
     if (sharedTagResults !== null) {
         return sharedTagResults;
     }

@@ -48,6 +48,7 @@ const containerSnippets_1 = require("./containerSnippets");
 const definitionProvider_1 = require("./definitionProvider");
 const argumentHintsProvider_1 = require("./argumentHintsProvider");
 const mathEvalProvider_1 = require("./mathEvalProvider");
+const definitionValueHoverProvider_1 = require("./definitionValueHoverProvider");
 const scopeDefinitions_1 = require("./scopeDefinitions");
 const denizenEvents_1 = require("./denizenEvents");
 const hexColors_1 = require("./hexColors");
@@ -2523,8 +2524,9 @@ function activate(context) {
         activateDiagnosticMuting(context);
         (0, quickFixes_1.activateQuickFixes)(context);
         (0, definitionProvider_1.activateDefinitionProvider)(context);
-        (0, argumentHintsProvider_1.activateArgumentHints)(context);
+        (0, argumentHintsProvider_1.activateArgumentHints)(context, usingTypeScriptServer);
         (0, mathEvalProvider_1.activateMathEval)(context);
+        (0, definitionValueHoverProvider_1.activateDefinitionValueHover)(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.uri.toString().endsWith(".dsc")) {
                 tryLoadConfigYaml(doc);
