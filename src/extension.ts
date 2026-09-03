@@ -14,6 +14,7 @@ import { CONTAINER_SNIPPETS, containerSnippetText } from "./containerSnippets";
 import { activateDefinitionProvider } from "./definitionProvider";
 import { activateArgumentHints } from "./argumentHintsProvider";
 import { activateMathEval } from "./mathEvalProvider";
+import { activateDefinitionValueHover } from "./definitionValueHoverProvider";
 import { definitionsInScope } from "./scopeDefinitions";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from "./denizenEvents";
 import { findHexColors, formatHexColor } from "./hexColors";
@@ -2637,8 +2638,9 @@ export async function activate(context: vscode.ExtensionContext) {
     activateDiagnosticMuting(context);
     activateQuickFixes(context);
     activateDefinitionProvider(context);
-    activateArgumentHints(context);
+    activateArgumentHints(context, usingTypeScriptServer);
     activateMathEval(context);
+    activateDefinitionValueHover(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
         if (doc.uri.toString().endsWith(".dsc")) {
             tryLoadConfigYaml(doc);

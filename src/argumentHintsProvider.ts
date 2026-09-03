@@ -19,9 +19,18 @@
 // new LSP request and no `vscode-languageclient` upgrade (that package is pinned at 7, which has
 // no inlay-hint feature at all, which is why this cannot be server-side).
 //
-// ON THE C# ENGINE THERE ARE NO HINTS, and that is not a bug to fix here: its signature-help
-// handler is an empty stub (TextDocumentService.cs:213-217), so the request returns nothing and
-// this quietly renders nothing. The TypeScript engine implements it.
+// ON THE C# ENGINE THERE ARE NO HINTS, and that is not a bug to fix here -- but how it fails WAS
+// one, found 2026-09-04. The assumption below had been that TextDocumentService.cs:213-217's empty
+// stub returns nothing and this quietly renders nothing. In practice the C# server errors on
+// `textDocument/signatureHelp` instead ("Cannot find method ... with matching signature"), and
+// vscode-languageclient logs every failed request to its Output channel AND reveals it by default
+// -- so on the default `csharp` engine, every cursor move onto a command line reopened the Output
+// panel with a fresh error, which is what the user reported as the extension "spamming" a console
+// they could not close. Catching the rejection here would not have helped: the client logs and
+// reveals the channel from inside its own request-sending code, before the rejection ever reaches
+// this file. The only real fix is to not send the doomed request at all -- gated below on the
+// engine setting, which this file already knows is the one thing that decides whether signature
+// help exists at all.
 
 import * as vscode from 'vscode';
 import { hintTextFor, parseSyntaxParameter, SyntaxParameter } from './argumentHints';
@@ -49,6 +58,15 @@ export class ArgumentHintsProvider implements vscode.InlayHintsProvider {
     private readonly changed = new vscode.EventEmitter<void>();
     readonly onDidChangeInlayHints = this.changed.event;
 
+    /**
+     * Snapshotted at activation, the same way `extension.ts`'s own `usingTypeScriptServer` is,
+     * and for the same stated reason: a live `denizenscript.server.engine` setting change must not
+     * desync this gate from the server that is actually running (a reload is required either way
+     * to switch engines, so re-reading the setting live would only risk being WRONG, never react
+     * any sooner).
+     */
+    constructor(private readonly usingTypeScriptServer: boolean) {}
+
     /** Re-asks VS Code for hints. Called when the caret moves, since the hinted line moves with it. */
     refresh(): void {
         this.changed.fire();
@@ -56,6 +74,11 @@ export class ArgumentHintsProvider implements vscode.InlayHintsProvider {
 
     async provideInlayHints(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.InlayHint[]> {
         if (!vscode.workspace.getConfiguration('denizenscript').get<boolean>('inlineArgumentHints', true)) {
+            return [];
+        }
+        // MUST be checked before ANY `executeSignatureHelpProvider` call, not just as an
+        // optimisation: see the file header for what firing it on the C# engine actually does.
+        if (!this.usingTypeScriptServer) {
             return [];
         }
         const editor = vscode.window.activeTextEditor;
@@ -95,8 +118,8 @@ export class ArgumentHintsProvider implements vscode.InlayHintsProvider {
     }
 }
 
-export function activateArgumentHints(context: vscode.ExtensionContext): void {
-    const provider = new ArgumentHintsProvider();
+export function activateArgumentHints(context: vscode.ExtensionContext, usingTypeScriptServer: boolean): void {
+    const provider = new ArgumentHintsProvider(usingTypeScriptServer);
     context.subscriptions.push(vscode.languages.registerInlayHintsProvider({ language: 'denizenscript' }, provider));
     // The hinted line is wherever the caret is, so it has to be re-asked when the caret moves.
     // Debounced: cursor events fire on every arrow key, and each refresh costs a signature request.
