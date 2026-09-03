@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.3
+
+No functional change over 2.0.1's content. A 2.0.2 build briefly went out with a real regression
+(auto-close on `<` stopped working); it was fixed and folded back into 2.0.1 as that version's
+history, but version numbers can't go backwards for anyone who had already installed 2.0.2 — this
+extension's own update checker and VS Code's own extension installer both compare version numbers,
+and neither offers an "update" to a lower one. Re-released under 2.0.3, strictly above both, so the
+update checker picks it up regardless of which of 2.0.0/2.0.1/2.0.2 someone is currently on.
+
 ## 2.0.1
 
 ### Fixes
