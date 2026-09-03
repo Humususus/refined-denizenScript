@@ -632,6 +632,30 @@ function isObjectTypeParam(docParam, tagName) {
     const dot = tagName.lastIndexOf('.');
     return (dot === -1 ? tagName : tagName.slice(dot + 1)) === 'as';
 }
+/**
+ * Whether this bracket holds a BARE TAG PATH — a tag written without its `<>`, applied to each
+ * entry, as in `<list[1|2|3|4|5].filter[is_more_than[3]]>`.
+ *
+ * KEYED ON THE TAG PART, NOT ON THE SPEC ALONE, for the same reason as `isObjectTypeParam` and with
+ * a sharper example. Eight tags document a `<tag>` parameter, and two of them mean something else
+ * entirely: `server.vanilla_tagged_entities` and `server.vanilla_tagged_materials` take a VANILLA
+ * MINECRAFT tag (their descriptions link minecraft.wiki/w/Tag), not a Denizen tag path. Registering
+ * `<tag>` in the shared table would have offered 1885 Denizen tag parts inside a bracket that wants
+ * `minecraft:logs`. The other six are listed below and all share the one shape.
+ *
+ * Measured against the live meta 2026-09-03: these six are the complete set, so matching on the
+ * final component is exact rather than merely selective.
+ */
+const BARE_TAG_PATH_PARTS = new Set([
+    'filter', 'parse', 'sort_by_value', 'sort_by_number', 'parse_value', 'null_if'
+]);
+function isBareTagPathParam(docParam, tagName) {
+    if (docParam !== '<tag>') {
+        return false;
+    }
+    const dot = tagName.lastIndexOf('.');
+    return BARE_TAG_PATH_PARTS.has((dot === -1 ? tagName : tagName.slice(dot + 1)).toLowerCase());
+}
 function completeTagParameter(docs, extra, ctx, line, workspace) {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
@@ -650,7 +674,9 @@ function completeTagParameter(docs, extra, ctx, line, workspace) {
         ? (0, tagParamCompleters_1.completeMapKeys)(docs, ctx.paramSoFar)
         : isObjectTypeParam(documented.docParam, ctx.tagName)
             ? (0, tagParamCompleters_1.completeObjectTypeNames)(docs, ctx.paramSoFar)
-            : (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
+            : isBareTagPathParam(documented.docParam, ctx.tagName)
+                ? (0, tagParamCompleters_1.completeBareTagPaths)(docs, ctx.paramSoFar)
+                : (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results = [];
     for (const candidate of candidates) {

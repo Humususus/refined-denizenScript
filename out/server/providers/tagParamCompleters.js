@@ -15,7 +15,7 @@
  * range, full markdown documentation — belongs to the caller.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeMapKeys = exports.completeObjectTypeNames = exports.setCustomColorNames = exports.parseTextColorMap = void 0;
+exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeMapKeys = exports.completeBareTagPaths = exports.completeObjectTypeNames = exports.setCustomColorNames = exports.parseTextColorMap = void 0;
 const frenetic_1 = require("../checker/frenetic");
 // The one VALUE import from checker/: the inventory label list, which is a hardcoded constant in
 // both languages rather than loaded data, transcribed once for Phase 2C-7's event validators.
@@ -145,6 +145,42 @@ function completeObjectTypeNames(docs, typed) {
     return results;
 }
 exports.completeObjectTypeNames = completeObjectTypeNames;
+/**
+ * Tag part names for the brackets that take a BARE TAG PATH — `<ListTag.filter[...]>` and friends.
+ *
+ * NO C# COUNTERPART -- a new completer, from the user's request of 2026-09-03. These brackets hold a
+ * tag written WITHOUT its `<>`, applied to each entry in turn; the meta's own examples are
+ * `<list[1|2|3|4|5].filter[is_more_than[3]]>` and `<list[one|two].parse[to_uppercase]>`. Nothing
+ * registers the `<tag>` spec, so the bracket offered nothing at all before this.
+ *
+ * THE LAST `.`-COMPONENT IS WHAT GETS FILTERED, because the path may be multi-component
+ * (`sort_by_value[location.y]`). `matchedSuffixLength` independently recovers the replacement range
+ * as the longest suffix of the typed text that the label starts with, and the two agree exactly
+ * here: part names contain no `.`, so no suffix reaching back across one can be a prefix of a label
+ * — the same argument that file makes for `;` and `=`.
+ *
+ * NO DOCUMENTATION IS ATTACHED, matching the flat tag-part branch of `completeTag`, which likewise
+ * offers parts bare. A part name cannot be mapped back to one `MetaTag` (`docs.tags` is keyed by
+ * full tag name, and a name like `size` is documented by many object types), so attaching a
+ * description would mean attaching some other type's description — the confident wrongness
+ * `completionProvider.ts` already refuses twice, for parts and for mechanisms.
+ *
+ * THE ENTRY TYPE IS NOT KNOWN, so the flat list is what can honestly be offered. Narrowing
+ * `filter[...]` to the list's element type would need element-type inference that does not exist
+ * (`<list[...]>` does not record what it holds); the typed prefix narrows it in practice.
+ */
+function completeBareTagPaths(docs, typed) {
+    const dot = typed.lastIndexOf('.');
+    const prefix = (dot === -1 ? typed : typed.slice(dot + 1)).toLowerCase();
+    const results = [];
+    for (const part of docs.tagParts) {
+        if (part.startsWith(prefix)) {
+            results.push({ label: part, detail: '', kind: 'tagPiece' });
+        }
+    }
+    return results;
+}
+exports.completeBareTagPaths = completeBareTagPaths;
 /** Every enum value starting with `typed`. Port of `CompleteEnum` (:204-207). */
 function completeEnum(values, label, typed) {
     const results = [];
