@@ -48,6 +48,7 @@ const containerSnippets_1 = require("./containerSnippets");
 const definitionProvider_1 = require("./definitionProvider");
 const argumentHintsProvider_1 = require("./argumentHintsProvider");
 const mathEvalProvider_1 = require("./mathEvalProvider");
+const scopeDefinitions_1 = require("./scopeDefinitions");
 const denizenEvents_1 = require("./denizenEvents");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
@@ -1112,7 +1113,17 @@ function getDenizenCompletions(document, position) {
     const defineMatch = /<\[([A-Za-z0-9_]*)$/.exec(linePrefix);
     if (defineMatch) {
         const range = getCompletionRange(document, position, defineMatch[1].length);
-        return sortedSetValues(getContainerDefines(document, position)).map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range));
+        // The IMPLICIT definitions first: a loop variable or a `filter_value` is in scope right
+        // here, where a `- define` from twenty lines up may or may not still be what the user
+        // means. Both are offered, and neither hides the other -- `- define` names that clash are
+        // dropped, since the implicit one is what a tag resolves to in this position.
+        const implicit = (0, scopeDefinitions_1.definitionsInScope)(document.getText().replace(/\r/g, "").split("\n"), position.line, position.character);
+        const implicitNames = new Set(implicit.map(d => d.name));
+        const declared = sortedSetValues(getContainerDefines(document, position)).filter(v => !implicitNames.has(v));
+        return [
+            ...implicit.map(d => makeCompletion(d.name, vscode.CompletionItemKind.Variable, `Denizen define from ${d.source}`, range)),
+            ...declared.map(value => makeCompletion(value, vscode.CompletionItemKind.Variable, "Denizen define", range))
+        ];
     }
     const flagMatch = /(?:<player\.flag\[|<server\.flag\[|<\[[A-Za-z_][A-Za-z0-9_]*\]\.flag\[)([A-Za-z0-9_\-.]*)$/i.exec(linePrefix);
     if (flagMatch) {
