@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.1
+
+### Fixes
+
+- A comparison `<` (as in `- if <[start]> < true:`) no longer breaks syntax highlighting on every
+  line below it. The tag-highlighting rule read a bare `<` as the start of a new tag and stayed
+  "open" hunting for a `>` until one turned up somewhere later in the file; `<=` had the same
+  problem. Both now require an actual tag to start (a letter, `&`, or `[`) before highlighting
+  begins.
+
 ## 2.0.0
 
 The major version marks the second language server: a TypeScript rewrite of the .NET one, selectable
