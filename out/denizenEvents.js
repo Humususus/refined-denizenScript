@@ -12,7 +12,7 @@
 // No `vscode` import: this stays a pure function of its inputs so it can be unit tested, same as
 // ./mutedDiagnostics, ./entryTags and ./tagFormatter.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseEventLinePrefix = exports.eventSnippet = exports.isInWorldEvents = exports.DENIZEN_EVENTS = void 0;
+exports.parseEventLinePrefix = exports.parseEventSwitchValue = exports.EVENT_SWITCH_VALUES = exports.eventSnippet = exports.isInWorldEvents = exports.DENIZEN_EVENTS = void 0;
 // GENERATED from live Denizen meta on 2026-08-25.
 // 399 documented events, expanded to 527 concrete event lines.
 exports.DENIZEN_EVENTS = [
@@ -640,6 +640,66 @@ function eventSnippet(name) {
     return body;
 }
 exports.eventSnippet = eventSnippet;
+/**
+ * The switches whose values are a documented, closed set — and ONLY those.
+ *
+ * FEATURE-IDEAS.md idea 9, user request 2026-09-03. Every value here is read out of the meta rather
+ * than curated, and the note's claim that this "genuinely needs a written-down list" was wrong:
+ *
+ *   - `bukkit_priority` — the language entry *Bukkit Event Priority* states them outright: "Valid
+ *     priorities, in order of execution, are: LOWEST, LOW, NORMAL, HIGH, HIGHEST, MONITOR."
+ *   - `cancelled` — *Script Event Cancellation*: 'can take a "cancelled:<true/false>" argument'.
+ *   - `ignorecancelled` — the SAME sentence documents this one as 'a "ignorecancelled:true"
+ *     argument', with no false form. So only `true` is offered. That is a deliberate under-offer,
+ *     following `completeObjectTypeNames`' rule: offering a value the documentation does not
+ *     describe is the worse mistake, and `false` still works if typed.
+ *
+ * THE OMISSIONS ARE THE DESIGN. The other global switches — `server_flagged`, `flagged`,
+ * `permission`, `location_flagged`, `assigned`, `in`, `chance`, `priority`, `every` — take flag
+ * names, permission keys, script names, areas, percentages and numbers. None is a closed set, so
+ * they are absent and the editor's ordinary suggestions are left alone there. Offering nothing
+ * beats offering a guess.
+ *
+ * Priorities are spelled in the upper case the meta enumerates them in; Denizen matches switch
+ * values case-insensitively, and the same entry writes the default as "normal".
+ */
+exports.EVENT_SWITCH_VALUES = new Map([
+    ['bukkit_priority', ['LOWEST', 'LOW', 'NORMAL', 'HIGH', 'HIGHEST', 'MONITOR']],
+    ['cancelled', ['true', 'false']],
+    ['ignorecancelled', ['true']]
+]);
+/**
+ * The switch value the cursor sits in, or null when it is not in one this module can complete.
+ *
+ * WHY A SECOND PARSER RATHER THAN WIDENING `parseEventLinePrefix`: that function's pattern excludes
+ * `:` on purpose, so it returns null the instant a switch is written. Widening it would make the
+ * EVENT-NAME list appear inside a switch value, where none of the 527 names belongs. The two are
+ * mutually exclusive by construction, which is exactly what is wanted.
+ *
+ * Only the last space-separated token is examined, because a switch is written `name:value` with no
+ * spaces inside either half; the event body and any earlier switches are irrelevant to it.
+ *
+ * A token holding a SECOND colon is refused. `assigned:my:script` is not a switch this completes,
+ * and more importantly the trailing `:` that closes an event line (`... cancelled:true:`) must not
+ * be read as the start of another value.
+ */
+function parseEventSwitchValue(linePrefix) {
+    if (/^\s*-/.test(linePrefix)) {
+        return null;
+    }
+    const token = linePrefix.slice(linePrefix.lastIndexOf(' ') + 1);
+    const colon = token.indexOf(':');
+    if (colon === -1) {
+        return null;
+    }
+    const switchName = token.slice(0, colon).toLowerCase();
+    const typed = token.slice(colon + 1);
+    if (typed.includes(':') || !exports.EVENT_SWITCH_VALUES.has(switchName)) {
+        return null;
+    }
+    return { switchName, typed };
+}
+exports.parseEventSwitchValue = parseEventSwitchValue;
 /**
  * Splits the text before the cursor into its `on `/`after ` prefix and the rest.
  *
