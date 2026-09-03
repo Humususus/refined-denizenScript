@@ -1,19 +1,5 @@
 # Changelog
 
-## 2.0.2
-
-### Fixes
-
-- `<` and `>` no longer auto-close as a bracket pair, and no longer drive VS Code's native
-  bracket-match/colourisation. Denizen reuses them as comparison operators in every `- if`/
-  `- while` condition, so treating them as a guaranteed-balanced pair was unsound on top of the
-  2.0.1 grammar fix: typing a lone `<` for a less-than check auto-inserted a `>` right after it,
-  and a `<`/`<=` with no balancing `>` on the same line threw off VS Code's own bracket counter for
-  the rest of the document -- changing the colour of unrelated `[...]` brackets and operators
-  further down the file, and making `==`, `<=`, `>=` and `>` render as different colours from each
-  other even though they carry the same syntax scope. `<`/`>` now colour consistently, from the
-  grammar alone.
-
 ## 2.0.1
 
 ### Fixes
@@ -23,6 +9,14 @@
   "open" hunting for a `>` until one turned up somewhere later in the file; `<=` had the same
   problem. Both now require an actual tag to start (a letter, `&`, or `[`) before highlighting
   begins.
+- A second, related bug in the same area: comparisons like `<element[true]> <= <element[123]>:`
+  could shift the colour of unrelated `[...]` brackets and operators further down the file, and
+  made `==`, `<=`, `>=` and `>` render as different colours from each other despite sharing the
+  same syntax scope. This came from VS Code's own native bracket-pair matching, which -- unlike the
+  grammar above -- has no way to tell a tag-opening `<` from a comparison `<` and was miscounting
+  them across the whole document. `<`/`>` are no longer treated as a matched bracket pair for that
+  purpose, so their colour now comes from the grammar alone, consistently. Typing `<` still
+  auto-inserts a closing `>`, unchanged.
 
 ## 2.0.0
 
