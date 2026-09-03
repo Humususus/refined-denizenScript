@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Hover } from 'vscode-languageserver';
 import { provideHover } from './hoverProvider';
-import { MetaCommand, MetaLanguage, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_LANGUAGE } from '../metaDocs/metaTypes';
+import { MetaCommand, MetaLanguage, MetaEvent, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_LANGUAGE } from '../metaDocs/metaTypes';
+import { linkEventMatchers } from '../metaDocs/metaLinker';
+import { createEmptyExtraData } from '../metaDocs/extraData';
 
 function testDocs(): MetaDocs {
     const docs = createEmptyMetaDocs();
@@ -16,6 +18,18 @@ function testDocs(): MetaDocs {
     lang.langName = 'Task Script Containers';
     lang.description = 'A task script.';
     lang.addTo(docs);
+
+    // A player event with a switch and two documented context values, for the event-hover and
+    // <context.[...]> narrowing tests.
+    const breaks = new MetaEvent();
+    breaks.applyValue('events', 'player breaks <block>');
+    breaks.applyValue('player', 'When the player breaks a block.');
+    breaks.applyValue('triggers', 'when a player breaks a block.');
+    breaks.applyValue('context',
+        '<context.location> LocationTag The location of the block.\n<context.material> MaterialTag The type of block broken.');
+    breaks.applyValue('cancellable', 'true');
+    breaks.addTo(docs);
+    linkEventMatchers(docs, createEmptyExtraData());
     return docs;
 }
 
@@ -59,6 +73,58 @@ describe('provideHover', () => {
         const docs = testDocs();
         const text = '  - notacommand';
         expect(provideHover(docs, text, 6, 0)).toBeNull();
+    });
+
+    /**
+     * Event-line hover, user request 2026-09-03: "на events нет ховер описания ивента". Phase 2A's
+     * header comment had deferred this pending the event matcher machinery, which is what
+     * `matchEventLine` (eventLineMatch.ts) now supplies.
+     */
+    describe('event lines', () => {
+        it('describes the event when the cursor sits on it', () => {
+            const docs = testDocs();
+            const text = '    on player breaks stone:';
+            const hover = provideHover(docs, text, 10, 0)!;
+            // descriptionClean HTML-escapes '<'/'>', same as every tag/event name this file renders.
+            expect(valueOf(hover)).toContain('### Event player breaks &lt;block&gt;');
+            expect(valueOf(hover)).toContain('when a player breaks a block');
+        });
+
+        it('includes the documented context values', () => {
+            const docs = testDocs();
+            const text = '    on player breaks stone:';
+            const hover = provideHover(docs, text, 10, 0)!;
+            expect(valueOf(hover)).toContain('context.location');
+            expect(valueOf(hover)).toContain('context.material');
+        });
+
+        it('still resolves with the "after " prefix and a switch attached', () => {
+            const docs = testDocs();
+            const text = '    after player breaks stone cancelled:true:';
+            const hover = provideHover(docs, text, 10, 0)!;
+            expect(valueOf(hover)).toContain('### Event player breaks &lt;block&gt;');
+        });
+
+        it('fires anywhere on the line, matching the type: branch\'s whole-line range', () => {
+            const docs = testDocs();
+            const text = '    on player breaks stone:';
+            const hover = provideHover(docs, text, text.length - 1, 0)!;
+            expect(hover.range).toEqual({ start: { line: 0, character: 4 }, end: { line: 0, character: text.length } });
+        });
+
+        it('returns nothing for an event that does not resolve to anything documented', () => {
+            // MUTANT CAUGHT: falling back to a partial match the way the diagnostic checker does --
+            // showing the wrong event's documentation is worse than showing none.
+            const docs = testDocs();
+            const text = '    on something entirely undocumented happens:';
+            expect(provideHover(docs, text, 10, 0)).toBeNull();
+        });
+
+        it('returns nothing for an ordinary command line that merely contains "on"', () => {
+            const docs = testDocs();
+            const text = '  - narrate "turn on the light"';
+            expect(provideHover(docs, text, text.indexOf('on the'), 0)).toBeNull();
+        });
     });
 
     it('returns nothing for an unknown container type', () => {

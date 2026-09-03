@@ -2,15 +2,17 @@
  * Hover documentation. Ported from the command and `type:` branches of
  * DenizenLangServer/Services/TextDocumentService.cs::GetHoverAt.
  *
- * Phase 2A scope: commands and container types. Event and action hover need the
- * event matcher machinery and arrive in Phase 2B.
+ * Phase 2A scope was commands and container types; event hover was deferred pending the event
+ * matcher machinery, which landed in Phase 2C-7. Added 2026-09-03, user request -- "на events нет
+ * ховер описания ивента".
  */
 
 import { Hover } from 'vscode-languageserver';
 import { MetaDocs } from '../metaDocs/metaTypes';
-import { describeCommand, describeLang } from './describe';
+import { describeCommand, describeLang, describeEvent } from './describe';
 import { getFullLine } from './lineContext';
 import { parseCommandLine } from './cursorContext';
+import { matchEventLine } from '../checker/eventLineMatch';
 
 const TYPE_PREFIX = 'type: ';
 
@@ -72,6 +74,28 @@ export function provideHover(docs: MetaDocs, text: string, offset: number, line:
             contents: describeLang(lang),
             range: { start: { line, character: indent }, end: { line, character: raw.length } }
         };
+    }
+    // An event line -- `on player joins:` or `after player breaks block cancelled:true:`. Not
+    // gated on being inside a world container's `events:` key, unlike the client-side event
+    // completion (`isInWorldEvents`): that gate needs a structural walk of the whole document that
+    // hover has no reason to duplicate. `matchEventLine` requiring a FULL could-matcher hit already
+    // does the real work -- the trimmed text has to look exactly like a documented event, which
+    // "on player joins:" written somewhere it does not belong could only coincide with by writing
+    // that literal string, a false positive with no bad consequence (correct information, just
+    // technically unsolicited).
+    //
+    // WHOLE-LINE RANGE, matching the `type:` branch just above rather than pinpointing the event
+    // name's own span: switches (`priority:5`) are part of what gets matched and are reasonable to
+    // hover too, and a per-word range would need the same span bookkeeping `checkOneEventLine` does
+    // for its diagnostic, which hover does not need for correctness.
+    if (character >= indent && character <= raw.length) {
+        const evt = matchEventLine(docs, raw);
+        if (evt !== null) {
+            return {
+                contents: describeEvent(evt),
+                range: { start: { line, character: indent }, end: { line, character: raw.length } }
+            };
+        }
     }
     return null;
 }
