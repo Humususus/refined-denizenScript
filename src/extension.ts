@@ -15,7 +15,7 @@ import { activateDefinitionProvider } from "./definitionProvider";
 import { activateArgumentHints } from "./argumentHintsProvider";
 import { activateMathEval } from "./mathEvalProvider";
 import { definitionsInScope } from "./scopeDefinitions";
-import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from "./denizenEvents";
+import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from "./denizenEvents";
 
 const languageServerPath : string = "server/DenizenLangServer.dll";
 
@@ -1104,6 +1104,23 @@ function getDenizenCompletions(document: vscode.TextDocument, position: vscode.P
     // Runs on BOTH engines, and only when the immediate parent key is `events:` on a `type:
     // world` container, so 527 event lines never bury the ordinary suggestions elsewhere.
     if (!/^\s*-/.test(linePrefix)) {
+        // The VALUE half of a switch, e.g. `on player breaks block bukkit_priority:HI`.
+        //
+        // Checked before the event-name list because the two cannot both apply: `parseEventLinePrefix`
+        // excludes `:`, so once a switch is written it returns null and the names stop being offered.
+        // Only the three switches whose values the meta documents as a closed set are completed --
+        // see EVENT_SWITCH_VALUES for why the flag-name and number switches are deliberately absent.
+        const switchValue = parseEventSwitchValue(linePrefix);
+        if (switchValue && isInWorldEvents(document.getText().split(/\r?\n/), position.line)) {
+            const values = EVENT_SWITCH_VALUES.get(switchValue.switchName)!;
+            const range = getCompletionRange(document, position, switchValue.typed.length);
+            return values.map(value => {
+                const item = new vscode.CompletionItem(value, vscode.CompletionItemKind.EnumMember);
+                item.detail = `${switchValue.switchName} switch`;
+                item.range = range;
+                return item;
+            });
+        }
         // THE `on `/`after ` PREFIX IS NOT PART OF THE EVENT NAME. Denizen writes event lines as
         // `on player joins:` or `after player breaks block:`, but the meta documents them as
         // `player joins` -- so matching the whole typed text found nothing the moment the user

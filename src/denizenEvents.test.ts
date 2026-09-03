@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix } from './denizenEvents';
+import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from './denizenEvents';
 
 /**
  * Reported by the user: typing under a world container's `events:` key offered nothing.
@@ -27,6 +27,73 @@ describe('the generated event table', () => {
     it('carries a trigger description for each', () => {
         expect(DENIZEN_EVENTS.every(e => typeof e.trigger === 'string')).toBe(true);
         expect(DENIZEN_EVENTS.find(e => e.name === 'player joins')!.trigger.length).toBeGreaterThan(0);
+    });
+});
+
+/**
+ * Switch values on an event line -- FEATURE-IDEAS.md idea 9, user request 2026-09-03.
+ *
+ * Reachability was the actual bug: `parseEventLinePrefix` excludes `:`, so the moment a switch was
+ * written the event completion returned null and NOTHING was offered for the rest of the line.
+ */
+describe('parseEventSwitchValue', () => {
+    it('reads the switch name and the value typed so far', () => {
+        expect(parseEventSwitchValue('on player breaks block bukkit_priority:HI'))
+            .toEqual({ switchName: 'bukkit_priority', typed: 'HI' });
+    });
+
+    it('fires on an empty value, right after the colon', () => {
+        expect(parseEventSwitchValue('on player joins cancelled:'))
+            .toEqual({ switchName: 'cancelled', typed: '' });
+    });
+
+    it('is case-insensitive about the switch name', () => {
+        expect(parseEventSwitchValue('on player joins Bukkit_Priority:')!.switchName).toBe('bukkit_priority');
+    });
+
+    it('offers nothing for the switches whose values are not a closed set', () => {
+        // MUTANT CAUGHT: completing every global switch. These take flag names, permission keys,
+        // script names, areas and numbers -- there is no list to offer, and a guess would be wrong.
+        for (const line of ['on player joins flagged:', 'on player joins permission:', 'on player joins chance:2',
+            'on player breaks block in:', 'on player joins server_flagged:', 'on player joins every:']) {
+            expect(parseEventSwitchValue(line)).toBeNull();
+        }
+    });
+
+    it('does not fire on a command line', () => {
+        expect(parseEventSwitchValue('    - narrate cancelled:')).toBeNull();
+    });
+
+    it('does not read the colon that closes the event line as a second value', () => {
+        // `... cancelled:true:` is a FINISHED event line. Completing after its trailing colon would
+        // put `true`/`false` where the line has already ended.
+        // MUTANT CAUGHT: dropping the second-colon guard.
+        expect(parseEventSwitchValue('on player joins cancelled:true:')).toBeNull();
+    });
+
+    it('looks only at the last token, so earlier switches do not confuse it', () => {
+        expect(parseEventSwitchValue('on player joins flagged:x bukkit_priority:MON'))
+            .toEqual({ switchName: 'bukkit_priority', typed: 'MON' });
+    });
+
+    it('returns null when no colon has been typed yet, leaving the event names to it', () => {
+        expect(parseEventSwitchValue('on player breaks blo')).toBeNull();
+    });
+});
+
+describe('EVENT_SWITCH_VALUES', () => {
+    it('lists the six Bukkit priorities the meta enumerates', () => {
+        // Language entry `Bukkit Event Priority`: "Valid priorities, in order of execution, are:
+        // LOWEST, LOW, NORMAL, HIGH, HIGHEST, MONITOR." Order is meaningful and preserved.
+        expect(EVENT_SWITCH_VALUES.get('bukkit_priority'))
+            .toEqual(['LOWEST', 'LOW', 'NORMAL', 'HIGH', 'HIGHEST', 'MONITOR']);
+    });
+
+    it('offers only `true` for ignorecancelled, which is all the meta documents', () => {
+        // `Script Event Cancellation` documents `cancelled:<true/false>` but only
+        // `ignorecancelled:true`. Deliberate under-offer; `false` still works if typed.
+        expect(EVENT_SWITCH_VALUES.get('cancelled')).toEqual(['true', 'false']);
+        expect(EVENT_SWITCH_VALUES.get('ignorecancelled')).toEqual(['true']);
     });
 });
 

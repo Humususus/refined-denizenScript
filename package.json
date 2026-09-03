@@ -403,7 +403,7 @@
         "vscode:prepublish": "npm run compile",
         "compile": "node node_modules/typescript/bin/tsc -p ./ --skipLibCheck",
         "test": "node node_modules/vitest/vitest.mjs run",
-        "verify": "node scripts/verify-grammar.js && node scripts/verify-snippets.js",
+        "verify": "node scripts/verify-grammar.js && node scripts/verify-snippets.js && node scripts/verify-event-switches.js",
         "vsix": "node scripts/build-vsix.js",
         "package": "node scripts/build-vsix.js"
     },
