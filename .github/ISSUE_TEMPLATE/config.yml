@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Denizen scripting help
+    url: https://guide.denizenscript.com/
+    about: For questions about Denizen scripting itself (not this extension), start here.
+  - name: Upstream project (DenizenVSCode)
+    url: https://github.com/DenizenScript/DenizenVSCode
+    about: If the bug also reproduces in the original, unforked extension, it may belong there instead.

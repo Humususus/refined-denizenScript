@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in the extension is broken, wrong, or crashes.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue. The more concrete the script snippet, the faster it gets fixed —
+        a one-line `.dsc` example that reproduces the problem is worth more than a long description.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        What happened: ...
+        What I expected: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal script to reproduce it
+      description: >
+        The smallest `.dsc` snippet that shows the problem. For a highlighting or completion bug,
+        include the line(s) below it too if those are affected.
+      render: yaml
+      placeholder: |
+        - if <[start]> < true:
+            - narrate "this line is affected too"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Language server engine
+      description: >
+        `denizenscript.server.engine` in your settings. If you're not sure, it's `csharp` — that's
+        the default, and the TypeScript engine is still missing some diagnostics (see the readme).
+      options:
+        - "csharp (default, .NET)"
+        - "typescript (experimental)"
+        - Not sure / not applicable (e.g. syntax highlighting, snippets, icons)
+    validations:
+      required: true
+
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      description: Bottom of the Extensions panel entry, or the `.vsix` filename you installed.
+      placeholder: "2.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: vscode-version
+    attributes:
+      label: VS Code version
+      description: "Help → About"
+      placeholder: "1.9x.x"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "Windows 11 / macOS 15 / Ubuntu 24.04 / ..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output (optional)
+      description: >
+        For language-server issues: Output panel → pick "Denizen Language Server" (or "DenizenScript
+        LSP") from the dropdown. Paste any errors here.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, links, whatever seems relevant.
+    validations:
+      required: false

@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a new feature, or an improvement to an existing one.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the extension doesn't help with today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should it do?
+      description: >
+        As concrete as you can make it. If it's completion or highlighting for specific Denizen
+        syntax, an example line or two helps a lot.
+      placeholder: |
+        - adjust <player> some_mechanism:...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds you've tried
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+    validations:
+      required: false
