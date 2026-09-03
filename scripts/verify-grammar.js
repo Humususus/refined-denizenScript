@@ -138,6 +138,52 @@ function check(name, ok, detail) {
         check(`6. "${line}" produces tokens`, tokenize(line).length > 0);
     }
 
+    // 7 -- REPORTED BUG (2026-09-03): "- if <[start]> < true:" ломает подсветку синтаксиса строк
+    // ниже, "- if <[start]> > true:" такого не делает. The #tags rule is begin: "<", end: ">" --
+    // a TextMate begin/end pair stays open across line boundaries until its `end` is found. '<'
+    // and '>' both double as Denizen's comparison operators, so the bare '<' before "true" (no
+    // following '>' anywhere on that line) was read as ANOTHER tag opening and its meta.tag scope
+    // leaked into every following line until some unrelated '>' finally closed it. A bare '>' never
+    // triggered this because it is only #tags' END pattern, never its begin -- which is exactly why
+    // the user saw it with '<' and not with '>'.
+    //
+    // These checks thread `ruleStack` across two tokenizeLine calls, unlike every check above:
+    // a single-line `scopesOf` cannot see a scope that leaks FROM one line INTO the next.
+    {
+        const threadTwoLines = (first, second) => {
+            const r1 = grammar.tokenizeLine(first, vsctm.INITIAL);
+            const r2 = grammar.tokenizeLine(second, r1.ruleStack);
+            return r2.tokens.map(t => ({ text: second.substring(t.startIndex, t.endIndex), scopes: t.scopes }));
+        };
+        const NEXT_LINE = '    - narrate "this should be plain text"';
+
+        const afterLt = threadTwoLines('    - if <[start]> < true:', NEXT_LINE);
+        check('7. a bare "<" comparison does not open an unclosed tag',
+            !afterLt.some(t => t.scopes.some(s => s.includes('meta.tag'))),
+            JSON.stringify(afterLt));
+        check('7b. the line after it keeps its own command scope',
+            afterLt.some(t => t.text === 'narrate' && t.scopes.some(s => s.includes('support.function'))));
+        check('7c. and its string keeps its own scope, not the tag body scope',
+            afterLt.some(t => t.text === '"' && t.scopes.some(s => s.includes('string.quoted.double')))
+            && !afterLt.some(t => t.scopes.some(s => s.includes('entity.name.function.denizenscript'))));
+
+        // The exact "<" line the user contrasted it with, confirming it was never broken.
+        const afterGt = threadTwoLines('    - if <[start]> > true:', NEXT_LINE);
+        check('7d. "> true:" (the working case) still works, unchanged',
+            afterGt.some(t => t.text === 'narrate' && t.scopes.some(s => s.includes('support.function'))));
+
+        // "<=" has the identical begin-with-no-end shape as the reported "<", so it had the same
+        // bug even though nobody reported it yet.
+        const afterLe = threadTwoLines('    - if <[start]> <= 5:', NEXT_LINE);
+        check('7e. "<=" does not open an unclosed tag either',
+            !afterLe.some(t => t.scopes.some(s => s.includes('meta.tag'))), JSON.stringify(afterLe));
+
+        // A real tag on the right-hand side of a comparison must still be recognised as one -- the
+        // fix must not turn EVERY "<" into an operator, only the ones that are not tag openers.
+        check('7f. a genuine tag right after the operator is still scoped as a tag',
+            has(scopesOf('    - if <[x]> < <player.name>:', 'player'), 'entity.name.function'));
+    }
+
     console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
     process.exit(failures === 0 ? 0 : 1);
 })();

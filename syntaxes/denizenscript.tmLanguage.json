@@ -63,8 +63,9 @@
         "tags": {
             "patterns": [
                 {
+                    "comment": "THE LOOKAHEAD IS LOAD-BEARING. Denizen reuses '<' and '>' as the comparison operators inside `- if`/`- while` conditions, e.g. `- if <[start]> < true:`. Without it, that bare '<' before 'true' was read as ANOTHER tag opening -- begin/end patterns in TextMate grammars are unclosed until their 'end' is found, even across line boundaries, so with no '>' left on that line the false tag scope swallowed every line after it until some unrelated '>' finally closed it. A real tag's '<' is always immediately followed by its base name, '&' (colour tags like <&b>), or '[' (the <[name]> definition shorthand); a comparison '<' is followed by whitespace, '=' (the <= operator), or another '<'/'>'. Requiring one of the former is what tells them apart, and it fixes '<=' the same way -- that had the identical unclosed-tag bug for the same reason.",
                     "name": "meta.tag.denizenscript",
-                    "begin": "<",
+                    "begin": "<(?=[A-Za-z_&\\[])",
                     "end": ">",
                     "patterns": [
                         {
