@@ -3,9 +3,25 @@
         // symbol used for single line comment
         "lineComment": "#",
     },
+    // "<" AND ">" ARE DELIBERATELY NOT LISTED HERE. Reported 2026-09-03:
+    // "<element[true]> <= <element[123]>:" changed the colour of the "[123]" brackets and of every
+    // line below it, and typing "<" for a less-than comparison auto-inserted a ">" right after it,
+    // as if opening a tag. Both come from THIS declaration, not from the TextMate grammar (fixed
+    // separately in denizenscript.tmLanguage.json, commit 876c6ee) -- VS Code's native
+    // bracket matcher and "auto close pairs" work on raw characters with no lookahead, so they
+    // cannot tell a tag-opening "<" from a comparison "<" the way the grammar now can. Denizen
+    // reuses "<"/">" as its comparison operators in every "- if"/"- while" condition, so counting
+    // them as a guaranteed-balanced pair is unsound: a bare "<" or "<=" leaves one "<" the native
+    // counter never sees closed, and that miscount persists for the REST OF THE DOCUMENT (it is not
+    // reset per line, unlike the grammar), which is why it looked like it was "infecting" lines far
+    // below the one that was actually typed. Removing the pair here means "<"/">" get no auto-close
+    // and no native bracket-pair colouring or match-highlight; their only colour now comes from the
+    // grammar's single, consistent "keyword.operator.denizenscript" / "meta.tag.denizenscript"
+    // scopes, which is what made "==", "<=", ">=" and ">" render as different colours from each
+    // other in the first place -- the native layer was painting just the raw "<"/">" characters on
+    // top of the grammar's scope, and "==" has neither character to paint.
     // symbols that are auto closed when typing
     "autoClosingPairs": [
-        ["<", ">"],
         ["[", "]"],
         ["(", ")"],
         ["\"", "\""],
@@ -13,7 +29,6 @@
     ],
     // symbols that are highlighted in pairs
     "brackets": [
-        ["<", ">"],
         ["[", "]"],
         ["(", ")"],
         ["\"", "\""],
@@ -21,7 +36,6 @@
     ],
     // symbols that that can be used to surround a selection
     "surroundingPairs": [
-        ["<", ">"],
         ["[", "]"],
         ["(", ")"],
         ["\"", "\""],
