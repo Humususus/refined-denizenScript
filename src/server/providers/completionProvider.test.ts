@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { CompletionItemKind } from 'vscode-languageserver';
 import { provideCompletions, completeCommandNames, completeCommandArguments, completeTag } from './completionProvider';
-import { MetaCommand, MetaTag, MetaMechanism, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_TAG } from '../metaDocs/metaTypes';
+import { MetaCommand, MetaTag, MetaMechanism, MetaEvent, MetaDocs, createEmptyMetaDocs, META_TYPE_COMMAND, META_TYPE_TAG } from '../metaDocs/metaTypes';
 import { buildExtraData, parseFlatFds, createEmptyExtraData } from '../metaDocs/extraData';
 import { TagCursorContext, findTagAtCursor } from './tagContext';
 import { buildMetaDocs } from '../metaDocs/metaDocsManager';
-import { linkTypeGraph } from '../metaDocs/metaLinker';
+import { linkTypeGraph, linkEventMatchers } from '../metaDocs/metaLinker';
 import type { MetaBlock } from '../metaDocs/metaLoader';
 import { parseTag } from './tagHelper';
 import { traceTag } from './tagTracer';
@@ -1569,6 +1569,99 @@ describe('filter/parse-style brackets offer bare tag paths, and only there', () 
         // `name` is documented by many object types; picking one would attach another type's text.
         const item = items('- narrate <list[a|b].filter[').find(i => i.label === 'name');
         expect(item!.documentation).toBeUndefined();
+    });
+});
+
+/**
+ * `<context.[...]>` narrowed to the enclosing event's own context names, user request
+ * 2026-09-03: "в <context. выводится все теги а не только те что в ивенте".
+ *
+ * `context` traces to no object type at all (there is nothing for the tag tracer to trace it to),
+ * so before this it always fell through to the flat 1871-part list -- the exact bug being fixed.
+ */
+describe('<context.[...]> is narrowed to the enclosing event, and only there', () => {
+    function contextDocs(): MetaDocs {
+        const docs = createEmptyMetaDocs();
+        const cmd = new MetaCommand();
+        cmd.type = META_TYPE_COMMAND;
+        cmd.commandName = 'narrate';
+        cmd.syntax = 'narrate [<text>]';
+        cmd.addTo(docs);
+
+        // At least one real tag, so the flat-list fallback has something to offer -- otherwise
+        // "falls back to the flat list" and "offers nothing" would look identical.
+        const tag = new MetaTag();
+        tag.type = META_TYPE_TAG;
+        tag.applyValue('attribute', '<ElementTag.to_uppercase>');
+        tag.applyValue('returns', 'ElementTag');
+        tag.addTo(docs);
+
+        const breaks = new MetaEvent();
+        breaks.applyValue('events', 'player breaks <block>');
+        breaks.applyValue('player', 'x');
+        breaks.applyValue('context',
+            '<context.location> returns the LocationTag of the block.\n<context.material> returns the MaterialTag broken.');
+        breaks.addTo(docs);
+
+        const joins = new MetaEvent();
+        joins.applyValue('events', 'player joins');
+        joins.applyValue('player', 'x');
+        // No @context at all -- the "resolved event with nothing to offer" case.
+        joins.addTo(docs);
+
+        linkEventMatchers(docs, createEmptyExtraData());
+        return docs;
+    }
+    const DOCS = contextDocs();
+    const labels = (text: string) => provideCompletions(DOCS, createEmptyExtraData(), text, text.length, text.split('\n').length - 1).map(i => i.label);
+
+    it('offers only the enclosing event\'s own context names', () => {
+        const text = '    on player breaks stone:\n        - narrate <context.';
+        expect(labels(text).sort()).toEqual(['location', 'material']);
+    });
+
+    it('narrows further by what is typed', () => {
+        const text = '    on player breaks stone:\n        - narrate <context.loc';
+        expect(labels(text)).toEqual(['location']);
+    });
+
+    it('offers nothing, not the flat list, for an event documenting no context at all', () => {
+        // The resolved-event-with-empty-list case: showing the flat 1871 here would claim every
+        // tag part in the meta as a valid context name for "player joins", which documents none.
+        const text = '    on player joins:\n        - narrate <context.';
+        expect(labels(text)).toEqual([]);
+    });
+
+    it('finds the enclosing event through several lines of body', () => {
+        const text = '    on player breaks stone:\n        - narrate hi\n        - if true:\n            - narrate <context.';
+        expect(labels(text).sort()).toEqual(['location', 'material']);
+    });
+
+    it('falls back to the flat list when no enclosing event can be found', () => {
+        // <context. written where this cannot identify an event (a task container, or the very
+        // first line of a file) keeps its pre-existing behaviour rather than offering nothing.
+        // MUTANT CAUGHT: returning [] instead of falling through to completeTag.
+        const text = 'my_task:\n    type: task\n    script:\n    - narrate <context.';
+        expect(labels(text).length).toBeGreaterThan(0);
+        expect(labels(text)).not.toEqual(['location', 'material']);
+    });
+
+    it('does not narrow a plain tag base that merely starts with the same letters', () => {
+        // Not "context" exactly, so the componentCount===1 && beforeLastComponent==='context'
+        // gate must not fire -- this is a completely different (undocumented) base, and it falls
+        // through to completeTag's own pre-existing behaviour (the flat list here) exactly as it
+        // would have before this feature existed.
+        const text = '    on player breaks stone:\n        - narrate <contextual_thing.';
+        expect(labels(text)).not.toEqual(['location', 'material']);
+    });
+
+    it('does not fire for a deeper component of context, since context names never nest', () => {
+        // `beforeLastComponent` at this cursor position is "context.location" (everything before
+        // the LAST dot), never bare "context" -- so the narrowing gate excludes this shape without
+        // needing a separate depth check. Pins that reading, since a future edit to
+        // beforeLastComponent's definition could silently reopen it.
+        const text = '    on player breaks stone:\n        - narrate <context.location.';
+        expect(labels(text)).not.toEqual(['location', 'material']);
     });
 });
 
