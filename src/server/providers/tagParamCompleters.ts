@@ -214,6 +214,42 @@ export function completeObjectTypeNames(docs: MetaDocs, typed: string): ParamCan
     return results;
 }
 
+/**
+ * Tag part names for the brackets that take a BARE TAG PATH — `<ListTag.filter[...]>` and friends.
+ *
+ * NO C# COUNTERPART -- a new completer, from the user's request of 2026-09-03. These brackets hold a
+ * tag written WITHOUT its `<>`, applied to each entry in turn; the meta's own examples are
+ * `<list[1|2|3|4|5].filter[is_more_than[3]]>` and `<list[one|two].parse[to_uppercase]>`. Nothing
+ * registers the `<tag>` spec, so the bracket offered nothing at all before this.
+ *
+ * THE LAST `.`-COMPONENT IS WHAT GETS FILTERED, because the path may be multi-component
+ * (`sort_by_value[location.y]`). `matchedSuffixLength` independently recovers the replacement range
+ * as the longest suffix of the typed text that the label starts with, and the two agree exactly
+ * here: part names contain no `.`, so no suffix reaching back across one can be a prefix of a label
+ * — the same argument that file makes for `;` and `=`.
+ *
+ * NO DOCUMENTATION IS ATTACHED, matching the flat tag-part branch of `completeTag`, which likewise
+ * offers parts bare. A part name cannot be mapped back to one `MetaTag` (`docs.tags` is keyed by
+ * full tag name, and a name like `size` is documented by many object types), so attaching a
+ * description would mean attaching some other type's description — the confident wrongness
+ * `completionProvider.ts` already refuses twice, for parts and for mechanisms.
+ *
+ * THE ENTRY TYPE IS NOT KNOWN, so the flat list is what can honestly be offered. Narrowing
+ * `filter[...]` to the list's element type would need element-type inference that does not exist
+ * (`<list[...]>` does not record what it holds); the typed prefix narrows it in practice.
+ */
+export function completeBareTagPaths(docs: MetaDocs, typed: string): ParamCandidate[] {
+    const dot = typed.lastIndexOf('.');
+    const prefix = (dot === -1 ? typed : typed.slice(dot + 1)).toLowerCase();
+    const results: ParamCandidate[] = [];
+    for (const part of docs.tagParts) {
+        if (part.startsWith(prefix)) {
+            results.push({ label: part, detail: '', kind: 'tagPiece' });
+        }
+    }
+    return results;
+}
+
 /** Every enum value starting with `typed`. Port of `CompleteEnum` (:204-207). */
 function completeEnum(values: Set<string>, label: string | null, typed: string): ParamCandidate[] {
     const results: ParamCandidate[] = [];

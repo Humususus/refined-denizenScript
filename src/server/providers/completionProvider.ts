@@ -16,7 +16,7 @@ import { ExtraData } from '../metaDocs/extraData';
 import { findEnumCompleters, findKeyLineCompleter } from './argumentCompleters';
 import { parseTag } from './tagHelper';
 import { traceTag } from './tagTracer';
-import { completeTagParam, completeMapKeys, completeObjectTypeNames, ParamCandidateKind } from './tagParamCompleters';
+import { completeTagParam, completeMapKeys, completeObjectTypeNames, completeBareTagPaths, ParamCandidateKind } from './tagParamCompleters';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -640,6 +640,32 @@ function isObjectTypeParam(docParam: string, tagName: string): boolean {
     return (dot === -1 ? tagName : tagName.slice(dot + 1)) === 'as';
 }
 
+/**
+ * Whether this bracket holds a BARE TAG PATH — a tag written without its `<>`, applied to each
+ * entry, as in `<list[1|2|3|4|5].filter[is_more_than[3]]>`.
+ *
+ * KEYED ON THE TAG PART, NOT ON THE SPEC ALONE, for the same reason as `isObjectTypeParam` and with
+ * a sharper example. Eight tags document a `<tag>` parameter, and two of them mean something else
+ * entirely: `server.vanilla_tagged_entities` and `server.vanilla_tagged_materials` take a VANILLA
+ * MINECRAFT tag (their descriptions link minecraft.wiki/w/Tag), not a Denizen tag path. Registering
+ * `<tag>` in the shared table would have offered 1885 Denizen tag parts inside a bracket that wants
+ * `minecraft:logs`. The other six are listed below and all share the one shape.
+ *
+ * Measured against the live meta 2026-09-03: these six are the complete set, so matching on the
+ * final component is exact rather than merely selective.
+ */
+const BARE_TAG_PATH_PARTS: ReadonlySet<string> = new Set([
+    'filter', 'parse', 'sort_by_value', 'sort_by_number', 'parse_value', 'null_if'
+]);
+
+function isBareTagPathParam(docParam: string, tagName: string): boolean {
+    if (docParam !== '<tag>') {
+        return false;
+    }
+    const dot = tagName.lastIndexOf('.');
+    return BARE_TAG_PATH_PARTS.has((dot === -1 ? tagName : tagName.slice(dot + 1)).toLowerCase());
+}
+
 function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamContext, line: number, workspace: ScriptingWorkspaceData | null): CompletionItem[] | null {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
@@ -658,7 +684,9 @@ function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamCon
         ? completeMapKeys(docs, ctx.paramSoFar)
         : isObjectTypeParam(documented.docParam, ctx.tagName)
             ? completeObjectTypeNames(docs, ctx.paramSoFar)
-            : completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
+            : isBareTagPathParam(documented.docParam, ctx.tagName)
+                ? completeBareTagPaths(docs, ctx.paramSoFar)
+                : completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results: CompletionItem[] = [];
     for (const candidate of candidates) {

@@ -1495,6 +1495,83 @@ describe('as[<type>] offers object types, and only there', () => {
     });
 });
 
+/**
+ * The bare-tag-path brackets — `<ListTag.filter[...]>` and friends, user request 2026-09-03.
+ *
+ * Same routing risk as `as[<type>]` above, and sharper. Eight tags document a `<tag>` parameter but
+ * only six mean a Denizen tag path; `server.vanilla_tagged_entities` and `..._materials` take a
+ * VANILLA MINECRAFT tag (`minecraft:logs`), their descriptions linking minecraft.wiki. Measured
+ * against the live meta.
+ */
+describe('filter/parse-style brackets offer bare tag paths, and only there', () => {
+    function bareTagDocs(): MetaDocs {
+        const blocks: MetaBlock[] = [
+            { objectType: 'objecttype', url: 's#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L2', data: ['@name ListTag', '@prefix li', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L3', data: ['@name ElementTag', '@prefix el', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L4', data: ['@name PlayerTag', '@prefix p', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L5', data: ['@name ServerTag', '@prefix none', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'command', url: 's#L6', data: ['@name narrate', '@syntax narrate [<text>]', '@short x', '@group x', '@description x', '@required 1', '@maximum 2', '@end_meta'] },
+            // Bases, so the part-form lookup can reach the bracketed part at all.
+            { objectType: 'tag', url: 's#L7', data: ['@attribute <list[<list>]>', '@returns ListTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 's#L8', data: ['@attribute <server>', '@returns ServerTag', '@description x', '@end_meta'] },
+            // The brackets under test.
+            { objectType: 'tag', url: 's#L9', data: ['@attribute <ListTag.filter[<tag>]>', '@returns ListTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 's#L10', data: ['@attribute <ListTag.sort_by_value[<tag>]>', '@returns ListTag', '@description x', '@end_meta'] },
+            // The false friend: same `<tag>` spec, a vanilla Minecraft tag.
+            { objectType: 'tag', url: 's#L11', data: ['@attribute <ServerTag.vanilla_tagged_materials[<tag>]>', '@returns ListTag', '@description x', '@end_meta'] },
+            // Parts to offer.
+            { objectType: 'tag', url: 's#L12', data: ['@attribute <ElementTag.to_uppercase>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 's#L13', data: ['@attribute <ElementTag.is_more_than[<number>]>', '@returns ElementTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 's#L14', data: ['@attribute <PlayerTag.name>', '@returns ElementTag', '@description x', '@end_meta'] }
+        ];
+        const docs = buildMetaDocs(blocks);
+        linkTypeGraph(docs);
+        return docs;
+    }
+    const DOCS = bareTagDocs();
+    const items = (text: string) =>
+        provideCompletions(DOCS, createEmptyExtraData(), text, text.length, 0);
+    const labels = (text: string) => items(text).map(i => i.label);
+
+    it('offers tag parts inside filter[', () => {
+        // The meta's own example for this bracket is `<list[1|2|3|4|5].filter[is_more_than[3]]>`.
+        expect(labels('- narrate <list[a|b].filter[')).toEqual(expect.arrayContaining(['is_more_than', 'to_uppercase', 'name']));
+    });
+
+    it('narrows by what is typed', () => {
+        expect(labels('- narrate <list[a|b].filter[is_')).toEqual(['is_more_than']);
+        expect(labels('- narrate <list[a|b].filter[zzz')).toEqual([]);
+    });
+
+    it('offers parts for the other five bare-tag-path brackets too', () => {
+        expect(labels('- narrate <list[a|b].sort_by_value[to_up')).toEqual(['to_uppercase']);
+    });
+
+    it('completes only the last component of a multi-component path', () => {
+        // `sort_by_value[location.y]` is legal, so a dotted path must keep what precedes the dot.
+        // MUTANT CAUGHT: filtering on the whole typed text would offer nothing here, and replacing
+        // the whole typed text would delete `name.` when the candidate is accepted.
+        const [item] = items('- narrate <list[a|b].sort_by_value[name.to_up');
+        expect(item.label).toEqual('to_uppercase');
+        const range = item.textEdit!.range;
+        expect(range.end.character - range.start.character).toEqual('to_up'.length);
+    });
+
+    it('does NOT offer tag paths for a vanilla-Minecraft-tag bracket that also takes <tag>', () => {
+        // The failure this guards: registering `<tag>` in the shared spec table would put 1885
+        // Denizen tag parts inside a bracket whose input is `minecraft:logs`.
+        // MUTANT CAUGHT: keying on the parameter spec alone instead of on the tag part.
+        expect(labels('- narrate <server.vanilla_tagged_materials[')).toEqual([]);
+    });
+
+    it('attaches no documentation, since a part name maps to no single tag', () => {
+        // `name` is documented by many object types; picking one would attach another type's text.
+        const item = items('- narrate <list[a|b].filter[').find(i => i.label === 'name');
+        expect(item!.documentation).toBeUndefined();
+    });
+});
+
 describe('map keys and the adjust mechanism argument (user rulings 2026-09-01)', () => {
     function adjustDocs(): MetaDocs {
         const blocks: MetaBlock[] = [
