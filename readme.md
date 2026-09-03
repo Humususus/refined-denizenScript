@@ -38,6 +38,9 @@ Silence warnings you don't want without touching the script:
 - Type a delimited value like `/[]/` to turn it into `<&lb><&rb>`.
 - Press <kbd>Backspace</kbd> right after a conversion to undo it back to the original `/…/` text.
 
+### Automatic tag separators
+Pressing <kbd>Space</kbd> directly inside `<map[…]>` inserts `;`, and inside `<list[…]>` inserts `|`. It fires nowhere else, a quoted value inside the parameters suppresses it, one <kbd>Backspace</kbd> turns the separator back into a plain space, and `denizenscript.autoInsertTagSeparators` switches it off.
+
 ### DenizenM support
 Completion and hover documentation for [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1) — escape tags, base tags, dot tags, commands, command arguments and events. DenizenM syntax is also excluded from diagnostics, so the base Denizen checker doesn't flag it as invalid.
 
@@ -53,9 +56,49 @@ Completion and hover documentation for [DenizenM](https://github.com/Energobro/D
 - Player and server flags, kept in **separate** indexes so they never mix in suggestions.
 - Indexed across the whole open folder, not just the current file (`denizenscript.behaviors.track_full_workspace`).
 
+### Completion in the places that used to offer nothing
+Each of these was an empty suggestion list before:
+
+- **`<entry[123].…>`** — the sub-tags of the command that wrote the `save:`, narrowed to that command. Entry tags are documented per command, so they are absent from the tag index entirely.
+- **Event lines** under a world container's `events:` key, with the `on `/`after ` prefix handled and `<block>`-style placeholders turned into tabstops.
+- **Event switch values** — `bukkit_priority:`, `cancelled:` and `ignorecancelled:`. Only these three: the rest take flag names, permissions, areas and numbers, where there is no list to offer.
+- **Implicit definitions** — `<[value]>`, `<[loop_index]>`, your own `as:`/`key:` names inside a loop, and `<[filter_value]>` / `<[parse_value]>` inside the tag that provides them.
+- **`<map[…]>` keys** and mechanism names in `- adjust`, read from the meta rather than a hand-kept list.
+- **`as[…]`** — object type names in the short form, which is what the 23 deprecated `as_*` tags point at.
+- **`filter[…]`, `parse[…]`, `sort_by_value[…]`** and friends — the tag path applied to each entry, written without its `<>`.
+- **`<custom_color_name>`** — the colour names from your own Denizen colour map.
+
+> The first four work on both engines. The last four read the meta through the language server, so they need the TypeScript engine.
+
+### Quick Fixes
+Lightbulb actions, offered only where the checker already reports something and its message already names the edit:
+
+- Add a missing `:` or `- ` to a line that needs one, including `- if true == false` with no trailing colon.
+- **Rewrite a deprecated tag** — `as_entity` → `as[entity]`. Offered for the 24 tags whose deprecation names a single, unambiguous replacement, and deliberately withheld for the rest rather than guessing at a rewrite that would lose your arguments.
+
+### Go to definition
+<kbd>F12</kbd> on a flag jumps to where it is set; on a script name, to the container that defines it.
+
+### Inline argument hints
+Grey text at the end of the line you are editing, showing the arguments the command still accepts. Only the caret's line is annotated (`denizenscript.inlineArgumentHints`).
+
+To see them **on demand only**, leave the setting on and set `editor.inlayHints.enabled` to `offUnlessPressed` — the hint then appears while you hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>.
+
+> Needs the TypeScript engine. The C# engine has no signature help, so nothing is shown there.
+
+### Offline math
+Hovering an arithmetic tag such as `<element[1].sub[<element[2].mul[3]>]>` shows what it works out to, without a server (`denizenscript.evaluateMathTags`).
+
+Anything the server would have to answer — definitions, flags, `<player.…>` — is listed as a value to supply rather than guessed at; **`Refined DenizenScript: Evaluate Math Tag`** asks for those and shows the result. A result that is not exactly representable is labelled as rounded.
+
+### Long map and list tags
+A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>` or `<list[…]>` opens it formatted across several lines. The expanded view is editable and writes back as a single line — the file never holds the multi-line form, which Denizen's parser would reject (`refinedDenizenscript.mapTag.showExpandLens`).
+
 ### Syntax highlighting and inline colours
 - Custom colour containers from your Denizen `config.yml` are parsed and applied where possible.
 - Inline colour rendering for colour tags (`denizenscript.behaviors.do_inline_colors`), with an option for very dark colours (`display_dark_colors`).
+- **A colour picker on hex colours** — a swatch beside `<&color[#2596be]>` opens VS Code's own picker, and both the `#RRGGBB` and `#RRGGBBAA` forms are handled. Only inside a tag, and never on a commented-out line.
+- Prefixed arguments are coloured too, not just the command name.
 - Uses your active VS Code theme by default; the legacy DenizenScript palette is available via `denizenscript.behaviors.use_custom_syntax_colors`.
 
 ### Script scaffolding
@@ -141,8 +184,8 @@ The TypeScript language server is a **faithful port** of `SharpDenizenTools`, no
 
 | | |
 |---|---|
-| Unit tests | **1368 passing**, 46 files |
-| End-to-end verification | **17 scripts**, all passing against live meta |
+| Unit tests | **1553 passing**, 52 files |
+| End-to-end verification | **21 scripts**, all passing against live meta |
 | TypeScript compile | clean |
 
 
