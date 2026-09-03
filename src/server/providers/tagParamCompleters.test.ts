@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normaliseDocParam, completeTagParam, ParamCandidate, TAG_PARAM_COMPLETERS, parseTextColorMap, setCustomColorNames } from './tagParamCompleters';
+import { normaliseDocParam, completeTagParam, ParamCandidate, TAG_PARAM_COMPLETERS, parseTextColorMap, setCustomColorNames, completeObjectTypeNames } from './tagParamCompleters';
 import { ScriptingWorkspaceData, ScriptContainerData } from '../checker/containerConvert';
 import { buildExtraData, parseFlatFds, ExtraData } from '../metaDocs/extraData';
 import { createEmptyMetaDocs, MetaDocs, MetaMechanism, MetaTag } from '../metaDocs/metaTypes';
+import { buildMetaDocs } from '../metaDocs/metaDocsManager';
+import { linkTypeGraph } from '../metaDocs/metaLinker';
+import type { MetaBlock } from '../metaDocs/metaLoader';
 
 const DATA: ExtraData = buildExtraData(parseFlatFds([
     'blocks:', '- STONE',
@@ -455,6 +458,54 @@ describe('parseTextColorMap', () => {
         expect(parseTextColorMap(undefined)).toEqual([]);
         expect(parseTextColorMap(null)).toEqual([]);
         expect(parseTextColorMap('')).toEqual([]);
+    });
+});
+
+/**
+ * `<ObjectTag.as[<type>]>`, from the user's request of 2026-09-03: 23 of the 27 `as_*` tags are
+ * deprecated in favour of it, so the names belong here.
+ */
+describe('completeObjectTypeNames', () => {
+    function typeDocs(...names: string[]): MetaDocs {
+        const blocks: MetaBlock[] = names.map(name => ({
+            objectType: 'objecttype', url: 's#L1',
+            data: [`@name ${name}`, '@prefix none', '@base none', '@format x', '@description x', '@end_meta']
+        }));
+        const docs = buildMetaDocs(blocks);
+        linkTypeGraph(docs);
+        return docs;
+    }
+
+    it('offers the SHORT form, which is the long one with "Tag" removed', () => {
+        // The tag's own description: "long form, like ListTag ... or the short form, like List".
+        const docs = typeDocs('ListTag', 'EntityTag', 'MapTag');
+        expect(completeObjectTypeNames(docs, '').map(c => c.label).sort())
+            .toEqual(['entity', 'list', 'map']);
+    });
+
+    it('filters by what has been typed, case-insensitively', () => {
+        const docs = typeDocs('ListTag', 'EntityTag', 'LocationTag');
+        expect(completeObjectTypeNames(docs, 'l').map(c => c.label).sort()).toEqual(['list', 'location']);
+        expect(completeObjectTypeNames(docs, 'ENT').map(c => c.label)).toEqual(['entity']);
+        expect(completeObjectTypeNames(docs, 'zzz')).toEqual([]);
+    });
+
+    it('skips the abstract markers and the lowercase tag bases', () => {
+        // `docs.objectTypes` also holds AreaObject, FlaggableObject, PropertyHolderObject and
+        // VectorObject, plus `server`, `system` and `bungee`. None is a type an object can be
+        // converted TO, so offering them would be offering conversions that cannot work.
+        // MUTANT CAUGHT: dropping the endsWith('Tag') filter.
+        const docs = typeDocs('ListTag', 'AreaObject', 'FlaggableObject', 'VectorObject', 'server', 'system');
+        expect(completeObjectTypeNames(docs, '').map(c => c.label)).toEqual(['list']);
+    });
+
+    it('names the long form in the detail, so the full type is still visible', () => {
+        const docs = typeDocs('EntityTag');
+        expect(completeObjectTypeNames(docs, '')[0].detail).toContain('EntityTag');
+    });
+
+    it('marks them as enum candidates', () => {
+        expect(completeObjectTypeNames(typeDocs('ListTag'), '')[0].kind).toBe('enum');
     });
 });
 

@@ -15,7 +15,7 @@
  * range, full markdown documentation — belongs to the caller.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeMapKeys = exports.setCustomColorNames = exports.parseTextColorMap = void 0;
+exports.completeTagParam = exports.normaliseDocParam = exports.TAG_PARAM_COMPLETERS = exports.completeMapKeys = exports.completeObjectTypeNames = exports.setCustomColorNames = exports.parseTextColorMap = void 0;
 const frenetic_1 = require("../checker/frenetic");
 // The one VALUE import from checker/: the inventory label list, which is a hardcoded constant in
 // both languages rather than loaded data, transcribed once for Phase 2C-7's event validators.
@@ -108,6 +108,43 @@ function setCustomColorNames(names) {
     customColorNames = names;
 }
 exports.setCustomColorNames = setCustomColorNames;
+/**
+ * Object type names for `<ObjectTag.as[<type>]>`, in the short form.
+ *
+ * NO C# COUNTERPART -- a new completer, from the user's request of 2026-09-03. 23 of the 27 `as_*`
+ * tags are deprecated in favour of `as[...]`, each deprecation naming its replacement verbatim
+ * (`use as[entity]`, `use as[item]`, ...), so the tag is where the names are wanted.
+ *
+ * DERIVED FROM `docs.objectTypes`, NOT CURATED. The tag's own description settles the format:
+ * "Type names can be of the long form, like ListTag, MapTag, ElementTag, ... or the short form,
+ * like List, Map, Element, ... Type name input is not case-sensitive." So the short form is the
+ * long one with `Tag` removed, and a Denizen release that adds an object type completes here the
+ * same day.
+ *
+ * ONLY NAMES ENDING IN `Tag` ARE OFFERED. `docs.objectTypes` also holds the abstract markers
+ * (`AreaObject`, `FlaggableObject`, `PropertyHolderObject`, `VectorObject`) and three lowercase tag
+ * bases (`bungee`, `server`, `system`). None of those is a type an object can be converted TO, and
+ * offering them would be offering conversions that cannot work.
+ *
+ * KNOWN UNDER-OFFER, deliberately: `as_custom`'s deprecation says `use as[custom]`, while stripping
+ * `Tag` from `CustomObjectTag` gives `customobject`. The documented rule is the strip, so that is
+ * what is offered; the shorter alias still works if typed. Offering a name the documentation does
+ * not describe would be the worse mistake.
+ */
+function completeObjectTypeNames(docs, typed) {
+    const results = [];
+    for (const type of docs.objectTypes.values()) {
+        if (!type.name.endsWith('Tag')) {
+            continue;
+        }
+        const short = type.name.slice(0, -'Tag'.length).toLowerCase();
+        if (short.startsWith(typed.toLowerCase())) {
+            results.push({ label: short, detail: `**Object Type**: ${type.name}`, kind: 'enum' });
+        }
+    }
+    return results;
+}
+exports.completeObjectTypeNames = completeObjectTypeNames;
 /** Every enum value starting with `typed`. Port of `CompleteEnum` (:204-207). */
 function completeEnum(values, label, typed) {
     const results = [];

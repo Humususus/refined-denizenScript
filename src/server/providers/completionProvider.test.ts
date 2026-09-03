@@ -1429,6 +1429,72 @@ describe("tag completion items carry the tag's full name as `detail`", () => {
  * `EntityTag` properties in Denizen's meta -- which is the fact that made the feature note's
  * "they are not in Denizen's meta" assessment wrong and this implementation possible.
  */
+/**
+ * `<ObjectTag.as[<type>]>`, user request 2026-09-03.
+ *
+ * The routing is the whole risk here. `<type>` is documented by NINE tags and they mean different
+ * things — object types for `as[...]`, but click and hover event kinds for
+ * `on_click[...].type[...]`, Minecraft structures for `find.structure[...]`, notable kinds for
+ * `server.notes[...]`. Measured against the live meta.
+ */
+describe('as[<type>] offers object types, and only there', () => {
+    function asDocs(): MetaDocs {
+        const blocks: MetaBlock[] = [
+            { objectType: 'objecttype', url: 's#L1', data: ['@name ObjectTag', '@prefix none', '@base none', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L2', data: ['@name EntityTag', '@prefix e', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L3', data: ['@name ListTag', '@prefix li', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L4', data: ['@name AreaObject', '@prefix none', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L8', data: ['@name ElementTag', '@prefix el', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'objecttype', url: 's#L9', data: ['@name PlayerTag', '@prefix p', '@base ObjectTag', '@format x', '@description x', '@end_meta'] },
+            { objectType: 'command', url: 's#L5', data: ['@name narrate', '@syntax narrate [<text>]', '@short x', '@group x', '@description x', '@required 1', '@maximum 2', '@end_meta'] },
+            // `<player...>` has to exist as a real tag base for the part-form lookup to reach
+            // `as` at all -- `as` is inherited from ObjectTag rather than written on PlayerTag.
+            { objectType: 'tag', url: 's#L10', data: ['@attribute <player>', '@returns PlayerTag', '@description x', '@end_meta'] },
+            // The two tags that both document a `<type>` parameter and mean different things.
+            { objectType: 'tag', url: 's#L6', data: ['@attribute <ObjectTag.as[<type>]>', '@returns ObjectTag', '@description x', '@end_meta'] },
+            { objectType: 'tag', url: 's#L7', data: ['@attribute <ElementTag.on_click[<message>].type[<type>]>', '@returns ElementTag', '@description x', '@end_meta'] }
+        ];
+        const docs = buildMetaDocs(blocks);
+        linkTypeGraph(docs);
+        return docs;
+    }
+    const DOCS = asDocs();
+    const labels = (text: string) =>
+        provideCompletions(DOCS, createEmptyExtraData(), text, text.length, 0).map(i => i.label);
+
+    it('offers the short-form object type names', () => {
+        // Every `*Tag` in the fixture, with `Tag` stripped -- and `AreaObject`, which is not one,
+        // absent. `object` is offered because `ObjectTag` is itself a type; harmless, and it
+        // follows the documented rule rather than a special case.
+        expect(labels('- narrate <player.as[').sort())
+            .toEqual(['element', 'entity', 'list', 'object', 'player']);
+    });
+
+    it('narrows by what is typed', () => {
+        expect(labels('- narrate <player.as[ent')).toEqual(['entity']);
+        expect(labels('- narrate <player.as[zzz')).toEqual([]);
+    });
+
+    it('leaves the abstract markers out', () => {
+        // AreaObject is in objectTypes but is not a type anything converts TO.
+        expect(labels('- narrate <player.as[')).not.toContain('areaobject');
+    });
+
+    it('does NOT offer object types for a different tag that also takes <type>', () => {
+        // The failure this guards: registering `<type>` in the shared spec table would put
+        // `entity` and `list` inside a click handler, where the kinds are `open_url`,
+        // `run_command` and friends.
+        // MUTANT CAUGHT: keying on the parameter spec alone instead of on the tag part.
+        expect(labels('- narrate <element[hi].on_click[cmd].type[')).toEqual([]);
+    });
+
+    it('keys on the part named "as", not on any tag whose name merely contains it', () => {
+        // `has_flag` ends in something else entirely; the point is that the LAST dotted component
+        // must be exactly `as`.
+        expect(labels('- narrate <player.flag[')).not.toContain('entity');
+    });
+});
+
 describe('map keys and the adjust mechanism argument (user rulings 2026-09-01)', () => {
     function adjustDocs(): MetaDocs {
         const blocks: MetaBlock[] = [

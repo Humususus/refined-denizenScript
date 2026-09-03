@@ -615,6 +615,23 @@ function tagPieceDocumentation(tag, inputData) {
  * `CompleteEnum`'s `key == null ? null : ...` (:206); no `ByTag` registration reaches
  * it today, but `completeEnum` can produce it.
  */
+/**
+ * Whether this bracket is `as[...]`, whose `<type>` names an object type.
+ *
+ * KEYED ON THE TAG PART, NOT ON THE SPEC ALONE, and that distinction is the whole of this
+ * function. `<type>` is documented by NINE tags and they mean different things: object types for
+ * `as[...]`, but hover and click event kinds for `on_hover[...].type[...]` and
+ * `on_click[...].type[...]`, Minecraft structures for `find.structure[...]`, and notable kinds for
+ * `server.notes[...]`. Measured against the live meta 2026-09-03. Registering `<type>` in the
+ * shared table would have offered `entity` and `list` inside a click handler.
+ */
+function isObjectTypeParam(docParam, tagName) {
+    if (docParam !== '<type>') {
+        return false;
+    }
+    const dot = tagName.lastIndexOf('.');
+    return (dot === -1 ? tagName : tagName.slice(dot + 1)) === 'as';
+}
 function completeTagParameter(docs, extra, ctx, line, workspace) {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
@@ -631,7 +648,9 @@ function completeTagParameter(docs, extra, ctx, line, workspace) {
     // missing exactly where they went looking for it.
     const candidates = documented.tag.cleanName === 'map'
         ? (0, tagParamCompleters_1.completeMapKeys)(docs, ctx.paramSoFar)
-        : (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
+        : isObjectTypeParam(documented.docParam, ctx.tagName)
+            ? (0, tagParamCompleters_1.completeObjectTypeNames)(docs, ctx.paramSoFar)
+            : (0, tagParamCompleters_1.completeTagParam)(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results = [];
     for (const candidate of candidates) {

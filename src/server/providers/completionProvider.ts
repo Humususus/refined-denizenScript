@@ -16,7 +16,7 @@ import { ExtraData } from '../metaDocs/extraData';
 import { findEnumCompleters, findKeyLineCompleter } from './argumentCompleters';
 import { parseTag } from './tagHelper';
 import { traceTag } from './tagTracer';
-import { completeTagParam, completeMapKeys, ParamCandidateKind } from './tagParamCompleters';
+import { completeTagParam, completeMapKeys, completeObjectTypeNames, ParamCandidateKind } from './tagParamCompleters';
 
 /** Every command whose name starts with `partial`, as completion items carrying full docs. */
 export function completeCommandNames(docs: MetaDocs, partial: string): CompletionItem[] {
@@ -622,6 +622,24 @@ function tagPieceDocumentation(tag: MetaTag, inputData: string): string {
  * `CompleteEnum`'s `key == null ? null : ...` (:206); no `ByTag` registration reaches
  * it today, but `completeEnum` can produce it.
  */
+/**
+ * Whether this bracket is `as[...]`, whose `<type>` names an object type.
+ *
+ * KEYED ON THE TAG PART, NOT ON THE SPEC ALONE, and that distinction is the whole of this
+ * function. `<type>` is documented by NINE tags and they mean different things: object types for
+ * `as[...]`, but hover and click event kinds for `on_hover[...].type[...]` and
+ * `on_click[...].type[...]`, Minecraft structures for `find.structure[...]`, and notable kinds for
+ * `server.notes[...]`. Measured against the live meta 2026-09-03. Registering `<type>` in the
+ * shared table would have offered `entity` and `list` inside a click handler.
+ */
+function isObjectTypeParam(docParam: string, tagName: string): boolean {
+    if (docParam !== '<type>') {
+        return false;
+    }
+    const dot = tagName.lastIndexOf('.');
+    return (dot === -1 ? tagName : tagName.slice(dot + 1)) === 'as';
+}
+
 function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamContext, line: number, workspace: ScriptingWorkspaceData | null): CompletionItem[] | null {
     const documented = findDocumentedTagParam(docs, ctx);
     if (documented === null) {
@@ -638,7 +656,9 @@ function completeTagParameter(docs: MetaDocs, extra: ExtraData, ctx: TagParamCon
     // missing exactly where they went looking for it.
     const candidates = documented.tag.cleanName === 'map'
         ? completeMapKeys(docs, ctx.paramSoFar)
-        : completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
+        : isObjectTypeParam(documented.docParam, ctx.tagName)
+            ? completeObjectTypeNames(docs, ctx.paramSoFar)
+            : completeTagParam(docs, extra, documented.docParam, ctx.paramSoFar, documented.tag, workspace);
     const cursor = ctx.paramStart + ctx.paramSoFar.length;
     const results: CompletionItem[] = [];
     for (const candidate of candidates) {
