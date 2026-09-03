@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.1.0
+
+### New features
+
+- **Event hover.** Hovering an event line (`on player joins:`) now shows its description, trigger
+  text and documented `<context.…>` values.
+- **`<context.[...]>` completion narrowed to the enclosing event.** It used to fall through to
+  every documented tag part (1871 of them); it now offers only the context names the enclosing
+  event actually documents, walking up to the nearest `on `/`after ` line to find it.
+- **Hover on `<[definitionName]>` shows what it was set to.** Every plain `- define name value`
+  assignment of that name in the file is listed, each with its line number — not a guess at which
+  one is "active", since that can vary by branch or loop iteration. Data-action forms
+  (`name:->:value`, `name:!`) and dynamically-built names are left alone rather than misread.
+- **The TypeScript engine is now the default**, not `csharp`. It still reports less overall — tag
+  and command validation isn't wired up yet, and there's no event completion, tag hover,
+  deprecation warnings, or cross-file analysis — but it needs no .NET runtime and starts faster.
+  Switch back to `csharp` if you hit a gap it hasn't caught up on. The setting's own description
+  was cut from over 1600 characters to a few lines; VS Code's settings UI was stalling on it.
+
+### Fixes
+
+- A tag parameter holding a whole nested tag (`filter_tag[<[filter_value].equals[x]>]`, the
+  documented form for `filter_tag`/`parse_tag`) lost all highlighting from the point the nested tag
+  closed onward — its `>` was being read as the OUTER tag's close. Tags can now nest correctly.
+- Inline argument hints (`denizenscript.inlineArgumentHints`) no longer query signature help on the
+  `csharp` engine. That engine doesn't implement it, and the request was failing outright rather
+  than returning an empty response as assumed — which, combined with the editor's own
+  default error-reveal behaviour, made the Output panel pop open and refill on every cursor move
+  onto a command line. The request is no longer sent at all unless the TypeScript engine is running.
+
 ## 2.0.3
 
 No functional change over 2.0.1's content. A 2.0.2 build briefly went out with a real regression

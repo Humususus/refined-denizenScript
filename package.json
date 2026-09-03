@@ -3,7 +3,7 @@
     "displayName": "refined DenizenScript",
     "description": "Denizen scripting for VS Code — highlighting, completion, hover and diagnostics, with an optional .NET-free language server.",
     "author": "Humusus_ and DenizenTeam",
-    "version": "2.0.3",
+    "version": "2.1.0",
     "publisher": "humusus",
     "license": "MIT",
     "repository": "https://github.com/Humususus/refined-denizenScript",
@@ -197,10 +197,10 @@
                         "typescript"
                     ],
                     "enumDescriptions": [
-                        "The existing stable .NET language server.",
-                        "Experimental TypeScript rewrite providing command and command-argument completion, argument-value completion from Minecraft enums (sounds, materials, entities, and more), tag completion (tag bases and tag parts, narrowed to the preceding part's return type unless denizenscript.server.tagTracing is off), and tag-parameter completion inside a tag's square brackets (documented enums such as <material> and <statistic>, mechanism names and mechanism=value pairs, and documented option lists), plus hover for commands and container types; parameter values that name a script container are not offered yet (they need workspace tracking), flag names inside <player.flag[ come from the editor's own workspace index rather than the server, and there is still no event completion, and no tag hover or tag deprecation warnings. Diagnostics now cover 23 checks in three layers: the line-level checks (braced syntax, raw tabs, old <def[...]> syntax, useless/invalid lines, stray end-of-line spaces, TODO comments, and the section symbol used for color codes), the container structure checks (duplicate keys, duplicate script names, empty sections and command sections, and nine spacing and line-shape problems), and the container validity checks (missing content, missing 'type' key, unknown container type). Unlike the C# engine it recognises 'type: dialog' containers. TAG AND COMMAND CHECKING IS NOT WIRED UP YET, so an undefined <[definition]> or a garbage tag is still not reported; event validation, tag hover, cross-file workspace analysis and YAML validation are also absent, so the C# engine still reports strictly more."
+                        "The original .NET server. Stable, and catches the most problems overall.",
+                        "No .NET dependency, faster start. Completion, hover and most diagnostics work, but tag/command validation isn't wired up yet -- a bad tag or undefined <[definition]> can go unreported -- and there is no event completion, tag hover, deprecation warnings, or cross-file analysis."
                     ],
-                    "default": "csharp",
+                    "default": "typescript",
                     "description": "Which Denizen language server engine to use."
                 },
                 "denizenscript.theme_colors.comment_todo": {

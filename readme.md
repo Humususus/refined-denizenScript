@@ -124,8 +124,8 @@ Defects this fork corrects that the original gets wrong:
 
 Two engines ship with the extension, picked with `denizenscript.server.engine`:
 
-- **`csharp`** *(default)* — the original .NET server. Complete and stable. Needs the .NET 8 runtime.
-- **`typescript`** — an in-progress rewrite with no .NET dependency and a faster start. Completion, hover and most script diagnostics work; **tag and command checking isn't finished**, so it reports less than the C# engine. The default is the safe choice.
+- **`typescript`** *(default)* — no .NET dependency, faster start. Completion, hover and most script diagnostics work; **tag and command checking isn't finished**, so it still reports less than the C# engine — a bad tag or an undefined `<[definition]>` can go unreported, and there's no event completion, tag hover, deprecation warnings, or cross-file analysis.
+- **`csharp`** — the original .NET server. Complete and stable, at the cost of the .NET 8 runtime. Switch to this if you hit a gap the TypeScript engine hasn't caught up on yet.
 
 ---
 <img width="840" height="180" alt="Frame 15" src="https://github.com/user-attachments/assets/e778841e-7e34-44f5-a2eb-70fb6b682b7e" />
