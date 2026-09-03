@@ -47,10 +47,23 @@ export class MissingPunctuationFixes implements vscode.CodeActionProvider {
             if (lineNumber < 0 || lineNumber >= document.lineCount) {
                 continue;
             }
-            for (const plan of planFixes(code, document.lineAt(lineNumber).text)) {
+            // The message and columns are passed for the codes that need more than the line --
+            // today only `deprecated_tag_part`, whose message names the replacement and whose range
+            // is exactly the tag part to rewrite. A multi-line diagnostic would make `endCharacter`
+            // meaningless, so those are skipped rather than mis-measured.
+            const context_ = diagnostic.range.start.line === diagnostic.range.end.line
+                ? { message: diagnostic.message, startCharacter: diagnostic.range.start.character, endCharacter: diagnostic.range.end.character }
+                : undefined;
+            for (const plan of planFixes(code, document.lineAt(lineNumber).text, context_)) {
                 const action = new vscode.CodeAction(plan.title, vscode.CodeActionKind.QuickFix);
                 action.edit = new vscode.WorkspaceEdit();
-                action.edit.insert(document.uri, new vscode.Position(lineNumber, plan.character), plan.insert);
+                const at = new vscode.Position(lineNumber, plan.character);
+                if (plan.replace > 0) {
+                    action.edit.replace(document.uri, new vscode.Range(at, new vscode.Position(lineNumber, plan.character + plan.replace)), plan.insert);
+                }
+                else {
+                    action.edit.insert(document.uri, at, plan.insert);
+                }
                 // Attaching the diagnostic is what makes VS Code strike it through while the action
                 // is previewed, and what associates the two in the Problems panel.
                 action.diagnostics = [diagnostic];

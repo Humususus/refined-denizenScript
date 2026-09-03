@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planFixes, ACTIONABLE_CODES, FixPlan } from './quickFixPlans';
+import { planFixes, ACTIONABLE_CODES, FixPlan, deprecationReplacement } from './quickFixPlans';
 
 /**
  * FEATURE-IDEAS.md idea 6: Quick Fixes for the two diagnostics whose own messages name the edit.
@@ -14,14 +14,14 @@ function titles(plans: FixPlan[]): string[] {
 }
 
 describe('planFixes: which diagnostics are actionable', () => {
-    it('acts on exactly the three codes whose messages name the fix', () => {
+    it('acts on exactly the four codes whose messages name the fix', () => {
         // MUTANT CAUGHT: adding a fourth code, e.g. `empty_command_section`, whose fix is to write
         // a body rather than to add punctuation.
         // `missing_colon_on_command` joined the set on 2026-09-01, once the checker change that
         // emits it landed -- the feature note had recorded it as unbuildable precisely because no
         // engine reported that line.
         expect([...ACTIONABLE_CODES].sort())
-            .toEqual(['identifier_missing_line', 'key_line_looks_like_command', 'missing_colon_on_command']);
+            .toEqual(['deprecated_tag_part', 'identifier_missing_line', 'key_line_looks_like_command', 'missing_colon_on_command']);
     });
 
     it('offers nothing for a diagnostic it does not act on', () => {
@@ -51,14 +51,14 @@ describe('planFixes: identifier_missing_line', () => {
         // MUTANT CAUGHT: using text.length, which on a line with trailing spaces would place the
         // colon after them, where the parser does not see it as ending the key.
         const [colon] = planFixes('identifier_missing_line', '    key1   ');
-        expect(colon).toEqual({ title: "Add ':' to the end of the line", character: 8, insert: ':' });
+        expect(colon).toEqual({ title: "Add ':' to the end of the line", character: 8, insert: ':', replace: 0 });
     });
 
     it('puts the dash at the indent, never at column 0', () => {
         // Moving the line to the margin would take it out of its container entirely.
         // MUTANT CAUGHT: `character: 0`.
         const dash = planFixes('identifier_missing_line', '        key1')[1];
-        expect(dash).toEqual({ title: "Add '- ' to the start of the line", character: 8, insert: '- ' });
+        expect(dash).toEqual({ title: "Add '- ' to the start of the line", character: 8, insert: '- ', replace: 0 });
     });
 
     it('does not offer a colon to a line that already ends in one', () => {
@@ -90,7 +90,7 @@ describe('planFixes: key_line_looks_like_command', () => {
 
     it('places the dash at the indent', () => {
         expect(planFixes('key_line_looks_like_command', '        while true:')[0])
-            .toEqual({ title: "Add '- ' to the start of the line", character: 8, insert: '- ' });
+            .toEqual({ title: "Add '- ' to the start of the line", character: 8, insert: '- ', replace: 0 });
     });
 
     it('offers nothing when a dash is already there', () => {
@@ -156,5 +156,96 @@ describe('planFixes: the edits are insertions, so they are reversible', () => {
         it('offers nothing once the colon is already there', () => {
             expect(planFixes('missing_colon_on_command', '    - if true == false:')).toEqual([]);
         });
+    });
+});
+
+/**
+ * Rewriting a deprecated tag part -- the second half of FEATURE-IDEAS.md idea 7, user request
+ * 2026-09-03. `deprecated_tag_part` is the only actionable code whose plan REPLACES text, so the
+ * tests here are weighted towards the cases where it must refuse.
+ *
+ * Every message below is in the shape `tagTracer.ts` actually emits:
+ * "Deprecated tag `x`: <the meta's @deprecated text>", and every @deprecated text is quoted from
+ * the live meta as measured 2026-09-03.
+ */
+describe('deprecationReplacement', () => {
+    it('reads the replacement when the whole message is `use <part>`', () => {
+        expect(deprecationReplacement('Deprecated tag `elementtag.as_entity`: use as[entity]')).toBe('as[entity]');
+        expect(deprecationReplacement('Deprecated tag `elementtag.hex_encode`: use utf8_encode')).toBe('utf8_encode');
+    });
+
+    it('refuses a message that names a DOTTED replacement', () => {
+        // The failure this guards, and the reason the rule is "the whole message": a loose scan for
+        // a word after "use" extracts `EntityTag` here and would offer to rewrite the part to that.
+        // MUTANT CAUGHT: relaxing the anchors to a substring search.
+        expect(deprecationReplacement('Deprecated tag `entitytag.map_trace`: use EntityTag.trace_framed_map')).toBeNull();
+        expect(deprecationReplacement('Deprecated tag `locationtag.tree_distance`: Use MaterialTag.distance')).toBeNull();
+    });
+
+    it('refuses the quoted, linked, version-qualified and empty forms', () => {
+        // 99 of the meta's 124 deprecations look like one of these.
+        expect(deprecationReplacement("Deprecated tag `entitytag.arms_raised`: use 'aggressive'")).toBeNull();
+        expect(deprecationReplacement('Deprecated tag `worldtag.time.full`: Use <@link tag WorldTag.time_full> instead.')).toBeNull();
+        expect(deprecationReplacement("Deprecated tag `entitytag.entity_type`: Use 'EntityTag.type' on MC 1.20+.")).toBeNull();
+        expect(deprecationReplacement('Deprecated tag `npctag.hologram_direction`: This was removed from Citizens.')).toBeNull();
+    });
+
+    it('refuses a replacement that is a key=value template rather than a literal', () => {
+        // The meta's own trap: pasting this would overwrite the author's real colours with the
+        // documentation's placeholder words.
+        // MUTANT CAUGHT: dropping the [=;] guard.
+        expect(deprecationReplacement('Deprecated tag `elementtag.hsb_color_gradient`: use color_gradient[from=color;to=color;style=HSB]')).toBeNull();
+    });
+
+    it('refuses anything that is not a deprecation message at all', () => {
+        expect(deprecationReplacement('use as[entity]')).toBeNull();
+        expect(deprecationReplacement('')).toBeNull();
+    });
+});
+
+describe('planFixes for deprecated_tag_part', () => {
+    const MSG = 'Deprecated tag `elementtag.as_entity`: use as[entity]';
+    //           0123456789...
+    const LINE = '- narrate <player.as_entity.name>';
+    const START = LINE.indexOf('as_entity');
+    const END = START + 'as_entity'.length;
+
+    it('replaces exactly the deprecated part', () => {
+        const plans = planFixes('deprecated_tag_part', LINE, { message: MSG, startCharacter: START, endCharacter: END });
+        expect(plans).toEqual([{ title: "Replace with 'as[entity]'", character: START, insert: 'as[entity]', replace: 'as_entity'.length }]);
+        // The edit applied by hand, to prove the span is right rather than merely plausible.
+        expect(LINE.slice(0, START) + 'as[entity]' + LINE.slice(END)).toBe('- narrate <player.as[entity].name>');
+    });
+
+    it('offers nothing without the diagnostic context', () => {
+        expect(planFixes('deprecated_tag_part', LINE)).toEqual([]);
+    });
+
+    it('refuses when the part carries a parameter of its own', () => {
+        // Swapping only the name would strand arguments belonging to a different tag; widening the
+        // span to swallow them would destroy them.
+        // MUTANT CAUGHT: dropping the `[` guard.
+        const line = "- narrate <element[x].hsb_color_gradient[from=#000000;to=#ffffff]>";
+        const start = line.indexOf('hsb_color_gradient');
+        const plans = planFixes('deprecated_tag_part', line, {
+            message: 'Deprecated tag `elementtag.hsb_color_gradient`: use color_gradient',
+            startCharacter: start,
+            endCharacter: start + 'hsb_color_gradient'.length
+        });
+        expect(plans).toEqual([]);
+    });
+
+    it('offers nothing when the text is already the replacement', () => {
+        const line = '- narrate <player.as[entity].name>';
+        const start = line.indexOf('as[entity]');
+        expect(planFixes('deprecated_tag_part', line, {
+            message: MSG, startCharacter: start, endCharacter: start + 'as[entity]'.length
+        })).toEqual([]);
+    });
+
+    it('refuses a range that does not fit the line', () => {
+        // A diagnostic can outlive the edit that shortened the line.
+        expect(planFixes('deprecated_tag_part', LINE, { message: MSG, startCharacter: START, endCharacter: 9999 })).toEqual([]);
+        expect(planFixes('deprecated_tag_part', LINE, { message: MSG, startCharacter: 5, endCharacter: 5 })).toEqual([]);
     });
 });
