@@ -184,6 +184,36 @@ function check(name, ok, detail) {
             has(scopesOf('    - if <[x]> < <player.name>:', 'player'), 'entity.name.function'));
     }
 
+    // 8 -- REPORTED BUG (2026-09-03): a tag parameter holding a whole NESTED tag --
+    // filter_tag[<[filter_value]...>] and the like -- lost all highlighting from the point the
+    // nested tag closed onward. The #tags rule's own `patterns` had no `{"include": "#tags"}`, so
+    // the nested '<' matched none of its patterns (none of them start with '<') and was skipped as
+    // an unmatched character, still inside the OUTER tag's scope; the nested tag's OWN closing '>'
+    // was then read as the OUTER tag's `end`, terminating it early. Everything after that point had
+    // no tag scope and matched nothing else either, rendering as plain/white text.
+    {
+        const reportedLine = '    - narrate <server.flag[clans.penis2.members].filter_tag[<[filter_value].equals[lead]>].keys.get[1].name>';
+        const tokens = tokenize(reportedLine);
+        check('8. the exact reported line: "keys" after the nested tag is still scoped as a tag part',
+            tokens.some(t => t.text === 'keys' && t.scopes.some(s => s.includes('entity.name.function')) && t.scopes.some(s => s.includes('meta.tag'))));
+        check('8b. "get", "name" after it are scoped too, not just "keys"',
+            tokens.some(t => t.text === 'get' && t.scopes.some(s => s.includes('entity.name.function')))
+            && tokens.some(t => t.text === 'name' && t.scopes.some(s => s.includes('entity.name.function'))));
+        check('8c. the FINAL ">" closes the outer tag, not the nested one',
+            tokens[tokens.length - 1].text === '>' && tokens[tokens.length - 1].scopes.filter(s => s === 'meta.tag.denizenscript').length === 1);
+        check('8d. no token in this line is left with only the bare command scope (the "white text" symptom)',
+            tokens.filter(t => t.text.trim().length > 0).every(t => t.scopes.length > 2 || /^[.\[\]]$/.test(t.text)),
+            JSON.stringify(tokens.filter(t => t.scopes.length <= 2).map(t => t.text)));
+
+        // Simpler shape of the same bug, and the nested tag's own contents must still be right.
+        const simple = tokenize('    - narrate <element[<player.name>].to_uppercase>');
+        check('8e. a simple nested tag: the base after it ("to_uppercase") is still scoped',
+            simple.some(t => t.text === 'to_uppercase' && t.scopes.some(s => s.includes('entity.name.function'))));
+        check('8f. the nested tag itself still resolves its own parts correctly',
+            simple.some(t => t.text === 'player' && t.scopes.some(s => s.includes('entity.name.function')))
+            && simple.some(t => t.text === 'name' && t.scopes.some(s => s.includes('entity.name.function'))));
+    }
+
     console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
     process.exit(failures === 0 ? 0 : 1);
 })();

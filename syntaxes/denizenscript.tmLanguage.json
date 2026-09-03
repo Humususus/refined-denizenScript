@@ -69,6 +69,10 @@
                     "end": ">",
                     "patterns": [
                         {
+                            "comment": "RECURSIVE ON PURPOSE. Reported 2026-09-03: '<server.flag[...].filter_tag[<[filter_value].equals[lead]>].keys.get[1].name>' lost all highlighting from '.keys.get[1].name' onward. A tag parameter can legitimately hold a whole nested tag -- filter_tag/parse_tag's own 'filter_value'/'parse_value' definitions are always written this way -- but without this include, the inner '<' matched none of this rule's OWN patterns (none of them start with '<') and was skipped as a bare unmatched character, still inside the OUTER tag's scope. Its closing '>' was then read as the OUTER tag's 'end', since begin/end rules check 'end' before falling through to unmatched text. Everything after that point -- '].keys.get[1].name' -- was outside any tag scope and outside every other top-level rule too, hence plain/white. Including #tags here lets the nested '<...>' open and close its OWN scope, so only ITS OWN '>' closes it, and the outer tag's parsing resumes correctly afterwards. Listed first, same as #strings does, so a nested tag is never mistaken for one of the plainer patterns below it.",
+                            "include": "#tags"
+                        },
+                        {
                             "name": "variable.other.readwrite.denizenscript",
                             "match": "\\[([A-Za-z_][A-Za-z0-9_]*)\\]"
                         },
