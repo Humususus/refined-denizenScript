@@ -50,6 +50,7 @@ const argumentHintsProvider_1 = require("./argumentHintsProvider");
 const mathEvalProvider_1 = require("./mathEvalProvider");
 const scopeDefinitions_1 = require("./scopeDefinitions");
 const denizenEvents_1 = require("./denizenEvents");
+const hexColors_1 = require("./hexColors");
 const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
 /** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
@@ -2578,6 +2579,35 @@ function activate(context) {
                 return denizenScriptFoldingProvider(document, context, token);
             }
         });
+        // A swatch beside every hex colour written inside a tag, opening VS Code's own picker.
+        // FEATURE-IDEAS.md idea 10, user request 2026-09-03. Runs on BOTH engines: this is an editor
+        // feature, not a language-server one, and neither server has any notion of colour.
+        //
+        // The decision of what counts as a colour lives in `hexColors.ts` so it can be unit-tested
+        // without a `vscode` import; this adapter is the only part that touches the API. VS Code asks
+        // for the WHOLE document on every change, hence a single line scan with no allocation beyond
+        // the matches themselves.
+        context.subscriptions.push(vscode.languages.registerColorProvider('denizenscript', {
+            provideDocumentColors(document) {
+                const results = [];
+                for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
+                    for (const found of (0, hexColors_1.findHexColors)(document.lineAt(lineNumber).text)) {
+                        const range = new vscode.Range(lineNumber, found.start, lineNumber, found.end);
+                        // vscode.Color channels are 0-1; the match carries them as 0-255 bytes.
+                        const color = new vscode.Color(found.red / 255, found.green / 255, found.blue / 255, found.alpha / 255);
+                        results.push(new vscode.ColorInformation(range, color));
+                    }
+                }
+                return results;
+            },
+            provideColorPresentations(color, context) {
+                // Whether the author wrote the 8-digit form is read back off the document rather than
+                // remembered, because VS Code hands this callback only the colour and its range. It
+                // decides whether an opaque colour keeps its alpha byte -- see `formatHexColor`.
+                const hadAlpha = context.document.getText(context.range).length === '#rrggbbaa'.length;
+                return [new vscode.ColorPresentation((0, hexColors_1.formatHexColor)(color.red * 255, color.green * 255, color.blue * 255, color.alpha * 255, hadAlpha))];
+            }
+        }));
         scheduleRefresh();
         outputChannel.appendLine('Denizen extension has been activated');
     });
