@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.1.1
+
+### Fixes
+
+- Typing an IME/dead-key composed character (reported: Vietnamese Telex "â", pressing "a" twice)
+  showed the composed character and then deleted it. The `Backspace` key was bound for every
+  `.dsc` file unconditionally, routing every Backspace press — including the ones an input method
+  sends as part of composing a character — through this extension's async command handler before
+  falling through to normal deletion, which desynchronised it from the composition. Backspace is
+  now only ever intercepted in the narrow window right after this extension's own space→separator
+  or `/`→escape conversion, via a `when`-clause context key rather than a check inside the command;
+  every other Backspace, including all IME composition, now reaches VS Code's native handling
+  exactly as if this extension were not installed.
+
 ## 2.1.0
 
 ### New features

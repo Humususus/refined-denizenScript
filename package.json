@@ -3,7 +3,7 @@
     "displayName": "refined DenizenScript",
     "description": "Denizen scripting for VS Code — highlighting, completion, hover and diagnostics, with an optional .NET-free language server.",
     "author": "Humusus_ and DenizenTeam",
-    "version": "2.1.0",
+    "version": "2.1.1",
     "publisher": "humusus",
     "license": "MIT",
     "repository": "https://github.com/Humususus/refined-denizenScript",
@@ -95,7 +95,7 @@
             {
                 "command": "refinedDenizenscript.undoEscapeOrBackspace",
                 "key": "backspace",
-                "when": "editorTextFocus && editorLangId == denizenscript"
+                "when": "editorTextFocus && editorLangId == denizenscript && denizenscript.canUndoOnBackspace"
             },
             {
                 "command": "refinedDenizenscript.expandMapTag",
