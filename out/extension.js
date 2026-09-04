@@ -2284,6 +2284,32 @@ const denizenEscapeCodes = {
     "}": "<&rc>"
 };
 let lastDenizenEscapedEdit = undefined;
+/**
+ * Keeps `denizenscript.canUndoOnBackspace` (the keybinding's own `when` clause) in sync with
+ * whether either pending edit exists, so VS Code's OWN default Backspace runs for every ORDINARY
+ * keystroke and this extension is never asked about it at all.
+ *
+ * REPORTED 2026-09-04: typing Vietnamese Telex "â" (press "a" twice quickly) showed "aâ" and then
+ * deleted the "â" -- classic IME/dead-key composition breakage. The keybinding used to bind
+ * `backspace` unconditionally for every `.dsc` file, `when: editorTextFocus && editorLangId ==
+ * denizenscript`, routing EVERY Backspace through this extension's async command handler even on
+ * the (overwhelming majority) of presses that had nothing to undo and just called through to
+ * `deleteLeft`. That "just delegates" path is not neutral: an IME's compose sequence sends its own
+ * backspace-then-insert as one atomic unit at the native key-handling layer, and rerouting the
+ * backspace through the extension host's async command dispatch — even to end up calling the same
+ * `deleteLeft` — desynchronises it from the insert that follows, which is what corrupted the
+ * composition.
+ *
+ * The fix is to stop being ASKED at all outside the narrow window this extension itself created:
+ * `denizenscript.canUndoOnBackspace` is added to the keybinding's `when` clause, and is true only
+ * between one of the two edits below being set and it being undone or superseded. Every other
+ * Backspace press -- ordinary deletion, IME composition, anything -- now hits VS Code's native
+ * binding untouched, exactly as if this extension were not installed.
+ */
+function setDenizenEscapedEdit(edit) {
+    lastDenizenEscapedEdit = edit;
+    void vscode.commands.executeCommand('setContext', 'denizenscript.canUndoOnBackspace', lastDenizenEscapedEdit !== undefined || lastDenizenSeparatorEdit !== undefined);
+}
 function escapeDenizenText(text) {
     let result = "";
     for (const char of text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")) {
@@ -2318,11 +2344,11 @@ function escapeSelectionOrDelimitedText() {
                 }
             });
             const end = first.start.translate(0, escaped.length);
-            lastDenizenEscapedEdit = {
+            setDenizenEscapedEdit({
                 uri: document.uri.toString(),
                 range: new vscode.Range(first.start, end),
                 originalText: "/" + original + "/"
-            };
+            });
             editor.selection = new vscode.Selection(end, end);
             return;
         }
@@ -2349,15 +2375,20 @@ function escapeSelectionOrDelimitedText() {
         });
         const start = new vscode.Position(position.line, slashIndex);
         const end = start.translate(0, escaped.length);
-        lastDenizenEscapedEdit = {
+        setDenizenEscapedEdit({
             uri: document.uri.toString(),
             range: new vscode.Range(start, end),
             originalText: "/" + rawText + "/"
-        };
+        });
         editor.selection = new vscode.Selection(end, end);
     });
 }
 let lastDenizenSeparatorEdit = undefined;
+/** Twin of `setDenizenEscapedEdit` — see that function's comment for why this exists. */
+function setDenizenSeparatorEdit(edit) {
+    lastDenizenSeparatorEdit = edit;
+    void vscode.commands.executeCommand('setContext', 'denizenscript.canUndoOnBackspace', lastDenizenEscapedEdit !== undefined || lastDenizenSeparatorEdit !== undefined);
+}
 /**
  * SPACE inside a `<map[...]>` or `<list[...]>` types the separator that tag wants.
  *
@@ -2375,7 +2406,7 @@ function typeSpaceOrSeparator() {
         // Every path below starts by forgetting the last separator. A space that was NOT converted
         // means the user has typed something else since, so a Backspace after it must be an ordinary
         // Backspace; the successful path sets a fresh record at the end.
-        lastDenizenSeparatorEdit = undefined;
+        setDenizenSeparatorEdit(undefined);
         if (!isDenizenEditor(editor)) {
             yield typeDefaultText(" ");
             return;
@@ -2401,7 +2432,7 @@ function typeSpaceOrSeparator() {
             editBuilder.insert(position, separator);
         });
         const end = position.translate(0, separator.length);
-        lastDenizenSeparatorEdit = { uri: editor.document.uri.toString(), position: end, inserted: separator };
+        setDenizenSeparatorEdit({ uri: editor.document.uri.toString(), position: end, inserted: separator });
         editor.selection = new vscode.Selection(end, end);
     });
 }
@@ -2424,10 +2455,10 @@ function undoLastDenizenEscapeOrBackspace() {
             });
             const after = start.translate(0, 1);
             editor.selection = new vscode.Selection(after, after);
-            lastDenizenSeparatorEdit = undefined;
+            setDenizenSeparatorEdit(undefined);
             return;
         }
-        lastDenizenSeparatorEdit = undefined;
+        setDenizenSeparatorEdit(undefined);
         if (!isDenizenEditor(editor) || !lastDenizenEscapedEdit || editor.document.uri.toString() != lastDenizenEscapedEdit.uri || editor.selections.length != 1 || !editor.selection.isEmpty) {
             yield vscode.commands.executeCommand("deleteLeft");
             return;
@@ -2446,10 +2477,13 @@ function undoLastDenizenEscapeOrBackspace() {
         });
         const end = range.start.translate(0, originalText.length);
         editor.selection = new vscode.Selection(end, end);
-        lastDenizenEscapedEdit = undefined;
+        setDenizenEscapedEdit(undefined);
     });
 }
 function activateDenizenEscaping(context) {
+    // Explicit rather than relying on an unset context key reading falsy: see
+    // setDenizenEscapedEdit's comment for what this key exists to keep out of the way of.
+    void vscode.commands.executeCommand('setContext', 'denizenscript.canUndoOnBackspace', false);
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.escapeSelectionOrDelimitedText", escapeSelectionOrDelimitedText));
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.undoEscapeOrBackspace", undoLastDenizenEscapeOrBackspace));
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.typeSpaceOrSeparator", typeSpaceOrSeparator));
