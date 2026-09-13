@@ -292,6 +292,54 @@ describe('enum results merge with the command\'s own argument names (bare-prefix
     });
 });
 
+describe('playsound sound_category values', () => {
+    const PLAYSOUND_SYNTAX = 'playsound (<location>|...) (<player>|...) [sound:<name>] (volume:<#.#>) (pitch:<#.#>) (custom) (sound_category:<category_name>)';
+    const SOUND_EXTRA = buildExtraData(parseFlatFds(['sounds:', '- BLOCK.STONE.STEP', ''].join('\n')));
+
+    function playsoundDocs(): MetaDocs {
+        return docsWith(makeCommand('playsound', PLAYSOUND_SYNTAX, 'Plays a sound.'));
+    }
+
+    function labelsFor(text: string): string[] {
+        return provideCompletions(playsoundDocs(), SOUND_EXTRA, text, text.length, 0).map(i => String(i.label));
+    }
+
+    it('completes a partially-typed category', () => {
+        expect(labelsFor('  - playsound sound_category:mas')).toEqual(['master']);
+    });
+
+    it('completes a category typed in the Bukkit enum\'s own uppercase', () => {
+        // The literal input from the request that prompted this: `sound_category:MAST`.
+        expect(labelsFor('  - playsound sound_category:MAST')).toEqual(['master']);
+    });
+
+    it('offers all ten categories once the prefix alone is typed', () => {
+        expect(labelsFor('  - playsound sound_category:')).toHaveLength(10);
+    });
+
+    it('does not offer categories under the sound: prefix', () => {
+        expect(labelsFor('  - playsound sound:mas')).toEqual([]);
+    });
+
+    it('still offers the argument name itself before the colon is typed', () => {
+        // completeCommandArguments reads this off the real syntax; the enum only fires after ':'.
+        expect(labelsFor('  - playsound sound_c')).toEqual(['sound_category:']);
+    });
+});
+
+// The server-side filter folds case (completionProvider.ts, completeEnumValues). VS Code's
+// client-side filtering is case-insensitive too, but it can only narrow what the server sent,
+// so a case-sensitive server filter meant uppercase input completed nothing anywhere.
+describe('enum value filtering is case-insensitive', () => {
+    it('completes an uppercase item prefix', () => {
+        const docs = docsWith(makeCommand('give', 'give [<item>|...]', 'Gives an item.'));
+        const extra = buildExtraData(parseFlatFds(['items:', '- QUARTZ', '- QUARTZ_BLOCK', ''].join('\n')));
+        const text = '  - give QUAR';
+        const labels = provideCompletions(docs, extra, text, text.length, 0).map(i => String(i.label));
+        expect(labels).toEqual(['quartz', 'quartz_block']);
+    });
+});
+
 // Pins the exact replace range computed from cursorContext's argStart/argEnd
 // (rather than a second getLineContext call reconstructing it by subtracting
 // ctx.argValue.length). Verified against live behaviour before the refactor —

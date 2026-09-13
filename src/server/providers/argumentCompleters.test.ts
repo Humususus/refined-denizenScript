@@ -22,6 +22,26 @@ describe('findEnumCompleters', () => {
         expect(completers[0].values(DATA).has('block.stone.step')).toBe(true);
     });
 
+    it('matches playsound on its sound_category prefix', () => {
+        const completers = findEnumCompleters('playsound', 'sound_category');
+        expect(completers).toHaveLength(1);
+        expect(completers[0].label).toBe('Sound Category');
+        expect(completers[0].values(DATA).has('master')).toBe(true);
+    });
+
+    it('offers every Bukkit SoundCategory constant, lowercased', () => {
+        const values = findEnumCompleters('playsound', 'sound_category')[0].values(DATA);
+        expect([...values].sort()).toEqual([
+            'ambient', 'blocks', 'hostile', 'master', 'music', 'neutral', 'players', 'records', 'voice', 'weather'
+        ]);
+    });
+
+    it('keeps playsound sound and sound_category as separate registrations', () => {
+        // Both live under 'playsound'; a prefix match must not leak one into the other.
+        expect(findEnumCompleters('playsound', 'sound')[0].values(DATA).has('master')).toBe(false);
+        expect(findEnumCompleters('playsound', 'sound_category')[0].values(DATA).has('block.stone.step')).toBe(false);
+    });
+
     it('matches modifyblock on its empty prefix', () => {
         const completers = findEnumCompleters('modifyblock', '');
         expect(completers).toHaveLength(1);
