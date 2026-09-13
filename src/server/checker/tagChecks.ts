@@ -30,6 +30,7 @@ import { before, toLowerFast } from './frenetic';
 // imports nothing from checker/ but ./frenetic and ./advancedMatcher.
 import { contextValidatedGetScriptFor } from './containerConvert';
 import { INVENTORY_MATCHERS } from './eventValidators';
+import { isAsyncSafeTypeTag } from './asyncSafety';
 
 /**
  * Context for checking a single script container. Ported from ScriptChecker.cs:772-785.
@@ -49,6 +50,15 @@ export class ScriptCheckContext {
     hasUnknowableDefinitions = false;
     /** Injects or other issues make save-entry names unknowable. (:784) */
     hasUnknowableSaveEntries = false;
+    /**
+     * NOT IN THE C#. True while checking the body of an `async` block (asyncSafety.ts).
+     *
+     * MUST BE SAVED AND RESTORED around the recursion in containerChecks.ts: a single
+     * ScriptCheckContext is shared by a whole container, siblings included, so assigning this on
+     * the way into a block and leaving it set would leak "inside async" onto every command
+     * AFTER the block at the parent indent level.
+     */
+    insideAsyncBlock = false;
 }
 
 /**
@@ -377,6 +387,37 @@ export function checkSingleTag(
             checker.warn(checker.minorWarnings, line, 'deprecated_tag_part', s, startChar + part.startChar, startChar + part.startChar + part.text.length);
         }
     });
+    // NOT IN THE C#. Async-safety of the tag itself, from DenizenM's markings (asyncSafety.ts).
+    //
+    // ONE AXIS, not two. The source marks both tag BASES (`markMainThreadOnly("player", ...)`) and
+    // object TYPES (`@asyncsave PlayerTag: ...`), but both are handed the same allow-list, so
+    // `<player.name>` and `<[someplayer].name>` get the same answer. Reading it off the traced
+    // type covers both spellings with one lookup, which is why there is no separate base check.
+    //
+    // ONLY WHEN EXACTLY ONE TAG MATCHED, borrowing the rule the parameter checks below already
+    // use. A tag reached through a definition -- `<[ent].location>` -- matches `location` on
+    // several types at once, and the real runtime type is exactly what the checker cannot know;
+    // guessing one would squiggle correct script. Ambiguity means silence.
+    //
+    // `checker.warn` dedups on (line, key), so a line with several unsafe tags reports once.
+    if (context !== null && context.insideAsyncBlock) {
+        for (let i = 1; i < parsed.parts.length; i++) {
+            const possible = trace.possibleTags.get(i) ?? [];
+            if (possible.length !== 1) {
+                continue;
+            }
+            const part = parsed.parts[i];
+            if (!isAsyncSafeTypeTag(possible[0].beforeDot, part.text)) {
+                // NOT `warnPart`, which ends the range at `part.endChar` -- that field is the
+                // index OF the part's last character, so a range built from it is one short. The
+                // `deprecation` callback just below sidesteps it the same way, by measuring the
+                // part's own text instead. Both squiggle a single tag part, so both need it exact.
+                checker.warn(checker.warnings, line, 'async_unsafe_tag',
+                    `\`${possible[0].beforeDot}.${part.text.replaceAll('`', "'")}\` is not async-safe, so inside an \`async\` block reading it hands the queue to the main thread. Read it outside the \`async:\` block and pass the value in through a definition.`,
+                    startChar + part.startChar, startChar + part.startChar + part.text.length);
+            }
+        }
+    }
     // ScriptChecker.cs:503-524. GATED ON THE WORKSPACE, and that is the whole point: every check
     // in `checkTagParam` asks "is this a real item/entity/procedure OR a script in this workspace
     // that defines one", so without cross-file data it would report every script-defined item as
