@@ -67,14 +67,31 @@ Each of these was an empty suggestion list before:
 - **`as[…]`** — object type names in the short form, which is what the 23 deprecated `as_*` tags point at.
 - **`filter[…]`, `parse[…]`, `sort_by_value[…]`** and friends — the tag path applied to each entry, written without its `<>`.
 - **`<custom_color_name>`** — the colour names from your own Denizen colour map.
+- **`- playsound sound_category:`** — the ten Bukkit sound categories. The meta documents the argument but links out to a javadoc rather than listing the values, so these ship with the extension.
 
-> The first four work on both engines. The last four read the meta through the language server, so they need the TypeScript engine.
+> The first four work on both engines. The rest go through the TypeScript language server, so they need that engine.
+
+Enum argument values also complete case-insensitively — `sound_category:MAST` and `give QUAR` both work, where an uppercase prefix used to match nothing at all.
 
 ### Quick Fixes
 Lightbulb actions, offered only where the checker already reports something and its message already names the edit:
 
 - Add a missing `:` or `- ` to a line that needs one, including `- if true == false` with no trailing colon.
 - **Rewrite a deprecated tag** — `as_entity` → `as[entity]`. Offered for the 24 tags whose deprecation names a single, unambiguous replacement, and deliberately withheld for the rest rather than guessing at a rewrite that would lose your arguments.
+
+### Async-safety checks
+Inside a DenizenM `- async:` block, a command or tag that isn't safe off the main thread is reported. It still runs — Denizen hands it back to the main thread — but the async queue then waits on it, which is usually the opposite of why the block was written.
+
+- **`async_unsafe_command`** — `- teleport` inside `async`. Commands Denizen can defer to the main thread without waiting (`compass`, `fakeequip`, `actionbar`) count as safe, so they stay quiet.
+- **`async_unsafe_tag`** — `<player.health>` inside `async`. `<player.name>` is fine: the safe list is per object type, and `name` is on it.
+
+Reported only when a tag resolves to exactly one documented type. `<[ent].location>` matches several types at once and the real runtime type is precisely what the checker cannot know, so it says nothing rather than guessing.
+
+The lists are transcribed from DenizenM's own machine-readable `@asyncsave` / `@asynccmd` markings — the meta has no field for thread-safety. The whole check switches itself off unless the loaded meta actually has the `async` command, so plain Denizen sees nothing new.
+
+Silence them per file with `##ignorewarning async_unsafe_command` or `##ignorewarning async_unsafe_tag`.
+
+→ [DenizenM](https://github.com/Energobro/DenizenM-Tjtoxshpilivili1)
 
 ### Go to definition
 <kbd>F12</kbd> on a flag jumps to where it is set; on a script name, to the container that defines it.

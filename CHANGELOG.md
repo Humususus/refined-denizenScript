@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+### New features
+
+- **Async-safety diagnostics.** A command or tag inside a DenizenM `- async:` block that isn't
+  safe off the main thread is now reported — it still runs, but Denizen hands it back to the main
+  thread and the async queue waits on it, which is usually the opposite of what the block was
+  written for. The lists come from DenizenM's own machine-readable `@asyncsave` / `@asynccmd`
+  markings, so `narrate` and `playsound` stay quiet (they run async or defer cleanly) while
+  `teleport` and `<player.health>` are flagged. Silenced per file with
+  `##ignorewarning async_unsafe_command` / `async_unsafe_tag`.
+
+  Two deliberate limits, both to avoid squiggling correct script: a tag is only reported when it
+  resolves to exactly one documented type — `<[ent].location>` is ambiguous by nature and stays
+  silent — and commands that Denizen can defer to the main thread without waiting (`compass`,
+  `fakeequip`, `actionbar`) are treated as safe. The whole check switches itself off unless the
+  loaded meta actually has the `async` command, so plain Denizen without the fork sees nothing new.
+
+- **`playsound sound_category:` completion.** The ten Bukkit sound categories are now offered.
+  The meta documents the argument but links out to a javadoc instead of listing the values, so
+  they ship with the extension.
+
+### Fixes
+
+- Enum argument completion was case-sensitive, so an uppercase prefix matched nothing at all —
+  `- playsound sound_category:MAST` and `- give QUAR` both completed to an empty list, and VS
+  Code's own filtering couldn't recover because it only narrows what the server already sent.
+  Denizen resolves these arguments case-insensitively, so uppercase input is valid script.
+
+### Performance
+
+- The workspace symbol index was rebuilt on **every keystroke**: two regexes over every line of
+  the edited file, then a union of three sets across every indexed `.dsc` in the workspace, all on
+  the extension host's thread. On a 4000-line script that was the main source of typing lag. It's
+  now debounced by 300ms, which costs nothing in correctness — completion already re-indexes the
+  active document before reading it.
+- Document colour scanning is cached per document version. VS Code re-requests colours on
+  decoration refreshes, focus changes and configuration changes; each of those used to be a fresh
+  full-file scan.
+
 ## 2.1.1
 
 ### Fixes
