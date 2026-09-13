@@ -14,6 +14,7 @@ const buildArgs_1 = require("./buildArgs");
 const tagChecks_1 = require("./tagChecks");
 const frenetic_1 = require("./frenetic");
 const containerGather_1 = require("./containerGather");
+const asyncSafety_1 = require("./asyncSafety");
 /**
  * Everything a per-command checker gets to look at.
  * Ported from ScriptCheckerCommandSpecifics.cs:17-67.
@@ -493,6 +494,18 @@ function checkSingleCommand(checker, line, startChar, commandText, context, scri
     }
     if (argCount > command.maximum) {
         checker.warn(checker.errors, line, 'too_many_args', `Too many arguments... the \`${command.name}\` command requires no more than ${command.maximum} arguments, but you provided ${argCount}. Did you forget 'quotes'?`, startChar, startChar + commandText.length);
+    }
+    // NOT IN THE C#. Async-safety, from DenizenM's CommonRegistries markings (asyncSafety.ts).
+    //
+    // The command still RUNS -- Denizen hands an unlisted command to the main thread rather than
+    // refusing it -- so this is a warning about the queue stalling, not an error about broken
+    // script. `isAsyncSafeCommand` folds in the deferrable list, which is why `narrate` and
+    // `playsound` stay quiet here despite not running on the async thread themselves.
+    //
+    // The range is the command NAME, not the whole line: the fix is to move this one command, and
+    // a full-line squiggle inside an already-indented block reads as if the block were at fault.
+    if (context.insideAsyncBlock && !(0, asyncSafety_1.isAsyncSafeCommand)(commandName)) {
+        checker.warn(checker.warnings, line, 'async_unsafe_command', `The \`${command.name}\` command is not async-safe, so inside an \`async\` block it is handed to the main thread and the async queue waits on it. Move it outside the \`async:\` block, or drop the block if the whole task needs the main thread.`, startChar, startChar + cmdLen);
     }
     // ScriptChecker.cs:865-868
     const specific = exports.COMMAND_CHECKERS.get(commandName);

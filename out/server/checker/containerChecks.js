@@ -19,6 +19,7 @@ const tagChecks_1 = require("./tagChecks");
 const commandSpecifics_1 = require("./commandSpecifics");
 const eventTools_1 = require("./eventTools");
 const frenetic_1 = require("./frenetic");
+const asyncSafety_1 = require("./asyncSafety");
 /** Characters a script title may contain. Ported from ScriptChecker.cs:910. */
 const SCRIPT_TITLE_CHARACTERS_ALLOWED = 'abcdefghijklmnopqrstuvwxyz0123456789_';
 /** Whether every character of `text` is an allowed script-title character. */
@@ -181,7 +182,22 @@ function checkOneContainer(checker, script, warnScript) {
                     // a Map. The guard is ported because the C# has it; a mutant that removes it
                     // survives every test, and that survival is expected rather than a gap.
                     if (!onlyEntry.key.text.startsWith('definemap')) {
+                        // NOT IN THE C#. This recursion site is the only place the parent block
+                        // command is in hand, so it is where "we are inside an `async` block" gets
+                        // recorded. Gated on the meta knowing `async` at all: it is DenizenM's
+                        // command, not core Denizen's, and without that fork loaded the line is
+                        // already reported as `unknown_command` -- stacking async advice on top of
+                        // that would be noise about a command the user does not have.
+                        //
+                        // Save/restore, because `ctx` is shared with every sibling: see the note on
+                        // ScriptCheckContext.insideAsyncBlock.
+                        const wasInsideAsync = ctx.insideAsyncBlock;
+                        if (checker.meta !== null && checker.meta.commands.has('async')
+                            && (0, asyncSafety_1.asyncBlockCommandName)(onlyEntry.key.text) !== null) {
+                            ctx.insideAsyncBlock = true;
+                        }
                         checkAsScript(onlyEntry.value, ctx);
+                        ctx.insideAsyncBlock = wasInsideAsync;
                     }
                 }
             }

@@ -39,6 +39,22 @@ function build() {
     register(map, ['disguise'], { prefix: 'as', label: 'Entity Type', values: d => d.entities });
     register(map, ['playeffect'], { prefix: 'effect', label: 'Particle Effect', values: d => new Set([...d.particles, ...d.effects]) });
     register(map, ['playsound'], { prefix: 'sound', label: 'Sound Enum', values: d => d.sounds });
+    // NO C# COUNTERPART: CommandTabCompletions.cs registers only playsound's `sound:` argument,
+    // so `sound_category:` completes nothing on either engine.
+    //
+    // Hardcoded rather than read from ExtraData because there is nothing to read. The meta's
+    // own playsound entry documents the argument as `(sound_category:<category_name>)` and then
+    // defers to https://hub.spigotmc.org/javadocs/spigot/org/bukkit/SoundCategory.html for the
+    // values instead of listing them, and minecraft.fds (extraData.ts) carries no sound-category
+    // section either. So this mirrors `determine` below: a literal set, not a data lookup.
+    //
+    // Lowercase to match every other completer -- ExtraData lowercases everything it parses, and
+    // Denizen resolves the argument through ElementTag.asEnum, which is case-insensitive. The
+    // Bukkit enum spells them uppercase; typing it that way still matches, because
+    // completeEnumValues folds case before filtering.
+    register(map, ['playsound'], { prefix: 'sound_category', label: 'Sound Category', values: () => new Set([
+            'ambient', 'blocks', 'hostile', 'master', 'music', 'neutral', 'players', 'records', 'voice', 'weather'
+        ]) });
     register(map, ['give', 'fakeitem', 'displayitem', 'drop', 'itemcooldown'], { prefix: '', label: 'Item', values: d => d.items });
     register(map, ['take'], { prefix: 'item', label: 'Item', values: d => d.items });
     register(map, ['cast'], { prefix: '', label: 'Potion Effect Type', values: d => d.potionEffects });

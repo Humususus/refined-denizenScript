@@ -59,9 +59,18 @@ exports.completeCommandArguments = completeCommandArguments;
 function completeEnumValues(extra, commandName, argPrefix, argValue, range) {
     const completers = (0, argumentCompleters_1.findEnumCompleters)(commandName, argPrefix);
     const results = [];
+    // Case-folded because every registered value is lowercase while `argValue` carries the
+    // user's own typing verbatim (cursorContext.ts:193 slices it off the raw line). A
+    // case-SENSITIVE compare made an uppercase prefix -- `sound_category:MAST`, `- give STO`
+    // -- return nothing at all, and the client cannot recover from that: VS Code's own
+    // filtering is case-insensitive but only ever narrows the list the server already sent.
+    // Denizen itself resolves these arguments case-insensitively, so uppercase input is valid
+    // script, not a typo to be punished. Folding only ever ADDS matches; no input that
+    // completed before completes differently now, and the accepted text stays lowercase.
+    const argValueLow = argValue.toLowerCase();
     for (const completer of completers) {
         for (const value of completer.values(extra)) {
-            if (value.startsWith(argValue)) {
+            if (value.startsWith(argValueLow)) {
                 const textEdit = { range, newText: value };
                 const item = {
                     label: value,
