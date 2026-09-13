@@ -530,6 +530,39 @@ class DenizenWorkspaceIndex {
 
 const workspaceIndex = new DenizenWorkspaceIndex();
 
+/**
+ * Coalesces workspace-index rebuilds during typing.
+ *
+ * `updateDocument` is not cheap on a big file: it re-runs two regexes over EVERY line
+ * (`parseText`) and then `rebuildMerged` unions three Sets across EVERY indexed .dsc file in the
+ * workspace. Driving that straight off `onDidChangeTextDocument` meant paying it once per
+ * keystroke on the extension host's own thread, which is what made a 4000-line script stutter.
+ *
+ * Debouncing is safe rather than merely cheaper: the only readers of the merged sets are the two
+ * flag completions (`getDenizenCompletions`), and `provideCompletionItems` calls `updateDocument`
+ * on the active document itself before reading them. So the live file is always exact at the
+ * moment it matters, and this timer exists only to keep OTHER files' entries reasonably fresh.
+ *
+ * 300ms to match DIAGNOSTIC_DEBOUNCE_MS in server.ts -- no reason for the two to disagree.
+ */
+const INDEX_DEBOUNCE_MS = 300;
+const pendingIndexUpdates = new Map<string, NodeJS.Timeout>();
+
+/** The last document colour scan, reused while the document has not changed. See the provider. */
+let colorCache: { uri: string, version: number, colors: vscode.ColorInformation[] } | undefined = undefined;
+
+function scheduleIndexUpdate(document: vscode.TextDocument) {
+    const key = document.uri.toString();
+    const existing = pendingIndexUpdates.get(key);
+    if (existing !== undefined) {
+        clearTimeout(existing);
+    }
+    pendingIndexUpdates.set(key, setTimeout(() => {
+        pendingIndexUpdates.delete(key);
+        workspaceIndex.updateDocument(document);
+    }, INDEX_DEBOUNCE_MS));
+}
+
 interface GitHubReleaseAsset {
     name: string;
     browser_download_url: string;
@@ -2692,7 +2725,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeTextDocument(event => {
         const curFile : string = event.document.uri.toString();
         if (curFile.endsWith(".dsc")) {
-            workspaceIndex.updateDocument(event.document);
+            scheduleIndexUpdate(event.document);
             let highlight : HighlightCache = getCache(curFile);
             event.contentChanges.forEach(change => {
                 if (highlight.needRefreshStartLine == -1 || change.range.start.line < highlight.needRefreshStartLine) {
@@ -2743,6 +2776,20 @@ export async function activate(context: vscode.ExtensionContext) {
     // the matches themselves.
     context.subscriptions.push(vscode.languages.registerColorProvider('denizenscript', {
         provideDocumentColors(document: vscode.TextDocument): vscode.ProviderResult<vscode.ColorInformation[]> {
+            // Keyed by (uri, version) because VS Code asks for colours far more often than the
+            // document actually changes -- a decoration refresh, an editor regaining focus or a
+            // configuration change all re-request them at the SAME version, and on a 4000-line
+            // file each of those was a fresh full-document scan.
+            //
+            // This does NOT make the typing path cheaper: every keystroke bumps `version`, so the
+            // edit itself still costs one scan. It removes the repeats around it, nothing more.
+            // A single slot rather than a Map: the requests come in bursts for whichever file is
+            // in front of the user, so a one-entry cache catches them without holding documents
+            // alive after the user moves on.
+            const cacheKey = document.uri.toString();
+            if (colorCache !== undefined && colorCache.uri === cacheKey && colorCache.version === document.version) {
+                return colorCache.colors;
+            }
             const results: vscode.ColorInformation[] = [];
             for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
                 for (const found of findHexColors(document.lineAt(lineNumber).text)) {
@@ -2752,6 +2799,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     results.push(new vscode.ColorInformation(range, color));
                 }
             }
+            colorCache = { uri: cacheKey, version: document.version, colors: results };
             return results;
         },
         provideColorPresentations(color: vscode.Color, context: { document: vscode.TextDocument, range: vscode.Range }): vscode.ProviderResult<vscode.ColorPresentation[]> {
