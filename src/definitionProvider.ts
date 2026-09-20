@@ -13,7 +13,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { FileSymbols, indexDefinitions, nameCandidates, referenceAt, sameName } from './definitionIndex';
+import { FileSymbols, ScriptDefinition, indexDefinitions, nameCandidates, referenceAt, sameName } from './definitionIndex';
 
 /** One indexed file: its symbols and the mtime the index was built from. */
 interface IndexedFile {
@@ -92,6 +92,28 @@ export class DenizenDefinitionIndex {
         }
         return [];
     }
+
+    /**
+     * The `definitions:` entries of the container named `name`, or null when there is no such
+     * container or it declares none.
+     *
+     * Follows `locationsFor`'s candidate order, so `- run mytask.subkey` reads the sub-container's
+     * key when one exists and falls back to `mytask` otherwise. Stops at the FIRST container that
+     * declares any: two containers sharing a name is already reported as `duplicate_script` by the
+     * checker, and merging their keys here would invent a definition list neither one has.
+     */
+    definitionsFor(name: string): ScriptDefinition[] | null {
+        for (const candidate of nameCandidates('container', name)) {
+            for (const indexed of this.byPath.values()) {
+                for (const symbol of indexed.symbols.containers) {
+                    if (sameName(symbol.name, candidate) && (symbol.definitions ?? []).length > 0) {
+                        return symbol.definitions!;
+                    }
+                }
+            }
+        }
+        return null;
+    }
 }
 
 export class DenizenDefinitionProvider implements vscode.DefinitionProvider {
@@ -116,10 +138,18 @@ export class DenizenDefinitionProvider implements vscode.DefinitionProvider {
     }
 }
 
-export function activateDefinitionProvider(context: vscode.ExtensionContext): void {
+/**
+ * Registers go-to-definition, and hands back the index it built.
+ *
+ * The index is returned rather than kept private because the script-definitions hover and
+ * completion need exactly the same data -- every `.dsc` container, with a file and a line. Building
+ * a second index of the same files for them would double the workspace scan to no purpose.
+ */
+export function activateDefinitionProvider(context: vscode.ExtensionContext): DenizenDefinitionIndex {
     const index = new DenizenDefinitionIndex();
     context.subscriptions.push(vscode.languages.registerDefinitionProvider(
         { language: 'denizenscript' },
         new DenizenDefinitionProvider(index)
     ));
+    return index;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { indexDefinitions, nameCandidates, referenceAt, sameName } from './definitionIndex';
+import { indexDefinitions, nameCandidates, referenceAt, sameName, parseDefinitionsKey, containerBoundsAt, runDefinitionContextAt } from './definitionIndex';
 
 /**
  * Go-to-definition for flags and script containers. No C# counterpart -- the C# server never
@@ -18,7 +18,8 @@ function at(prefix: string, rest: string = '') {
 describe('indexDefinitions: script containers', () => {
     it('finds a top-level container key', () => {
         const { containers } = indexDefinitions('my_task:\n    type: task\n');
-        expect(containers).toEqual([{ name: 'my_task', line: 0, startChar: 0, endChar: 7 }]);
+        // `definitions` is always present on a container, empty when it declares no such key.
+        expect(containers).toEqual([{ name: 'my_task', line: 0, startChar: 0, endChar: 7, definitions: [] }]);
     });
 
     it('finds several, with their real line numbers', () => {

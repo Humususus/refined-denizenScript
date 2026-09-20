@@ -12,6 +12,7 @@ import { activateQuickFixes } from "./quickFixes";
 import { separatorForSpace } from "./tagSeparators";
 import { CONTAINER_SNIPPETS, containerSnippetText } from "./containerSnippets";
 import { activateDefinitionProvider } from "./definitionProvider";
+import { activateScriptDefinitions } from "./scriptDefinitionsProvider";
 import { activateArgumentHints } from "./argumentHintsProvider";
 import { activateMathEval } from "./mathEvalProvider";
 import { activateDefinitionValueHover } from "./definitionValueHoverProvider";
@@ -2708,7 +2709,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateDenizenEscaping(context);
     activateDiagnosticMuting(context);
     activateQuickFixes(context);
-    activateDefinitionProvider(context);
+    activateScriptDefinitions(context, activateDefinitionProvider(context));
     activateArgumentHints(context, usingTypeScriptServer);
     activateMathEval(context);
     activateDefinitionValueHover(context);

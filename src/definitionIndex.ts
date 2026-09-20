@@ -26,6 +26,26 @@ export interface SymbolLocation {
     line: number;
     startChar: number;
     endChar: number;
+    /**
+     * For a CONTAINER, the entries of its `definitions:` key. Empty when it has none, and always
+     * empty for a flag. Carried here rather than in a second index because the walk that finds the
+     * container is already the walk that would find the key.
+     */
+    definitions?: ScriptDefinition[];
+}
+
+/**
+ * One entry of a container's `definitions:` key.
+ *
+ * The square brackets hold DOCUMENTATION, not a default value -- the meta's task-script-container
+ * language page words it as "You can optionally document a definition with [square brackets]".
+ * Getting that backwards would make the hover claim a default the script does not have.
+ */
+export interface ScriptDefinition {
+    /** The definition name, exactly as written. */
+    name: string;
+    /** The `[...]` documentation, or null when the author wrote none. */
+    description: string | null;
 }
 
 /** Everything one file defines. */
@@ -34,6 +54,60 @@ export interface FileSymbols {
     containers: SymbolLocation[];
     /** Every `- flag <target> <name>` write, whatever the target. */
     flags: SymbolLocation[];
+}
+
+/**
+ * The entries of a `definitions:` key, given everything after the colon.
+ *
+ * `definitions: id[Айди]|target[Энтити]|__player|text` -- pipe-separated, each optionally
+ * documented. Real example from the user's own scripts, which is also why the description is kept
+ * verbatim rather than folded or trimmed of its own punctuation.
+ *
+ * SPLITS AT BRACKET DEPTH 0, where the checker's port of this (containerChecks.ts, seeding
+ * ScriptCheckContext.definitions) splits on every '|'. The divergence only shows on a description
+ * that itself contains a pipe, where the naive split invents a second, nameless entry; the checker
+ * gets away with it because it cuts at '[' and throws the description away, and this does not.
+ */
+export function parseDefinitionsKey(value: string): ScriptDefinition[] {
+    const results: ScriptDefinition[] = [];
+    let depth = 0;
+    let current = '';
+    const flush = (): void => {
+        const entry = current.trim();
+        current = '';
+        if (entry.length === 0) {
+            return;
+        }
+        const open = entry.indexOf('[');
+        if (open === -1) {
+            results.push({ name: entry, description: null });
+            return;
+        }
+        const name = entry.slice(0, open).trim();
+        // `lastIndexOf` rather than the matching bracket: a description may legitimately contain
+        // brackets, and the entry ends at the outermost close whatever is nested inside it.
+        const close = entry.lastIndexOf(']');
+        const description = close > open ? entry.slice(open + 1, close).trim() : entry.slice(open + 1).trim();
+        if (name.length === 0) {
+            return;
+        }
+        results.push({ name, description: description.length === 0 ? null : description });
+    };
+    for (const ch of value) {
+        if (ch === '[') {
+            depth++;
+        }
+        else if (ch === ']') {
+            depth = Math.max(0, depth - 1);
+        }
+        else if (ch === '|' && depth === 0) {
+            flush();
+            continue;
+        }
+        current += ch;
+    }
+    flush();
+    return results;
 }
 
 /** What the cursor is sitting on, if it is sitting on a reference at all. */
@@ -82,6 +156,8 @@ export function sameName(a: string, b: string): boolean {
 export function indexDefinitions(text: string): FileSymbols {
     const containers: SymbolLocation[] = [];
     const flags: SymbolLocation[] = [];
+    /** The container whose body the walk is currently inside, for attaching `definitions:`. */
+    let openContainer: SymbolLocation | null = null;
     const lines = text.replace(/\r/g, '').split('\n');
     for (let line = 0; line < lines.length; line++) {
         const raw = lines[line];
@@ -94,8 +170,23 @@ export function indexDefinitions(text: string): FileSymbols {
         // container name Denizen would not accept anyway.
         const container = /^([A-Za-z_][A-Za-z0-9_\-.]*):\s*$/.exec(raw);
         if (container !== null) {
-            containers.push({ name: container[1], line, startChar: 0, endChar: container[1].length });
+            containers.push({ name: container[1], line, startChar: 0, endChar: container[1].length, definitions: [] });
+            // A new container ends the previous one, so the next `definitions:` belongs to this.
+            openContainer = containers[containers.length - 1];
             continue;
+        }
+        // The `definitions:` key of the container currently open above.
+        //
+        // FIRST ONE WINS, and it must be indented. A container's own key is the one that names what
+        // `- run` passes in; a deeper `definitions:` -- inside a `data:` block, or under a `path:`
+        // sub-key -- is something else, and this walk is line-based and cannot tell how deep it
+        // really is. Taking only the first is the same under-match bias as the rest of this file.
+        if (openContainer !== null && (openContainer.definitions ?? []).length === 0) {
+            const defs = /^\s+definitions:\s*(.*)$/i.exec(raw);
+            if (defs !== null) {
+                openContainer.definitions = parseDefinitionsKey(defs[1]);
+                continue;
+            }
         }
         // `- flag <target> <name>[:<value>]`. The target is skipped: it may be `player`, `server`,
         // `npc`, or any tag such as `<[ent]>`, and which of those it is does not change WHERE the
@@ -120,6 +211,34 @@ export function indexDefinitions(text: string): FileSymbols {
         }
     }
     return { containers, flags };
+}
+
+/**
+ * The half-open line range of the script container containing `line`.
+ *
+ * A container starts at a column-0 `name:` key and runs until the next one. Blank and comment
+ * lines do not end it -- a comment between two containers reads as part of the first, which costs
+ * nothing since nothing is looked up in comments anyway.
+ *
+ * Returns the WHOLE file when `line` sits above the first container key, which is the honest answer
+ * for a file that has none: there is no container to scope to, so nothing is scoped away.
+ */
+export function containerBoundsAt(lines: string[], line: number): { start: number, end: number } {
+    let start = 0;
+    for (let i = Math.min(line, lines.length - 1); i >= 0; i--) {
+        if (/^[A-Za-z_][A-Za-z0-9_\-.]*:\s*$/.test(lines[i])) {
+            start = i;
+            break;
+        }
+    }
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) {
+        if (/^[A-Za-z_][A-Za-z0-9_\-.]*:\s*$/.test(lines[i])) {
+            end = i;
+            break;
+        }
+    }
+    return { start, end };
 }
 
 /**
@@ -183,6 +302,64 @@ function flagReferenceAt(lineText: string, character: number): SymbolReference |
         return { kind: 'flag', name, startChar: open + 1, endChar: close };
     }
     return null;
+}
+
+/**
+ * Commands that accept `def.<name>:<value>` arguments.
+ *
+ * A strict subset of RUN_LIKE_COMMANDS: `inject` runs a script in the CURRENT queue and shares its
+ * definitions, so it documents no `def` argument and offering one would be inventing syntax.
+ * Mirrors `deffableCmdLabels` in extension.ts, which drives the same distinction for highlighting.
+ */
+const DEF_PASSING_COMMANDS = new Set<string>(['run', 'runlater', 'clickable', 'bungeerun']);
+
+/** Where the cursor sits on a `- run <script> ...` line, for completing its `def.` arguments. */
+export interface RunDefinitionContext {
+    /** The script name the command names, exactly as written. */
+    scriptName: string;
+    /** Folded `def.<name>` names already written on the line, so they are not offered twice. */
+    present: Set<string>;
+    /** The partial argument the cursor is inside, which an accepted suggestion replaces. */
+    typed: string;
+}
+
+/**
+ * The `- run <script>` line the cursor is on, or null.
+ *
+ * Distinct from `containerReferenceAt` because the two want opposite positions: that one needs the
+ * cursor ON the script name, this one needs it AFTER, in the argument area. Firing while the name
+ * is still being typed would offer to fill in definitions for a script the author has not finished
+ * naming, and would fight the script-name completion for the same keystrokes.
+ */
+export function runDefinitionContextAt(lineText: string, character: number): RunDefinitionContext | null {
+    const command = /^(\s*-\s*)(?:~|\^)?([A-Za-z_][A-Za-z0-9_]*)(\s+)(\S+)/.exec(lineText);
+    if (command === null || !DEF_PASSING_COMMANDS.has(foldAscii(command[2]))) {
+        return null;
+    }
+    const name = command[4];
+    // Same two exclusions as containerReferenceAt: a name built from a tag cannot be resolved
+    // statically, and a `prefix:value` in the first slot is an argument, not a script name.
+    if (name.includes('<') || name.includes(':')) {
+        return null;
+    }
+    const nameEnd = command[0].length;
+    // Strictly after, and after at least one space: at `nameEnd` itself the caret is still touching
+    // the last letter of the name.
+    if (character <= nameEnd) {
+        return null;
+    }
+    const prefix = lineText.slice(0, character);
+    const lastSpace = prefix.lastIndexOf(' ');
+    const typed = lastSpace === -1 ? '' : prefix.slice(lastSpace + 1);
+    // A caret inside an unclosed tag is writing a VALUE, not an argument name.
+    if (typed.includes('<')) {
+        return null;
+    }
+    const present = new Set<string>();
+    for (const match of lineText.matchAll(/(?:^|\s)def\.([^\s:]+):/gi)) {
+        present.add(foldAscii(match[1]));
+    }
+    return { scriptName: name, present, typed };
 }
 
 /** The index of the `]` matching the `[` at `open`, or -1. Depth-counting, so nesting is safe. */
