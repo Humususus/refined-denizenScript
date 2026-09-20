@@ -46,6 +46,7 @@ const quickFixes_1 = require("./quickFixes");
 const tagSeparators_1 = require("./tagSeparators");
 const containerSnippets_1 = require("./containerSnippets");
 const definitionProvider_1 = require("./definitionProvider");
+const scriptDefinitionsProvider_1 = require("./scriptDefinitionsProvider");
 const argumentHintsProvider_1 = require("./argumentHintsProvider");
 const mathEvalProvider_1 = require("./mathEvalProvider");
 const definitionValueHoverProvider_1 = require("./definitionValueHoverProvider");
@@ -2587,7 +2588,7 @@ function activate(context) {
         activateDenizenEscaping(context);
         activateDiagnosticMuting(context);
         (0, quickFixes_1.activateQuickFixes)(context);
-        (0, definitionProvider_1.activateDefinitionProvider)(context);
+        (0, scriptDefinitionsProvider_1.activateScriptDefinitions)(context, (0, definitionProvider_1.activateDefinitionProvider)(context));
         (0, argumentHintsProvider_1.activateArgumentHints)(context, usingTypeScriptServer);
         (0, mathEvalProvider_1.activateMathEval)(context);
         (0, definitionValueHoverProvider_1.activateDefinitionValueHover)(context);

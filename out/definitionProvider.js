@@ -117,6 +117,28 @@ class DenizenDefinitionIndex {
         }
         return [];
     }
+    /**
+     * The `definitions:` entries of the container named `name`, or null when there is no such
+     * container or it declares none.
+     *
+     * Follows `locationsFor`'s candidate order, so `- run mytask.subkey` reads the sub-container's
+     * key when one exists and falls back to `mytask` otherwise. Stops at the FIRST container that
+     * declares any: two containers sharing a name is already reported as `duplicate_script` by the
+     * checker, and merging their keys here would invent a definition list neither one has.
+     */
+    definitionsFor(name) {
+        var _a;
+        for (const candidate of (0, definitionIndex_1.nameCandidates)('container', name)) {
+            for (const indexed of this.byPath.values()) {
+                for (const symbol of indexed.symbols.containers) {
+                    if ((0, definitionIndex_1.sameName)(symbol.name, candidate) && ((_a = symbol.definitions) !== null && _a !== void 0 ? _a : []).length > 0) {
+                        return symbol.definitions;
+                    }
+                }
+            }
+        }
+        return null;
+    }
 }
 exports.DenizenDefinitionIndex = DenizenDefinitionIndex;
 class DenizenDefinitionProvider {
@@ -144,9 +166,17 @@ class DenizenDefinitionProvider {
     }
 }
 exports.DenizenDefinitionProvider = DenizenDefinitionProvider;
+/**
+ * Registers go-to-definition, and hands back the index it built.
+ *
+ * The index is returned rather than kept private because the script-definitions hover and
+ * completion need exactly the same data -- every `.dsc` container, with a file and a line. Building
+ * a second index of the same files for them would double the workspace scan to no purpose.
+ */
 function activateDefinitionProvider(context) {
     const index = new DenizenDefinitionIndex();
     context.subscriptions.push(vscode.languages.registerDefinitionProvider({ language: 'denizenscript' }, new DenizenDefinitionProvider(index)));
+    return index;
 }
 exports.activateDefinitionProvider = activateDefinitionProvider;
 //# sourceMappingURL=definitionProvider.js.map
