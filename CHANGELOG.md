@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.3.1
+
+### Fixes
+
+- **Picking a `prefix:` argument from the list gave no value suggestions.** Choosing `sound:` or
+  `sound_category:` inserted the argument and stopped there; the sounds and categories only
+  appeared if you typed the colon by hand. `:` is a completion trigger character, which is why
+  typing it worked — but VS Code does not re-query providers after inserting a completion, so
+  accepting the same argument from the list did nothing. Those arguments now re-open the list
+  themselves.
+
+  Applies to the five prefixed arguments that have values to offer: `playsound sound:`,
+  `playsound sound_category:`, `playeffect effect:`, `disguise as:` and `take item:`. Deliberately
+  not applied to prefixes that take free text — `volume:` popping an empty list open reads as
+  broken rather than as absent.
+
 ## 2.3.0
 
 ### New features
