@@ -292,6 +292,40 @@ describe('enum results merge with the command\'s own argument names (bare-prefix
     });
 });
 
+// User report 2026-09-14: picking `sound:` or `sound_category:` from the list gave no value
+// suggestions, "only if you type the colon yourself". `:` is a completion trigger character, so
+// typing it re-queried; accepting an item did not, because VS Code does not re-query on its own.
+describe('prefixed arguments re-trigger the suggestion list', () => {
+    const PLAYSOUND = 'playsound (<location>|...) [sound:<name>] (volume:<#.#>) (sound_category:<category_name>)';
+
+    function commandFor(item: string): any {
+        const command = makeCommand('playsound', PLAYSOUND, 'Plays a sound.');
+        return completeCommandArguments(docsWith(command).commands.get('playsound')!, '')
+            .find(i => i.label === item);
+    }
+
+    it('attaches the re-trigger to a prefix that has values to offer', () => {
+        expect(commandFor('sound:').command).toEqual({
+            title: 'Suggest values', command: 'editor.action.triggerSuggest'
+        });
+        expect(commandFor('sound_category:').command.command).toBe('editor.action.triggerSuggest');
+    });
+
+    it('leaves a free-text prefix alone', () => {
+        // MUTANT: attaching it to every prefixed argument. `volume:` takes a number, so this would
+        // pop an empty list open -- which reads as broken rather than as absent.
+        expect(commandFor('volume:').command).toBeUndefined();
+    });
+
+    it('never attaches it to an unprefixed argument', () => {
+        const command = makeCommand('give', 'give [<item>|...] (quantity:<#>)', 'Gives an item.');
+        const items = completeCommandArguments(docsWith(command).commands.get('give')!, '');
+        for (const item of items.filter(i => !String(i.label).endsWith(':'))) {
+            expect(item.command).toBeUndefined();
+        }
+    });
+});
+
 describe('playsound sound_category values', () => {
     const PLAYSOUND_SYNTAX = 'playsound (<location>|...) (<player>|...) [sound:<name>] (volume:<#.#>) (pitch:<#.#>) (custom) (sound_category:<category_name>)';
     const SOUND_EXTRA = buildExtraData(parseFlatFds(['sounds:', '- BLOCK.STONE.STEP', ''].join('\n')));

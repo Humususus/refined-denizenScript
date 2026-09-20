@@ -6,7 +6,7 @@
  * mechanism, event, and workspace-driven completions arrive in later phases.
  */
 
-import { CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 'vscode-languageserver';
+import { Command, CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand, MetaTag, MetaEvent } from '../metaDocs/metaTypes';
 import { matchEventLine, contextNamesForEvent } from '../checker/eventLineMatch';
 import { describeCommand, describeScript, describeTag, descriptionClean, linkMeta, obligatoryText } from './describe';
@@ -35,6 +35,17 @@ export function completeCommandNames(docs: MetaDocs, partial: string): Completio
     return results;
 }
 
+/**
+ * Re-opens the suggestion list as soon as an item is accepted.
+ *
+ * Attached to a `prefix:` argument that has values to offer, because accepting one leaves the
+ * caret exactly where those values go and VS Code does NOT re-query providers on its own after an
+ * insertion. `:` IS a completion trigger character (server.ts), which is why typing the colon by
+ * hand always worked while picking the same argument from the list did not -- reported as "no
+ * suggestions for sounds or categories unless you type the colon yourself".
+ */
+const TRIGGER_SUGGEST: Command = { title: 'Suggest values', command: 'editor.action.triggerSuggest' };
+
 /** The command's documented arguments that start with `argSoFar`. Prefixed arguments gain a trailing colon. */
 export function completeCommandArguments(command: MetaCommand, argSoFar: string): CompletionItem[] {
     const results: CompletionItem[] = [];
@@ -45,7 +56,15 @@ export function completeCommandArguments(command: MetaCommand, argSoFar: string)
     }
     for (const arg of command.argPrefixes) {
         if (arg.clean.startsWith(argSoFar)) {
-            results.push({ label: `${arg.clean}:`, kind: CompletionItemKind.Field, detail: arg.raw });
+            const item: CompletionItem = { label: `${arg.clean}:`, kind: CompletionItemKind.Field, detail: arg.raw };
+            // ONLY WHERE THERE IS SOMETHING TO SHOW. Re-triggering on every prefixed argument would
+            // pop an empty list open after `volume:` or `delay:`, which take a free number -- worse
+            // than not re-triggering at all, because it looks like the feature is broken rather
+            // than absent.
+            if (findEnumCompleters(command.name, arg.clean).length > 0) {
+                item.command = TRIGGER_SUGGEST;
+            }
+            results.push(item);
         }
     }
     return results;
