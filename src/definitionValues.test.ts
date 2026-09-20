@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { definitionReferenceAt, findDefineAssignments } from './definitionValues';
+import { definitionReferenceAt, findDefineAssignments, activeAssignment } from './definitionValues';
 
 describe('definitionReferenceAt', () => {
     it('reads the name and span when the cursor sits inside <[...]>', () => {
@@ -114,5 +114,111 @@ describe('findDefineAssignments', () => {
         // verbatim and uninterpreted.
         const text = "    - define clan_name_regex '^[A-Za-z0-9!@\\[\\]()]{1,16}$'";
         expect(findDefineAssignments(text, 'clan_name_regex')[0].value).toBe("'^[A-Za-z0-9!@\\[\\]()]{1,16}$'");
+    });
+});
+
+// User report 2026-09-14: "ховер не работает на <[ent].some.tags> только вот так работает <[ent]>".
+// The old pattern required `]>`, so anything read OFF the definition -- by far the commoner form --
+// had a '.' where it wanted '>' and did not match at all.
+describe('definitionReferenceAt: a definition with tag parts after it', () => {
+    it('fires on the name when sub-tags follow', () => {
+        const line = '    - narrate <[ent].some.tags>';
+        const ref = definitionReferenceAt(line, line.indexOf('ent') + 1)!;
+        expect(ref.name).toBe('ent');
+        // The underline covers the reference only, not the tag parts that read off it.
+        expect(line.slice(ref.start, ref.end)).toBe('<[ent]');
+    });
+
+    it('fires on a parameterised tag part after the definition', () => {
+        const line = '    - narrate <[ent].flag[x]>';
+        expect(definitionReferenceAt(line, line.indexOf('ent') + 1)!.name).toBe('ent');
+    });
+
+    it('still covers the closing > of a bare reference', () => {
+        // MUTANT: ending the span at ']' unconditionally, which would shrink the hover area of
+        // every plain `<[id]>` -- the form that already worked.
+        const line = '    - narrate <[myvar]>';
+        const ref = definitionReferenceAt(line, line.indexOf('myvar') + 2)!;
+        expect(line.slice(ref.start, ref.end)).toBe('<[myvar]>');
+    });
+
+    it('is not confused by a bracketed tag that is not a definition', () => {
+        // `<list[...]>` has a '[' but no `<[`, so it must not be read as a definition.
+        expect(definitionReferenceAt('    - narrate <list[a|b]>', 20)).toBeNull();
+    });
+
+    it('picks the definition the cursor is actually inside when a line has two', () => {
+        const line = '    - narrate <[a].x> <[b].y>';
+        expect(definitionReferenceAt(line, line.indexOf('<[b]') + 2)!.name).toBe('b');
+    });
+});
+
+// User report 2026-09-14: "показывается ваще все значения во всех скриптах". A definition is
+// queue-scoped, so a `- define` in another container is a different variable of the same name.
+describe('findDefineAssignments: container scope', () => {
+    const text = [
+        'first:',                    // 0
+        '    type: task',            // 1
+        '    script:',               // 2
+        '    - define hook alpha',   // 3
+        'second:',                   // 4
+        '    type: task',            // 5
+        '    script:',               // 6
+        '    - define hook beta',    // 7
+        '    - narrate <[hook]>',    // 8
+        '    - define hook gamma'    // 9
+    ].join('\n');
+
+    it('finds every assignment in the file when no scope is given', () => {
+        expect(findDefineAssignments(text, 'hook').map(a => a.value))
+            .toEqual(['alpha', 'beta', 'gamma']);
+    });
+
+    it('drops assignments from another container when scoped', () => {
+        // MUTANT: ignoring the scope argument, which is the reported bug.
+        expect(findDefineAssignments(text, 'hook', { start: 4, end: 10 }).map(a => a.value))
+            .toEqual(['beta', 'gamma']);
+    });
+
+    it('clamps a scope that runs past the end of the file', () => {
+        expect(findDefineAssignments(text, 'hook', { start: 4, end: 9999 }).map(a => a.value))
+            .toEqual(['beta', 'gamma']);
+    });
+
+    it('returns nothing for a scope holding no assignment', () => {
+        expect(findDefineAssignments(text, 'hook', { start: 0, end: 3 })).toEqual([]);
+    });
+});
+
+// User report 2026-09-14: "Нужно показывать только то, что записано последним в этот дефинишен".
+describe('activeAssignment', () => {
+    const found = [
+        { line: 2, value: 'first', waitable: false },
+        { line: 5, value: 'second', waitable: false },
+        { line: 9, value: 'third', waitable: false }
+    ];
+
+    it('takes the last assignment at or above the hovered line', () => {
+        // MUTANT: taking the last assignment outright, which reports a value assigned BELOW the
+        // hover -- one that has not run yet at that point in the script.
+        expect(activeAssignment(found, 7)!.value).toBe('second');
+    });
+
+    it('counts an assignment on the hovered line itself', () => {
+        expect(activeAssignment(found, 5)!.value).toBe('second');
+    });
+
+    it('takes the last one when the hover sits below them all', () => {
+        expect(activeAssignment(found, 100)!.value).toBe('third');
+    });
+
+    it('falls back to the last when the hover sits above them all', () => {
+        // MUTANT: returning null here, which would silence the hover on a perfectly ordinary
+        // forward reference.
+        expect(activeAssignment(found, 0)!.value).toBe('third');
+    });
+
+    it('returns null when there is nothing to report', () => {
+        expect(activeAssignment([], 3)).toBeNull();
     });
 });

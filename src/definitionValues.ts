@@ -38,6 +38,31 @@ export interface DefineAssignment {
     waitable: boolean;
 }
 
+/**
+ * The assignment that answers "what is in `<[id]>` here", out of those already scoped to one
+ * container, or null when there are none.
+ *
+ * Prefers the last one AT OR ABOVE `line`, because that is the one that has run by the time
+ * execution reaches the hovered line. Falls back to the last in the container when the author
+ * hovers a use that sits above every assignment of that name -- showing a later line, labelled
+ * with its number, beats showing nothing.
+ *
+ * This provider used to list every assignment instead, on the grounds that which one is live can
+ * vary by branch or loop iteration. That is true and is why the line number is always rendered;
+ * in practice the full list filled the popup with lines the author was not asking about.
+ */
+export function activeAssignment(found: DefineAssignment[], line: number): DefineAssignment | null {
+    if (found.length === 0) {
+        return null;
+    }
+    for (let i = found.length - 1; i >= 0; i--) {
+        if (found[i].line <= line) {
+            return found[i];
+        }
+    }
+    return found[found.length - 1];
+}
+
 /** A `<[id]>` reference found under the cursor. */
 export interface DefinitionReference {
     name: string;
@@ -57,9 +82,20 @@ export interface DefinitionReference {
  * at -- there is no static text to look up in that case.
  */
 export function definitionReferenceAt(line: string, character: number): DefinitionReference | null {
-    for (const m of line.matchAll(/<\[([^\[\]<>]*)\]>/g)) {
+    // MATCHES `<[name]` WITHOUT REQUIRING THE `>`. Requiring `]>` meant the hover only ever fired
+    // on a bare `<[ent]>` and went silent the moment the author read anything off it --
+    // `<[ent].some.tags>` has a '.' where the pattern wanted '>', so it did not match at all. That
+    // is the commoner form by far, and it was reported as the hover simply not working.
+    //
+    // The bracket content is still the whole name, dots included: `Define`'s own description states
+    // `<[a.b.c]>` is equivalent to `<[a].get[b].get[c]>`. What follows the ']' is tag parts, which
+    // belong to the tag rather than to the definition being looked up.
+    for (const m of line.matchAll(/<\[([^\[\]<>]*)\]/g)) {
         const start = m.index;
-        const end = start + m[0].length;
+        // The '>' is taken in when the reference IS the whole tag, so the hover area over a bare
+        // `<[id]>` is exactly what it was before this pattern changed.
+        const afterBracket = start + m[0].length;
+        const end = line[afterBracket] === '>' ? afterBracket + 1 : afterBracket;
         if (character < start || character > end) {
             continue;
         }
@@ -71,21 +107,27 @@ export function definitionReferenceAt(line: string, character: number): Definiti
 
 /**
  * Every plain `- define <name> <value>` (or `- ~define ...`) assignment of `name` in `text`, in
- * file order.
+ * file order, optionally restricted to a half-open line range.
  *
  * Comment lines are skipped, matching `definitionIndex.ts`: a commented-out assignment is not one.
+ *
+ * `scope` is how the hover stays inside ONE container. A definition is queue-scoped, so a `- define
+ * hook` in a different container of the same file is a different variable that happens to share a
+ * name -- listing it was reported as the hover "showing every value in every script".
  */
-export function findDefineAssignments(text: string, name: string): DefineAssignment[] {
+export function findDefineAssignments(text: string, name: string, scope?: { start: number, end: number }): DefineAssignment[] {
     const target = foldAscii(name);
     const results: DefineAssignment[] = [];
     const lines = text.replace(/\r/g, '').split('\n');
+    const from = scope === undefined ? 0 : Math.max(0, scope.start);
+    const to = scope === undefined ? lines.length : Math.min(lines.length, scope.end);
     // Name: the same identifier-plus-dot shape `argumentValue` in scopeDefinitions.ts reads a
     // define target from, so a sub-mapped id like `myroot.mykey` is captured whole. Requiring
     // whitespace directly after the name is what excludes `name:->:value` and `name:!`: both put a
     // ':' there instead, so neither reaches this pattern at all -- not matched with the wrong
     // meaning, simply not matched.
     const pattern = /^\s*-\s*(~?)define\s+([A-Za-z_][A-Za-z0-9_.]*)\s+(.+)$/i;
-    for (let line = 0; line < lines.length; line++) {
+    for (let line = from; line < to; line++) {
         const raw = lines[line];
         if (raw.trim().startsWith('#')) {
             continue;
