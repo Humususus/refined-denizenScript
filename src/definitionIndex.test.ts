@@ -18,8 +18,11 @@ function at(prefix: string, rest: string = '') {
 describe('indexDefinitions: script containers', () => {
     it('finds a top-level container key', () => {
         const { containers } = indexDefinitions('my_task:\n    type: task\n');
-        // `definitions` is always present on a container, empty when it declares no such key.
-        expect(containers).toEqual([{ name: 'my_task', line: 0, startChar: 0, endChar: 7, definitions: [] }]);
+        // `definitions` and `containerType` are always present on a container: empty and the
+        // declared type respectively, or empty and null when the walk saw neither.
+        expect(containers).toEqual([
+            { name: 'my_task', line: 0, startChar: 0, endChar: 7, definitions: [], containerType: 'task' }
+        ]);
     });
 
     it('finds several, with their real line numbers', () => {

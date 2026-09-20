@@ -2709,7 +2709,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateDenizenEscaping(context);
     activateDiagnosticMuting(context);
     activateQuickFixes(context);
-    activateScriptDefinitions(context, activateDefinitionProvider(context));
+    activateScriptDefinitions(context, activateDefinitionProvider(context), usingTypeScriptServer);
     activateArgumentHints(context, usingTypeScriptServer);
     activateMathEval(context);
     activateDefinitionValueHover(context);

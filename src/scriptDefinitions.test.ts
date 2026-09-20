@@ -6,7 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-    indexDefinitions, parseDefinitionsKey, containerBoundsAt, runDefinitionContextAt
+    indexDefinitions, parseDefinitionsKey, containerBoundsAt, runDefinitionContextAt,
+    runScriptNameContextAt
 } from './definitionIndex';
 
 describe('parseDefinitionsKey', () => {
@@ -102,6 +103,96 @@ describe('indexDefinitions: the definitions: key', () => {
     it('does not read a commented-out definitions: key', () => {
         const text = 'x:\n    type: task\n    #definitions: ghost\n    definitions: real\n';
         expect(indexDefinitions(text).containers[0].definitions!.map(d => d.name)).toEqual(['real']);
+    });
+});
+
+describe('indexDefinitions: the type: key', () => {
+    it('records the container type, folded', () => {
+        expect(indexDefinitions('x:\n    type: TASK\n').containers[0].containerType).toBe('task');
+    });
+
+    it('gives each container its own type', () => {
+        // MUTANT: not re-pointing the open container, which hangs the second type off the first.
+        const text = 'a:\n    type: task\nb:\n    type: world\nc:\n    type: item\n';
+        expect(indexDefinitions(text).containers.map(c => c.containerType))
+            .toEqual(['task', 'world', 'item']);
+    });
+
+    it('takes the FIRST type: key, so a nested one does not win', () => {
+        // An item container's `mechanisms:` block can carry a `type:` of its own.
+        const text = 'x:\n    type: item\n    mechanisms:\n        type: something_else\n';
+        expect(indexDefinitions(text).containers[0].containerType).toBe('item');
+    });
+
+    it('is null when the container declares no type', () => {
+        // Null means "the walk could not see it", which is why such containers are still offered.
+        expect(indexDefinitions('x:\n    script:\n    - narrate hi\n').containers[0].containerType).toBeNull();
+    });
+
+    it('ignores a type: key written at column 0, which is a container of its own', () => {
+        expect(indexDefinitions('type:\n    foo: bar\n').containers.map(c => c.name)).toEqual(['type']);
+    });
+
+    it('does not take a type: line with trailing content beyond one word', () => {
+        // `type: task extra` is not a valid type; matching it would invent one.
+        expect(indexDefinitions('x:\n    type: task extra\n').containers[0].containerType).toBeNull();
+    });
+});
+
+describe('runScriptNameContextAt', () => {
+    /** The context with the cursor at the very end of `line`. */
+    function ctx(line: string) {
+        return runScriptNameContextAt(line, line.length);
+    }
+
+    it('fires on the empty slot right after the command', () => {
+        expect(ctx('    - run ')).toEqual({ typed: '' });
+    });
+
+    it('carries what has been typed of the name', () => {
+        expect(ctx('    - run riba')).toEqual({ typed: 'riba' });
+    });
+
+    it('fires for inject, which names a script but takes no def arguments', () => {
+        // The mirror of runDefinitionContextAt, which excludes inject for exactly that reason.
+        expect(ctx('    - inject riba')).toEqual({ typed: 'riba' });
+    });
+
+    it('fires for every run-like command and accepts the sigils', () => {
+        for (const command of ['run', 'runlater', 'inject', 'clickable', 'bungeerun']) {
+            expect(ctx('    - ' + command + ' x')).not.toBeNull();
+        }
+        expect(ctx('    - ~run x')).not.toBeNull();
+        expect(ctx('    - ^run x')).not.toBeNull();
+    });
+
+    it('stops firing once the caret moves past the name', () => {
+        // MUTANT: dropping the argEnd bound, which would offer script names in the argument area
+        // where runDefinitionContextAt is meant to answer instead.
+        expect(ctx('    - run ribalka ')).toBeNull();
+        expect(ctx('    - run ribalka def.')).toBeNull();
+    });
+
+    it('still fires with the caret mid-name when more follows', () => {
+        const line = '    - run ribalka def.hook:1';
+        expect(runScriptNameContextAt(line, line.indexOf('ribalka') + 4)).toEqual({ typed: 'riba' });
+    });
+
+    it('refuses a tag or a prefixed argument in the name slot', () => {
+        expect(ctx('    - run <[task]')).toBeNull();
+        expect(ctx('    - run path:talk')).toBeNull();
+    });
+
+    it('does not fire for an unrelated command', () => {
+        expect(ctx('    - narrate riba')).toBeNull();
+    });
+
+    it('does not fire before the command name is finished', () => {
+        expect(ctx('    - ru')).toBeNull();
+    });
+
+    it('ignores a line that is not a command at all', () => {
+        expect(ctx('    run riba')).toBeNull();
     });
 });
 

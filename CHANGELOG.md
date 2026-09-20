@@ -4,6 +4,13 @@
 
 ### New features
 
+- **Script names complete on `- run`.** Typing `- run ` now offers the script containers in the
+  workspace, each labelled with its type and file. Filtered to the types a run-like command can
+  execute — `task`, `procedure`, `command` — so items, inventories and worlds stay out of the list;
+  a container whose `type:` could not be read is still offered rather than hidden. Covers `run`,
+  `runlater`, `inject`, `clickable` and `bungeerun`. TypeScript engine only: the C# server already
+  answers this, and registering both would list every script twice.
+
 - **Script definitions on `- run`.** Hovering the script name lists the definitions that script
   declares in its `definitions:` key, with the `[square bracket]` documentation beside each name.
   Typing past the name offers the matching `def.` arguments: one suggestion that fills the whole

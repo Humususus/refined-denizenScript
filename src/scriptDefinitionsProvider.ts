@@ -10,8 +10,9 @@
 // than a default value -- see ScriptDefinition in definitionIndex.ts.
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { DenizenDefinitionIndex } from './definitionProvider';
-import { ScriptDefinition, referenceAt, runDefinitionContextAt } from './definitionIndex';
+import { ScriptDefinition, referenceAt, runDefinitionContextAt, runScriptNameContextAt } from './definitionIndex';
 
 /**
  * How long a workspace re-scan is reused for on the COMPLETION path.
@@ -114,10 +115,59 @@ export class ScriptDefinitionsCompletionProvider implements vscode.CompletionIte
     }
 }
 
-export function activateScriptDefinitions(context: vscode.ExtensionContext, index: DenizenDefinitionIndex): void {
+/**
+ * Container types a run-like command can actually execute.
+ *
+ * `task` is what the C# server offers -- CommandTabCompletions.cs registers
+ * `SuggestScriptByType("task", ...)` for run/runlater/clickable/inject. `procedure` and `command`
+ * are added because both carry a `script:` key that `- run ... path:` reaches, and leaving them out
+ * would hide scripts the author can legitimately run. The types NOT here -- item, inventory,
+ * entity, world, data, assignment -- have nothing to run at all, and on the user's own corpus they
+ * are 48 of 72 containers, which is the noise this filter exists to keep out.
+ */
+const RUNNABLE_CONTAINER_TYPES: ReadonlySet<string> = new Set(['task', 'procedure', 'command']);
+
+export class ScriptNameCompletionProvider implements vscode.CompletionItemProvider {
+    private lastRefresh = 0;
+
+    constructor(private readonly index: DenizenDefinitionIndex) { }
+
+    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.CompletionItem[]> {
+        const context = runScriptNameContextAt(document.lineAt(position.line).text, position.character);
+        if (context === null) {
+            return [];
+        }
+        const now = Date.now();
+        if (now - this.lastRefresh > COMPLETION_REFRESH_MS) {
+            await this.index.refresh();
+            this.lastRefresh = now;
+        }
+        const range = new vscode.Range(
+            position.line, position.character - context.typed.length, position.line, position.character);
+        return this.index.containersOfType(RUNNABLE_CONTAINER_TYPES).map(container => {
+            const item = new vscode.CompletionItem(container.name, vscode.CompletionItemKind.Class);
+            // The file, because a workspace routinely holds scripts whose names alone do not say
+            // which one is meant. The type, because this list is deliberately wider than `task`.
+            item.detail = `${container.type ?? 'script'} — ${path.basename(container.file)}`;
+            item.range = range;
+            return item;
+        });
+    }
+}
+
+export function activateScriptDefinitions(
+    context: vscode.ExtensionContext, index: DenizenDefinitionIndex, usingTypeScriptServer: boolean): void {
     context.subscriptions.push(vscode.languages.registerHoverProvider(
         { language: 'denizenscript' }, new ScriptDefinitionsHoverProvider(index)));
     // '.' so `def.` re-queries, ' ' so the list appears as soon as the script name is finished.
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
         { language: 'denizenscript' }, new ScriptDefinitionsCompletionProvider(index), '.', ' '));
+    // GATED ON THE ENGINE, unlike everything else in this file. The C# server already answers this
+    // one (CommandTabCompletions.cs's SuggestScriptByType), and VS Code merges providers rather
+    // than deduplicating them -- registering unconditionally would show every script name twice to
+    // anyone on `csharp`. The TypeScript port has no equivalent, which is the gap this fills.
+    if (usingTypeScriptServer) {
+        context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
+            { language: 'denizenscript' }, new ScriptNameCompletionProvider(index), ' '));
+    }
 }

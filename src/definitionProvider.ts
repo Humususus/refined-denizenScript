@@ -102,6 +102,36 @@ export class DenizenDefinitionIndex {
      * declares any: two containers sharing a name is already reported as `duplicate_script` by the
      * checker, and merging their keys here would invent a definition list neither one has.
      */
+    /**
+     * Every indexed container of one of `types`, with the file it lives in.
+     *
+     * A container whose `type:` the walk could not see is INCLUDED: the index is line-based, and
+     * hiding a script because its type was written somewhere this could not read would be the one
+     * failure the author cannot work around. Offering a few extra names costs a scroll.
+     *
+     * Deduplicated by folded name, first occurrence winning, so a script defined twice across the
+     * workspace is offered once rather than filling the list with copies of itself.
+     */
+    containersOfType(types: ReadonlySet<string>): { name: string, type: string | null, file: string }[] {
+        const results: { name: string, type: string | null, file: string }[] = [];
+        const seen = new Set<string>();
+        for (const [key, indexed] of this.byPath) {
+            for (const symbol of indexed.symbols.containers) {
+                const type = symbol.containerType ?? null;
+                if (type !== null && !types.has(type)) {
+                    continue;
+                }
+                const folded = symbol.name.toLowerCase();
+                if (seen.has(folded)) {
+                    continue;
+                }
+                seen.add(folded);
+                results.push({ name: symbol.name, type, file: key });
+            }
+        }
+        return results;
+    }
+
     definitionsFor(name: string): ScriptDefinition[] | null {
         for (const candidate of nameCandidates('container', name)) {
             for (const indexed of this.byPath.values()) {

@@ -96,6 +96,13 @@ Silence them per file with `##ignorewarning async_unsafe_command` or `##ignorewa
 ### Go to definition
 <kbd>F12</kbd> on a flag jumps to where it is set; on a script name, to the container that defines it.
 
+### Script names on `- run`
+Typing `- run ` offers the script containers in your workspace, each labelled with its type and the file it lives in. Only the types a run-like command can actually execute are listed — `task`, `procedure`, `command` — which on a real script folder is about half the containers; items, inventories, worlds and the rest are left out. A container whose `type:` couldn't be read is still offered rather than hidden.
+
+Covers `run`, `runlater`, `inject`, `clickable` and `bungeerun`.
+
+> TypeScript engine only, and deliberately: the C# server already answers this one, and registering it on both would list every script twice.
+
 ### Script definitions on `- run`
 Hovering the script name in `- run ribalksa` lists the definitions that script declares in its `definitions:` key, with the `[square bracket]` documentation shown next to each name — those brackets are documentation, not default values.
 

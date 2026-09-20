@@ -32,6 +32,12 @@ export interface SymbolLocation {
      * container is already the walk that would find the key.
      */
     definitions?: ScriptDefinition[];
+    /**
+     * For a CONTAINER, the value of its `type:` key, lowercased -- `task`, `world`, `item`, ...
+     * Null when the container declares none, which a real one always does; a null here means the
+     * walk could not see it, not that the script has no type.
+     */
+    containerType?: string | null;
 }
 
 /**
@@ -170,7 +176,7 @@ export function indexDefinitions(text: string): FileSymbols {
         // container name Denizen would not accept anyway.
         const container = /^([A-Za-z_][A-Za-z0-9_\-.]*):\s*$/.exec(raw);
         if (container !== null) {
-            containers.push({ name: container[1], line, startChar: 0, endChar: container[1].length, definitions: [] });
+            containers.push({ name: container[1], line, startChar: 0, endChar: container[1].length, definitions: [], containerType: null });
             // A new container ends the previous one, so the next `definitions:` belongs to this.
             openContainer = containers[containers.length - 1];
             continue;
@@ -185,6 +191,15 @@ export function indexDefinitions(text: string): FileSymbols {
             const defs = /^\s+definitions:\s*(.*)$/i.exec(raw);
             if (defs !== null) {
                 openContainer.definitions = parseDefinitionsKey(defs[1]);
+                continue;
+            }
+        }
+        // The container's `type:` key, on the same first-one-wins terms as `definitions:` above --
+        // an item container's `mechanisms:` block, for one, can hold a nested `type:` of its own.
+        if (openContainer !== null && openContainer.containerType === null) {
+            const type = /^\s+type:\s*(\S+)\s*$/i.exec(raw);
+            if (type !== null) {
+                openContainer.containerType = foldAscii(type[1]);
                 continue;
             }
         }
@@ -312,6 +327,41 @@ function flagReferenceAt(lineText: string, character: number): SymbolReference |
  * Mirrors `deffableCmdLabels` in extension.ts, which drives the same distinction for highlighting.
  */
 const DEF_PASSING_COMMANDS = new Set<string>(['run', 'runlater', 'clickable', 'bungeerun']);
+
+/**
+ * Whether the cursor is in the SCRIPT NAME slot of a run-like command, and what is typed there.
+ *
+ * The mirror image of `runDefinitionContextAt`: that one wants the caret past the name, this one
+ * wants it inside. `inject` is included here where it is excluded there -- it names a script the
+ * same way, it just takes no `def` arguments once it has one.
+ *
+ * Returns null the moment the slot holds something that is not a plain name: a `<tag>` cannot be
+ * resolved statically, and a `prefix:value` means the author skipped the script argument entirely.
+ */
+export function runScriptNameContextAt(lineText: string, character: number): { typed: string } | null {
+    const head = /^(\s*-\s*)(?:~|\^)?([A-Za-z_][A-Za-z0-9_]*)(\s+)/.exec(lineText);
+    if (head === null || !RUN_LIKE_COMMANDS.has(foldAscii(head[2]))) {
+        return null;
+    }
+    const argStart = head[0].length;
+    if (character < argStart) {
+        return null;
+    }
+    // The first argument runs to the next whitespace. A caret past it is editing a LATER argument,
+    // which is runDefinitionContextAt's business rather than this one's.
+    let argEnd = argStart;
+    while (argEnd < lineText.length && !/\s/.test(lineText[argEnd])) {
+        argEnd++;
+    }
+    if (character > argEnd) {
+        return null;
+    }
+    const typed = lineText.slice(argStart, character);
+    if (typed.includes('<') || typed.includes(':')) {
+        return null;
+    }
+    return { typed };
+}
 
 /** Where the cursor sits on a `- run <script> ...` line, for completing its `def.` arguments. */
 export interface RunDefinitionContext {
