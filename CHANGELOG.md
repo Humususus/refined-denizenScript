@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.2.0
+## 2.3.0
+
+Everything since 2.1.1. A 2.2.0 was prepared and tagged locally but never pushed, so it has no
+release of its own and its contents are listed here.
 
 ### New features
 
