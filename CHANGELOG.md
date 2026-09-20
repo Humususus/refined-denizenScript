@@ -4,6 +4,13 @@
 
 ### New features
 
+- **Script definitions on `- run`.** Hovering the script name lists the definitions that script
+  declares in its `definitions:` key, with the `[square bracket]` documentation beside each name.
+  Typing past the name offers the matching `def.` arguments: one suggestion that fills the whole
+  line at once, plus one per name. Names already on the line are not offered again. Covers `run`,
+  `runlater`, `clickable` and `bungeerun` — not `inject`, which shares the current queue and takes
+  no `def` arguments.
+
 - **Async-safety diagnostics.** A command or tag inside a DenizenM `- async:` block that isn't
   safe off the main thread is now reported — it still runs, but Denizen hands it back to the main
   thread and the async queue waits on it, which is usually the opposite of what the block was
@@ -24,6 +31,17 @@
 
 ### Fixes
 
+- **`<[definitionName]>` hover listed assignments from every container in the file.** A definition
+  is queue-scoped, so a `- define hook` in an unrelated container is a different variable that
+  happens to share a name. The hover is now scoped to the enclosing container. Measured on real
+  scripts: 11 definitions across the test corpus were showing values from containers they have
+  nothing to do with.
+- **That hover also listed every assignment at once**, filling the popup with lines that were not
+  being asked about. It now shows the one that answers the question — the closest `- define` at or
+  above the hovered line — with its line number, noting how many others the container holds.
+- **That hover did not fire on `<[ent].some.tags>`**, only on a bare `<[ent]>`. The pattern
+  required the `]>` to be adjacent, and reading anything off the definition puts a `.` there
+  instead — so it went silent on the commoner of the two forms.
 - Enum argument completion was case-sensitive, so an uppercase prefix matched nothing at all —
   `- playsound sound_category:MAST` and `- give QUAR` both completed to an empty list, and VS
   Code's own filtering couldn't recover because it only narrows what the server already sent.

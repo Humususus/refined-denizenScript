@@ -96,6 +96,20 @@ Silence them per file with `##ignorewarning async_unsafe_command` or `##ignorewa
 ### Go to definition
 <kbd>F12</kbd> on a flag jumps to where it is set; on a script name, to the container that defines it.
 
+### Script definitions on `- run`
+Hovering the script name in `- run ribalksa` lists the definitions that script declares in its `definitions:` key, with the `[square bracket]` documentation shown next to each name — those brackets are documentation, not default values.
+
+Typing past the script name offers the `def.` arguments to go with it: one suggestion that fills the whole line at once (`def.__player: def.hook:`, with tab stops between the values), plus one per name if you only want a couple. Names already written on the line are not offered again.
+
+Offered for `run`, `runlater`, `clickable` and `bungeerun` — not for `inject`, which runs in the current queue and takes no `def` arguments.
+
+### Hover on `<[definitionName]>`
+Shows what that definition was last set to — the closest `- define` at or above the line you're hovering, with its line number.
+
+Scoped to the **enclosing container**, because a definition is queue-scoped: a `- define hook` in another container of the same file is a different variable that happens to share a name. If the name is assigned more than once in the container, the hover says so.
+
+Works whether or not anything is read off it — `<[ent]>` and `<[ent].some.tags>` both resolve.
+
 ### Inline argument hints
 Grey text at the end of the line you are editing, showing the arguments the command still accepts. Only the caret's line is annotated (`denizenscript.inlineArgumentHints`).
 
