@@ -20,7 +20,7 @@
 // occasionally missing is a minor annoyance; one that lands on the wrong line is worse than none,
 // so every rule below is written to under-match rather than guess.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.runDefinitionContextAt = exports.referenceAt = exports.nameCandidates = exports.containerBoundsAt = exports.indexDefinitions = exports.sameName = exports.parseDefinitionsKey = void 0;
+exports.runDefinitionContextAt = exports.runScriptNameContextAt = exports.referenceAt = exports.nameCandidates = exports.containerBoundsAt = exports.indexDefinitions = exports.sameName = exports.parseDefinitionsKey = void 0;
 /**
  * The entries of a `definitions:` key, given everything after the colon.
  *
@@ -123,7 +123,7 @@ function indexDefinitions(text) {
         // container name Denizen would not accept anyway.
         const container = /^([A-Za-z_][A-Za-z0-9_\-.]*):\s*$/.exec(raw);
         if (container !== null) {
-            containers.push({ name: container[1], line, startChar: 0, endChar: container[1].length, definitions: [] });
+            containers.push({ name: container[1], line, startChar: 0, endChar: container[1].length, definitions: [], containerType: null });
             // A new container ends the previous one, so the next `definitions:` belongs to this.
             openContainer = containers[containers.length - 1];
             continue;
@@ -138,6 +138,15 @@ function indexDefinitions(text) {
             const defs = /^\s+definitions:\s*(.*)$/i.exec(raw);
             if (defs !== null) {
                 openContainer.definitions = parseDefinitionsKey(defs[1]);
+                continue;
+            }
+        }
+        // The container's `type:` key, on the same first-one-wins terms as `definitions:` above --
+        // an item container's `mechanisms:` block, for one, can hold a nested `type:` of its own.
+        if (openContainer !== null && openContainer.containerType === null) {
+            const type = /^\s+type:\s*(\S+)\s*$/i.exec(raw);
+            if (type !== null) {
+                openContainer.containerType = foldAscii(type[1]);
                 continue;
             }
         }
@@ -264,6 +273,41 @@ function flagReferenceAt(lineText, character) {
  * Mirrors `deffableCmdLabels` in extension.ts, which drives the same distinction for highlighting.
  */
 const DEF_PASSING_COMMANDS = new Set(['run', 'runlater', 'clickable', 'bungeerun']);
+/**
+ * Whether the cursor is in the SCRIPT NAME slot of a run-like command, and what is typed there.
+ *
+ * The mirror image of `runDefinitionContextAt`: that one wants the caret past the name, this one
+ * wants it inside. `inject` is included here where it is excluded there -- it names a script the
+ * same way, it just takes no `def` arguments once it has one.
+ *
+ * Returns null the moment the slot holds something that is not a plain name: a `<tag>` cannot be
+ * resolved statically, and a `prefix:value` means the author skipped the script argument entirely.
+ */
+function runScriptNameContextAt(lineText, character) {
+    const head = /^(\s*-\s*)(?:~|\^)?([A-Za-z_][A-Za-z0-9_]*)(\s+)/.exec(lineText);
+    if (head === null || !RUN_LIKE_COMMANDS.has(foldAscii(head[2]))) {
+        return null;
+    }
+    const argStart = head[0].length;
+    if (character < argStart) {
+        return null;
+    }
+    // The first argument runs to the next whitespace. A caret past it is editing a LATER argument,
+    // which is runDefinitionContextAt's business rather than this one's.
+    let argEnd = argStart;
+    while (argEnd < lineText.length && !/\s/.test(lineText[argEnd])) {
+        argEnd++;
+    }
+    if (character > argEnd) {
+        return null;
+    }
+    const typed = lineText.slice(argStart, character);
+    if (typed.includes('<') || typed.includes(':')) {
+        return null;
+    }
+    return { typed };
+}
+exports.runScriptNameContextAt = runScriptNameContextAt;
 /**
  * The `- run <script>` line the cursor is on, or null.
  *

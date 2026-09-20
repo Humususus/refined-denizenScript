@@ -2588,7 +2588,7 @@ function activate(context) {
         activateDenizenEscaping(context);
         activateDiagnosticMuting(context);
         (0, quickFixes_1.activateQuickFixes)(context);
-        (0, scriptDefinitionsProvider_1.activateScriptDefinitions)(context, (0, definitionProvider_1.activateDefinitionProvider)(context));
+        (0, scriptDefinitionsProvider_1.activateScriptDefinitions)(context, (0, definitionProvider_1.activateDefinitionProvider)(context), usingTypeScriptServer);
         (0, argumentHintsProvider_1.activateArgumentHints)(context, usingTypeScriptServer);
         (0, mathEvalProvider_1.activateMathEval)(context);
         (0, definitionValueHoverProvider_1.activateDefinitionValueHover)(context);
