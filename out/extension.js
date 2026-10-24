@@ -55,8 +55,10 @@ const perfStats_1 = require("./perfStats");
 const denizenHighlighter_1 = require("./highlight/denizenHighlighter");
 const semanticProvider_1 = require("./highlight/semanticProvider");
 const paletteRules_1 = require("./highlight/paletteRules");
+const commentFolds_1 = require("./highlight/commentFolds");
+const commentDecorations_1 = require("./highlight/commentDecorations");
 let configuration = vscode.workspace.getConfiguration();
-let headerSymbols = "|+=#_@/";
+let headerSymbols = "|+=_@/";
 let outputChannel = vscode.window.createOutputChannel("Denizen");
 let debugHighlighting = false;
 let debugFolding = false;
@@ -234,6 +236,7 @@ function loadAllColors() {
         }
     }
     syncPaletteRules();
+    rebuildCommentDecorations();
     if (semanticProvider) {
         semanticProvider.setEnabled(useCustomSyntaxColors);
         semanticProvider.refresh();
@@ -275,7 +278,76 @@ function syncPaletteRules() {
         outputChannel.appendLine("Failed to write the Denizen palette into " + key + ": " + err);
     });
 }
+// The ### band and the TODO / code icons (2.6.0): what semantic tokens cannot draw. Rebuilt on
+// every loadAllColors(), so a colour or `comment_icons` change applies without a reload.
+let extensionContext = undefined;
+let criticalCommentDecor = undefined;
+let todoIconDecor = undefined;
+let codeIconDecor = undefined;
+/** A palette colour: the configured one with the palette on, its default otherwise (icons still need one). */
+function commentColor(type) {
+    var _a;
+    const key = "denizenscript.theme_colors." + type;
+    const inspected = configuration.inspect(key);
+    return (_a = (useCustomSyntaxColors ? configuration.get(key) : inspected === null || inspected === void 0 ? void 0 : inspected.defaultValue)) !== null && _a !== void 0 ? _a : "#FF5555";
+}
+/**
+ * The SVG for an icon, written once per kind and colour into the extension's storage folder.
+ * A file rather than a `data:` URI: `contentIconPath` with `data:` is not reliable across VS Code
+ * versions. Undefined when the folder cannot be written; the icon is then simply not shown.
+ */
+function commentIconFile(kind, color) {
+    if (!extensionContext) {
+        return undefined;
+    }
+    try {
+        const dir = extensionContext.globalStorageUri.fsPath;
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, kind + "-" + color.replace(/[^0-9a-zA-Z]/g, "") + ".svg");
+        if (!fs.existsSync(file)) {
+            fs.writeFileSync(file, (0, commentDecorations_1.iconSvg)(kind, color));
+        }
+        return vscode.Uri.file(file);
+    }
+    catch (err) {
+        outputChannel.appendLine("Could not write the comment icon: " + err);
+        return undefined;
+    }
+}
+function rebuildCommentDecorations() {
+    for (const decor of [criticalCommentDecor, todoIconDecor, codeIconDecor]) {
+        decor === null || decor === void 0 ? void 0 : decor.dispose();
+    }
+    criticalCommentDecor = vscode.window.createTextEditorDecorationType({
+        isWholeLine: true,
+        backgroundColor: (0, commentDecorations_1.criticalBackground)(commentColor("comment_critical"))
+    });
+    const iconDecor = (kind, type) => {
+        var _a, _b;
+        const icon = commentIconFile(kind, (_b = (_a = (0, paletteRules_1.parsePaletteColor)(commentColor(type))) === null || _a === void 0 ? void 0 : _a.foreground) !== null && _b !== void 0 ? _b : "#888888");
+        return icon === undefined ? undefined : vscode.window.createTextEditorDecorationType({
+            before: { contentIconPath: icon, width: "14px", height: "14px", margin: "0 4px 0 0" }
+        });
+    };
+    const iconsOn = configuration.get("denizenscript.behaviors.comment_icons") !== false;
+    todoIconDecor = iconsOn ? iconDecor("todo", "comment_todo") : undefined;
+    codeIconDecor = iconsOn ? iconDecor("code", "comment_code") : undefined;
+}
+function applyCommentDecorations(editor, splitText) {
+    const marks = (0, commentDecorations_1.commentLines)(splitText, headerSymbols);
+    if (criticalCommentDecor) {
+        editor.setDecorations(criticalCommentDecor, marks.critical.map(line => new vscode.Range(line, 0, line, 0)));
+    }
+    if (todoIconDecor) {
+        editor.setDecorations(todoIconDecor, marks.todo.map(m => new vscode.Range(m.line, m.column, m.line, m.column + 1)));
+    }
+    if (codeIconDecor) {
+        editor.setDecorations(codeIconDecor, marks.code.map(m => new vscode.Range(m.line, m.column, m.line, m.column + 1)));
+    }
+    perfStats_1.perf.gauge('comment.decorations', marks.critical.length + marks.todo.length + marks.code.length);
+}
 function activateHighlighter(context) {
+    extensionContext = context;
     semanticProvider = new semanticProvider_1.DenizenSemanticTokensProvider(highlightOptions);
     context.subscriptions.push(vscode.languages.registerDocumentSemanticTokensProvider({ language: "denizenscript" }, semanticProvider, semanticProvider_1.SEMANTIC_LEGEND));
     loadAllColors();
@@ -1369,6 +1441,7 @@ function decorateFile(editor) {
         }
         perfStats_1.perf.gauge('highlight.ranges', ranges);
     }
+    applyCommentDecorations(editor, splitText);
     highlight.lastDecorations = decorations;
     highlight.needRefreshStartLine = -1;
     highlight.needRefreshEndLine = -1;
@@ -1419,6 +1492,9 @@ function denizenScriptFoldingProvider(document, context, token) {
     for (let i = 0; i < processing.length; i++) { // for-each style loop bugs out and thinks the value is a String, so have to do 'i' counter style loop
         const extraFold = processing[i];
         output.push(new vscode.FoldingRange(extraFold.start, totalLines - 1));
+    }
+    for (const run of (0, commentFolds_1.commentFoldRanges)(splitText, headerSymbols)) {
+        output.push(new vscode.FoldingRange(run.start, run.end, vscode.FoldingRangeKind.Comment));
     }
     return output;
 }
