@@ -20,8 +20,9 @@ import { findHexColors, formatHexColor } from "./hexColors";
 import { perf } from "./perfStats";
 import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
 import { DenizenSemanticTokensProvider, SEMANTIC_LEGEND } from "./highlight/semanticProvider";
-import { mergeRules, paletteRules, userLevel } from "./highlight/paletteRules";
+import { mergeRules, paletteRules, parsePaletteColor, userLevel } from "./highlight/paletteRules";
 import { commentFoldRanges } from "./highlight/commentFolds";
+import { commentLines, criticalBackground, iconSvg } from "./highlight/commentDecorations";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
@@ -214,6 +215,7 @@ function loadAllColors() {
         }
     }
     syncPaletteRules();
+    rebuildCommentDecorations();
     if (semanticProvider) {
         semanticProvider.setEnabled(useCustomSyntaxColors);
         semanticProvider.refresh();
@@ -257,7 +259,79 @@ function syncPaletteRules() {
     });
 }
 
+// The ### band and the TODO / code icons (2.6.0): what semantic tokens cannot draw. Rebuilt on
+// every loadAllColors(), so a colour or `comment_icons` change applies without a reload.
+let extensionContext : vscode.ExtensionContext | undefined = undefined;
+let criticalCommentDecor : vscode.TextEditorDecorationType | undefined = undefined;
+let todoIconDecor : vscode.TextEditorDecorationType | undefined = undefined;
+let codeIconDecor : vscode.TextEditorDecorationType | undefined = undefined;
+
+/** A palette colour: the configured one with the palette on, its default otherwise (icons still need one). */
+function commentColor(type : string) : string {
+    const key = "denizenscript.theme_colors." + type;
+    const inspected = configuration.inspect<string>(key);
+    return (useCustomSyntaxColors ? configuration.get<string>(key) : inspected?.defaultValue) ?? "#FF5555";
+}
+
+/**
+ * The SVG for an icon, written once per kind and colour into the extension's storage folder.
+ * A file rather than a `data:` URI: `contentIconPath` with `data:` is not reliable across VS Code
+ * versions. Undefined when the folder cannot be written; the icon is then simply not shown.
+ */
+function commentIconFile(kind : "todo" | "code", color : string) : vscode.Uri | undefined {
+    if (!extensionContext) {
+        return undefined;
+    }
+    try {
+        const dir = extensionContext.globalStorageUri.fsPath;
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, kind + "-" + color.replace(/[^0-9a-zA-Z]/g, "") + ".svg");
+        if (!fs.existsSync(file)) {
+            fs.writeFileSync(file, iconSvg(kind, color));
+        }
+        return vscode.Uri.file(file);
+    }
+    catch (err) {
+        outputChannel.appendLine("Could not write the comment icon: " + err);
+        return undefined;
+    }
+}
+
+function rebuildCommentDecorations() {
+    for (const decor of [criticalCommentDecor, todoIconDecor, codeIconDecor]) {
+        decor?.dispose();
+    }
+    criticalCommentDecor = vscode.window.createTextEditorDecorationType({
+        isWholeLine: true,
+        backgroundColor: criticalBackground(commentColor("comment_critical"))
+    });
+    const iconDecor = (kind : "todo" | "code", type : string) => {
+        const icon = commentIconFile(kind, parsePaletteColor(commentColor(type))?.foreground ?? "#888888");
+        return icon === undefined ? undefined : vscode.window.createTextEditorDecorationType({
+            before: { contentIconPath: icon, width: "14px", height: "14px", margin: "0 4px 0 0" }
+        });
+    };
+    const iconsOn = configuration.get("denizenscript.behaviors.comment_icons") !== false;
+    todoIconDecor = iconsOn ? iconDecor("todo", "comment_todo") : undefined;
+    codeIconDecor = iconsOn ? iconDecor("code", "comment_code") : undefined;
+}
+
+function applyCommentDecorations(editor : vscode.TextEditor, splitText : string[]) {
+    const marks = commentLines(splitText, headerSymbols);
+    if (criticalCommentDecor) {
+        editor.setDecorations(criticalCommentDecor, marks.critical.map(line => new vscode.Range(line, 0, line, 0)));
+    }
+    if (todoIconDecor) {
+        editor.setDecorations(todoIconDecor, marks.todo.map(m => new vscode.Range(m.line, m.column, m.line, m.column + 1)));
+    }
+    if (codeIconDecor) {
+        editor.setDecorations(codeIconDecor, marks.code.map(m => new vscode.Range(m.line, m.column, m.line, m.column + 1)));
+    }
+    perf.gauge('comment.decorations', marks.critical.length + marks.todo.length + marks.code.length);
+}
+
 function activateHighlighter(context: vscode.ExtensionContext) {
+    extensionContext = context;
     semanticProvider = new DenizenSemanticTokensProvider(highlightOptions);
     context.subscriptions.push(vscode.languages.registerDocumentSemanticTokensProvider({ language: "denizenscript" }, semanticProvider, SEMANTIC_LEGEND));
     loadAllColors();
@@ -1416,6 +1490,7 @@ function decorateFile(editor: vscode.TextEditor) {
         }
         perf.gauge('highlight.ranges', ranges);
     }
+    applyCommentDecorations(editor, splitText);
     highlight.lastDecorations = decorations;
     highlight.needRefreshStartLine = -1;
     highlight.needRefreshEndLine = -1;

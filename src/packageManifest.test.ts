@@ -54,6 +54,9 @@ describe('package.json — removed features stay removed', () => {
     it('uses the Denizen palette by default', () => {
         expect((props['denizenscript.behaviors.use_custom_syntax_colors'] as { default: unknown }).default).toBe(true);
     });
+    it('lets the comment icons be turned off, on by default', () => {
+        expect((props['denizenscript.behaviors.comment_icons'] as { default: unknown }).default).toBe(true);
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);

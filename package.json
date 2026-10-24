@@ -439,6 +439,11 @@
                     "default": true,
                     "description": "Colour scripts with the Denizen palette (denizenscript.theme_colors.*). Off: use your VS Code theme's colours."
                 },
+                "denizenscript.behaviors.comment_icons": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Show an icon before  and  (commented-out code) comments."
+                },
                 "denizenscript.behaviors.track_full_workspace": {
                     "type": "boolean",
                     "default": true,
