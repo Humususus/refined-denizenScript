@@ -970,7 +970,7 @@ function activateWorkspaceCompletions(context) {
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
         provideCompletionItems(document, position) {
             perfStats_1.perf.time('index.updateOnCompletion', () => workspaceIndex.updateDocument(document));
-            return getDenizenCompletions(document, position);
+            return perfStats_1.perf.time('completion.provide', () => getDenizenCompletions(document, position));
         }
     }, "<", "[", ".", "&", " "));
     // The hover provider that lived here served only the hardcoded third-party doc tables,
