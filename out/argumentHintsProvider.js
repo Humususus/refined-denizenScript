@@ -55,6 +55,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activateArgumentHints = exports.ArgumentHintsProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const argumentHints_1 = require("./argumentHints");
+const perfStats_1 = require("./perfStats");
 /** Reads the parameter texts out of a signature help response. */
 function parametersOf(help) {
     var _a, _b, _c;
@@ -84,6 +85,9 @@ class ArgumentHintsProvider {
         this.changed.fire();
     }
     provideInlayHints(document, range) {
+        return perfStats_1.perf.timeAsync('inlayHints.provide', () => this.hintsFor(document, range));
+    }
+    hintsFor(document, range) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!vscode.workspace.getConfiguration('denizenscript').get('inlineArgumentHints', true)) {
                 return [];

@@ -50,6 +50,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activateMapTagPeek = exports.SCHEME = void 0;
 const vscode = __importStar(require("vscode"));
 const tagFormatter_1 = require("./tagFormatter");
+const perfStats_1 = require("./perfStats");
 /** The URI scheme the expanded views live under. */
 exports.SCHEME = 'denizen-maptag';
 /**
@@ -230,6 +231,11 @@ function syncOnce(document, expansion) {
  */
 class ExpandTagLensProvider {
     provideCodeLenses(document) {
+        const lenses = perfStats_1.perf.time('codelens.provide', () => this.lensesFor(document));
+        perfStats_1.perf.gauge('codelens.count', lenses.length);
+        return lenses;
+    }
+    lensesFor(document) {
         if (!vscode.workspace.getConfiguration().get('refinedDenizenscript.mapTag.showExpandLens', true)) {
             return [];
         }
