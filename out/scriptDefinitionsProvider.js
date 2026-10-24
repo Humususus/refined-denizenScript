@@ -189,17 +189,12 @@ class ScriptNameCompletionProvider {
     }
 }
 exports.ScriptNameCompletionProvider = ScriptNameCompletionProvider;
-function activateScriptDefinitions(context, index, usingTypeScriptServer) {
+function activateScriptDefinitions(context, index) {
     context.subscriptions.push(vscode.languages.registerHoverProvider({ language: 'denizenscript' }, new ScriptDefinitionsHoverProvider(index)));
     // '.' so `def.` re-queries, ' ' so the list appears as soon as the script name is finished.
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider({ language: 'denizenscript' }, new ScriptDefinitionsCompletionProvider(index), '.', ' '));
-    // GATED ON THE ENGINE, unlike everything else in this file. The C# server already answers this
-    // one (CommandTabCompletions.cs's SuggestScriptByType), and VS Code merges providers rather
-    // than deduplicating them -- registering unconditionally would show every script name twice to
-    // anyone on `csharp`. The TypeScript port has no equivalent, which is the gap this fills.
-    if (usingTypeScriptServer) {
-        context.subscriptions.push(vscode.languages.registerCompletionItemProvider({ language: 'denizenscript' }, new ScriptNameCompletionProvider(index), ' '));
-    }
+    // The language server has no script-name completion of its own, which is why the client provides it.
+    context.subscriptions.push(vscode.languages.registerCompletionItemProvider({ language: 'denizenscript' }, new ScriptNameCompletionProvider(index), ' '));
 }
 exports.activateScriptDefinitions = activateScriptDefinitions;
 //# sourceMappingURL=scriptDefinitionsProvider.js.map

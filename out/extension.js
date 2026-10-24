@@ -37,8 +37,6 @@ const vscode = __importStar(require("vscode"));
 const languageClientNode = __importStar(require("vscode-languageclient/node"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
-const https = __importStar(require("https"));
-const serverEngineSelector_1 = require("./serverEngineSelector");
 const mutedDiagnostics_1 = require("./mutedDiagnostics");
 const entryTags_1 = require("./entryTags");
 const mapTagPeek_1 = require("./mapTagPeek");
@@ -53,10 +51,7 @@ const definitionValueHoverProvider_1 = require("./definitionValueHoverProvider")
 const scopeDefinitions_1 = require("./scopeDefinitions");
 const denizenEvents_1 = require("./denizenEvents");
 const hexColors_1 = require("./hexColors");
-const languageServerPath = "server/DenizenLangServer.dll";
 let configuration = vscode.workspace.getConfiguration();
-/** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
-let usingTypeScriptServer = false;
 let headerSymbols = "|+=#_@/";
 let outputChannel = vscode.window.createOutputChannel("Denizen");
 let debugHighlighting = false;
@@ -83,15 +78,10 @@ function getCache(path) {
     return result;
 }
 /**
- * Builds the middleware shared by both language clients (C# and TypeScript engines).
- *
- * This was previously inlined only in the C# client's `clientOptions`, so the TypeScript
- * client ran with no middleware at all. Sharing it here means the TS client now also gets
- * `provideCompletionItem`'s workspace-flag-completion suppression and `handleDiagnostics`'s
- * dialog/DenizenM diagnostic filtering — that is an intentional consequence of sharing one
- * middleware object, not an accident. Do not remove it from the TS client under the
- * assumption it's unused; Task 3's selection-mute filter depends on both clients routing
- * diagnostics through here.
+ * Builds the language client's middleware: `provideCompletionItem`'s workspace-flag-completion
+ * suppression and `handleDiagnostics`'s dialog/DenizenM diagnostic filtering. Do not drop it
+ * under the assumption it's unused; the selection-mute filter depends on every diagnostic
+ * routing through here.
  */
 function buildSharedMiddleware() {
     return {
@@ -103,12 +93,11 @@ function buildSharedMiddleware() {
         },
         handleDiagnostics: (uri, diagnostics, next) => {
             // An expanded-tag buffer is a FRAGMENT, not a script: its whole content is one
-            // `<map[ ... ]>` spread over several lines. Both servers happily lint it anyway,
-            // because they gate on the URI ending in ".dsc" and the virtual document is named
+            // `<map[ ... ]>` spread over several lines. The server happily lints it anyway,
+            // because it gates on the URI ending in ".dsc" and the virtual document is named
             // "tag-N.dsc" - so every line comes back as a warning and the entire block goes
-            // yellow. Dropping them here rather than in either server is deliberate: it is one
-            // place, it covers the C# engine too (which this repo cannot change), and it leaves
-            // real files completely untouched.
+            // yellow. Dropping them here rather than in the server keeps the server ignorant of
+            // this client-only scheme and leaves real files completely untouched.
             if (uri.scheme === mapTagPeek_1.SCHEME) {
                 next(uri, []);
                 return;
@@ -120,31 +109,6 @@ function buildSharedMiddleware() {
             next(uri, filterDenizenDiagnostics(uri, diagnostics));
         }
     };
-}
-function activateLanguageServer(context, dotnetPath) {
-    if (!dotnetPath || dotnetPath.length === 0) {
-        dotnetPath = "dotnet";
-    }
-    let pathFile = context.asAbsolutePath(languageServerPath);
-    if (!fs.existsSync(pathFile)) {
-        return;
-    }
-    let pathDir = path.dirname(pathFile);
-    let serverOptions = {
-        run: { command: dotnetPath, args: [pathFile], options: { cwd: pathDir } },
-        debug: { command: dotnetPath, args: [pathFile, "--debug"], options: { cwd: pathDir } }
-    };
-    let clientOptions = {
-        documentSelector: ["denizenscript"],
-        synchronize: {
-            configurationSection: "denizenscript",
-        },
-        middleware: buildSharedMiddleware()
-    };
-    let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
-    let disposable = client.start();
-    context.subscriptions.push(disposable);
-    registerDiagnosticClient(client);
 }
 function activateTsLanguageServer(context) {
     let serverModule = context.asAbsolutePath(path.join("out", "server", "server.js"));
@@ -317,10 +281,9 @@ function repaintDiagnostics(uri) {
         return;
     }
     const filtered = filterDenizenDiagnostics(uri, raw);
-    // activate() starts exactly one engine (C# or TypeScript), so in practice this
-    // writes to exactly one collection - the one that published `raw` in the first
-    // place. If both engines were ever started at once they would each publish their
-    // own diagnostics anyway, and this cache would need to be keyed per client too.
+    // activate() starts exactly one language client, so this writes to exactly one
+    // collection - the one that published `raw` in the first place. A second client
+    // would need this cache keyed per client too.
     for (const client of diagnosticClients) {
         const collection = client.diagnostics;
         if (collection) {
@@ -556,194 +519,6 @@ function scheduleIndexUpdate(document) {
         pendingIndexUpdates.delete(key);
         workspaceIndex.updateDocument(document);
     }, INDEX_DEBOUNCE_MS));
-}
-function getExtensionVersion(context) {
-    try {
-        const packageJson = JSON.parse(fs.readFileSync(context.asAbsolutePath("package.json"), { encoding: "utf-8", flag: "r" }));
-        return packageJson.version || "0.0.0";
-    }
-    catch (err) {
-        outputChannel.appendLine("Failed to read extension package version: " + err);
-        return "0.0.0";
-    }
-}
-function normalizeVersion(version) {
-    return version.trim().replace(/^v/i, "").split(/[+-]/)[0];
-}
-function compareVersions(left, right) {
-    const leftParts = normalizeVersion(left).split(".").map(part => parseInt(part, 10) || 0);
-    const rightParts = normalizeVersion(right).split(".").map(part => parseInt(part, 10) || 0);
-    const max = Math.max(leftParts.length, rightParts.length);
-    for (let i = 0; i < max; i++) {
-        const l = i < leftParts.length ? leftParts[i] : 0;
-        const r = i < rightParts.length ? rightParts[i] : 0;
-        if (l > r) {
-            return 1;
-        }
-        if (l < r) {
-            return -1;
-        }
-    }
-    return 0;
-}
-function githubGetJson(url) {
-    return new Promise((resolve, reject) => {
-        https.get(url, {
-            headers: {
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "refined-denizenscript-vscode"
-            }
-        }, response => {
-            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                githubGetJson(response.headers.location).then(resolve, reject);
-                return;
-            }
-            if (response.statusCode != 200) {
-                const error = new Error("GitHub returned HTTP " + response.statusCode);
-                error.statusCode = response.statusCode;
-                reject(error);
-                response.resume();
-                return;
-            }
-            let data = "";
-            response.setEncoding("utf8");
-            response.on("data", chunk => data += chunk);
-            response.on("end", () => {
-                try {
-                    resolve(JSON.parse(data));
-                }
-                catch (err) {
-                    reject(err);
-                }
-            });
-        }).on("error", reject);
-    });
-}
-function downloadFile(url, targetPath) {
-    return new Promise((resolve, reject) => {
-        https.get(url, {
-            headers: {
-                "User-Agent": "refined-denizenscript-vscode"
-            }
-        }, response => {
-            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                downloadFile(response.headers.location, targetPath).then(resolve, reject);
-                return;
-            }
-            if (response.statusCode != 200) {
-                const error = new Error("GitHub asset returned HTTP " + response.statusCode);
-                error.statusCode = response.statusCode;
-                reject(error);
-                response.resume();
-                return;
-            }
-            ensureDirectory(path.dirname(targetPath));
-            const file = fs.createWriteStream(targetPath);
-            response.pipe(file);
-            file.on("finish", () => {
-                file.close();
-                resolve();
-            });
-            file.on("error", err => {
-                file.close();
-                reject(err);
-            });
-        }).on("error", reject);
-    });
-}
-function getReleaseVsixUrl(release) {
-    if (!release.assets) {
-        return undefined;
-    }
-    const asset = release.assets.filter(item => item.name.toLowerCase().endsWith(".vsix"))[0];
-    return asset ? asset.browser_download_url : undefined;
-}
-function installVsixUpdate(context, downloadUrl, version) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const fileName = "refined-denizenscript-" + normalizeVersion(version) + ".vsix";
-        const targetPath = path.join(context.globalStorageUri.fsPath, "updates", fileName);
-        yield vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: "Installing Refined DenizenScript update",
-            cancellable: false
-        }, (progress) => __awaiter(this, void 0, void 0, function* () {
-            progress.report({ message: "Downloading VSIX..." });
-            yield downloadFile(downloadUrl, targetPath);
-            progress.report({ message: "Installing extension..." });
-            yield vscode.commands.executeCommand("workbench.extensions.installExtension", vscode.Uri.file(targetPath));
-        }));
-        const choice = yield vscode.window.showInformationMessage("Refined DenizenScript update was installed. Reload VS Code to activate it.", "Reload Window");
-        if (choice == "Reload Window") {
-            vscode.commands.executeCommand("workbench.action.reloadWindow");
-        }
-    });
-}
-function checkForUpdates(context, manual) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const updateConfig = vscode.workspace.getConfiguration("refinedDenizenscript.update");
-        const repo = updateConfig.get("githubRepo") || "Humususus/refined-denizenScript";
-        if (!repo || repo.indexOf("/") == -1) {
-            if (manual) {
-                vscode.window.showErrorMessage("Refined DenizenScript update repo is invalid. Use owner/repo format.");
-            }
-            return;
-        }
-        if (!manual && updateConfig.get("autoCheck") === false) {
-            return;
-        }
-        const intervalHours = updateConfig.get("checkIntervalHours") || 12;
-        const now = Date.now();
-        const lastCheck = context.globalState.get("refinedDenizenscript.lastUpdateCheck") || 0;
-        if (!manual && now - lastCheck < Math.max(1, intervalHours) * 60 * 60 * 1000) {
-            return;
-        }
-        yield context.globalState.update("refinedDenizenscript.lastUpdateCheck", now);
-        try {
-            const currentVersion = getExtensionVersion(context);
-            const release = yield githubGetJson("https://api.github.com/repos/" + repo + "/releases/latest");
-            const latestVersion = release.tag_name || "";
-            if (compareVersions(latestVersion, currentVersion) <= 0) {
-                if (manual) {
-                    vscode.window.showInformationMessage("Refined DenizenScript is up to date. Current version: " + currentVersion + ".");
-                }
-                return;
-            }
-            const downloadUrl = getReleaseVsixUrl(release);
-            const choice = yield vscode.window.showInformationMessage("Refined DenizenScript " + latestVersion + " is available. Current version: " + currentVersion + ".", downloadUrl ? "Install Update" : "", "Open Release", downloadUrl ? "Download VSIX" : "");
-            if (choice == "Install Update" && downloadUrl) {
-                try {
-                    yield installVsixUpdate(context, downloadUrl, latestVersion);
-                }
-                catch (err) {
-                    outputChannel.appendLine("Failed to install Refined DenizenScript update: " + err);
-                    vscode.window.showErrorMessage("Failed to install update automatically. Opening VSIX download instead.");
-                    vscode.env.openExternal(vscode.Uri.parse(downloadUrl));
-                }
-            }
-            else if (choice == "Open Release") {
-                vscode.env.openExternal(vscode.Uri.parse(release.html_url));
-            }
-            else if (choice == "Download VSIX" && downloadUrl) {
-                vscode.env.openExternal(vscode.Uri.parse(downloadUrl));
-            }
-        }
-        catch (err) {
-            if (err.statusCode == 404 || (err + "").indexOf("HTTP 404") != -1) {
-                if (manual) {
-                    vscode.window.showInformationMessage("No Refined DenizenScript GitHub releases were found yet.");
-                }
-                return;
-            }
-            outputChannel.appendLine("Failed to check Refined DenizenScript updates: " + err);
-            if (manual) {
-                vscode.window.showErrorMessage("Failed to check Refined DenizenScript updates. See Denizen output for details.");
-            }
-        }
-    });
-}
-function activateUpdateChecks(context) {
-    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.checkForUpdates", () => checkForUpdates(context, true)));
-    checkForUpdates(context, false);
 }
 const denizenCategories = [
     { label: "main", folder: "main", description: "Main scripts" },
@@ -2240,21 +2015,6 @@ function scheduleRefresh() {
     }
     refreshTimer = setTimeout(refreshDecor, 50);
 }
-function activateDotNet() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            outputChannel.appendLine("DenizenScript extension attempting to acquire .NET 8");
-            const requestingExtensionId = 'DenizenScript.denizenscript';
-            const result = yield vscode.commands.executeCommand('dotnet.acquire', { version: '8.0', requestingExtensionId });
-            outputChannel.appendLine("DenizenScript extension NET 8 Acquire result: " + result + ": " + result["dotnetPath"]);
-            return result["dotnetPath"];
-        }
-        catch (error) {
-            outputChannel.appendLine("Error: " + error);
-            return "";
-        }
-    });
-}
 function forceRefresh(reason) {
     if (debugHighlighting) {
         outputChannel.appendLine("Scheduled a force full refresh of syntax highlighting because: " + reason);
@@ -2572,24 +2332,16 @@ function tryLoadConfigYaml(relativeTo) {
 }
 function activate(context) {
     return __awaiter(this, void 0, void 0, function* () {
-        usingTypeScriptServer = (0, serverEngineSelector_1.shouldUseTypeScriptServer)(configuration.get("denizenscript.server.engine"));
-        if (usingTypeScriptServer) {
-            activateTsLanguageServer(context);
-        }
-        else {
-            let path = yield activateDotNet();
-            activateLanguageServer(context, path);
-        }
+        activateTsLanguageServer(context);
         activateHighlighter(context);
-        activateUpdateChecks(context);
         activateDenizenFileCommands(context);
         activateWorkspaceCompletions(context);
         (0, mapTagPeek_1.activateMapTagPeek)(context);
         activateDenizenEscaping(context);
         activateDiagnosticMuting(context);
         (0, quickFixes_1.activateQuickFixes)(context);
-        (0, scriptDefinitionsProvider_1.activateScriptDefinitions)(context, (0, definitionProvider_1.activateDefinitionProvider)(context), usingTypeScriptServer);
-        (0, argumentHintsProvider_1.activateArgumentHints)(context, usingTypeScriptServer);
+        (0, scriptDefinitionsProvider_1.activateScriptDefinitions)(context, (0, definitionProvider_1.activateDefinitionProvider)(context));
+        (0, argumentHintsProvider_1.activateArgumentHints)(context);
         (0, mathEvalProvider_1.activateMathEval)(context);
         (0, definitionValueHoverProvider_1.activateDefinitionValueHover)(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
