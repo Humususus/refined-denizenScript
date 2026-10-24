@@ -11,12 +11,9 @@ A fork of [DenizenVSCode](https://github.com/DenizenScript/DenizenVSCode) by **M
 
 ## Install
 
-1. Download the latest `.vsix` from the releases page.
-2. In VS Code press `Ctrl+Shift+X` → `···` menu → **Install from VSIX…** → pick the file.
+In VS Code press `Ctrl+Shift+X`, search for **refined DenizenScript** (`humusus.refined-denizenscript`) and click **Install**. Updates arrive automatically through the Marketplace.
 
-You'll be notified when a new release is out. To check manually: `Ctrl+Shift+P` → `Refined denizen: Check for updates`.
-
-Auto-checking is configurable — `refinedDenizenscript.update.autoCheck` and `refinedDenizenscript.update.checkIntervalHours`.
+Offline: download the `.vsix` from the releases page, then `Ctrl+Shift+X` → `···` menu → **Install from VSIX…** → pick the file.
 
 ---
 <img width="840" height="180" alt="Frame 12" src="https://github.com/user-attachments/assets/c17cf3b7-5200-48ed-b466-8b6841cf191e" />
@@ -68,9 +65,6 @@ Each of these was an empty suggestion list before:
 - **`filter[…]`, `parse[…]`, `sort_by_value[…]`** and friends — the tag path applied to each entry, written without its `<>`.
 - **`<custom_color_name>`** — the colour names from your own Denizen colour map.
 - **`- playsound sound_category:`** — the ten Bukkit sound categories. The meta documents the argument but links out to a javadoc rather than listing the values, so these ship with the extension.
-
-> The first four work on both engines. The rest go through the TypeScript language server, so they need that engine.
-
 Enum argument values also complete case-insensitively — `sound_category:MAST` and `give QUAR` both work, where an uppercase prefix used to match nothing at all.
 
 ### Quick Fixes
@@ -101,8 +95,6 @@ Typing `- run ` offers the script containers in your workspace, each labelled wi
 
 Covers `run`, `runlater`, `inject`, `clickable` and `bungeerun`.
 
-> TypeScript engine only, and deliberately: the C# server already answers this one, and registering it on both would list every script twice.
-
 ### Script definitions on `- run`
 Hovering the script name in `- run ribalksa` lists the definitions that script declares in its `definitions:` key, with the `[square bracket]` documentation shown next to each name — those brackets are documentation, not default values.
 
@@ -121,8 +113,6 @@ Works whether or not anything is read off it — `<[ent]>` and `<[ent].some.tags
 Grey text at the end of the line you are editing, showing the arguments the command still accepts. Only the caret's line is annotated (`denizenscript.inlineArgumentHints`).
 
 To see them **on demand only**, leave the setting on and set `editor.inlayHints.enabled` to `offUnlessPressed` — the hint then appears while you hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>.
-
-> Needs the TypeScript engine. The C# engine has no signature help, so nothing is shown there.
 
 ### Offline math
 Hovering an arithmetic tag such as `<element[1].sub[<element[2].mul[3]>]>` shows what it works out to, without a server (`denizenscript.evaluateMathTags`).
@@ -145,7 +135,7 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 - Automatic `.dsc` extension handling for files created under `denizen/script`.
 
 ### Extra meta sources
-Load documentation for your own add-ons alongside the official Denizen meta — `denizenscript.extra_sources` (C# engine) or `denizenscript.server.extra_sources` (TypeScript engine), as direct `.zip` URLs.
+Load documentation for your own add-ons alongside the official Denizen meta — `denizenscript.server.extra_sources`, as direct `.zip` URLs.
 
 ---
 <img width="840" height="180" alt="Frame 13" src="https://github.com/user-attachments/assets/43a32c99-4ebe-46ac-a522-2a5ca475ddc9" />
@@ -160,10 +150,7 @@ Defects this fork corrects that the original gets wrong:
 
 ## Language server
 
-Two engines ship with the extension, picked with `denizenscript.server.engine`:
-
-- **`typescript`** *(default)* — no .NET dependency, faster start. Completion, hover and most script diagnostics work; **tag and command checking isn't finished**, so it still reports less than the C# engine — a bad tag or an undefined `<[definition]>` can go unreported, and there's no event completion, tag hover, deprecation warnings, or cross-file analysis.
-- **`csharp`** — the original .NET server. Complete and stable, at the cost of the .NET 8 runtime. Switch to this if you hit a gap the TypeScript engine hasn't caught up on yet.
+Completion, hover, signature help and diagnostics come from a language server written in TypeScript that runs on the Node.js bundled with VS Code — nothing extra to install, and it starts with the editor. It loads the official Denizen meta (plus any `extra_sources`) and caches it locally.
 
 ---
 <img width="840" height="180" alt="Frame 15" src="https://github.com/user-attachments/assets/e778841e-7e34-44f5-a2eb-70fb6b682b7e" />
