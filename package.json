@@ -442,7 +442,7 @@
                 "denizenscript.behaviors.comment_icons": {
                     "type": "boolean",
                     "default": true,
-                    "markdownDescription": "Show an icon before  and  (commented-out code) comments."
+                    "markdownDescription": "Show an icon before `# TODO` and `# -` (commented-out code) comments."
                 },
                 "denizenscript.behaviors.track_full_workspace": {
                     "type": "boolean",
