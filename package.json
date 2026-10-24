@@ -261,6 +261,14 @@
             {
                 "id": "denizen_data_actions",
                 "description": "Denizen palette: Data action symbols."
+            },
+            {
+                "id": "denizen_comment_warning",
+                "description": "Denizen palette: Color of ## comments."
+            },
+            {
+                "id": "denizen_comment_critical",
+                "description": "Denizen palette: Color of ### comments."
             }
         ],
         "configuration": {
@@ -268,7 +276,7 @@
             "properties": {
                 "denizenscript.header_symbols": {
                     "type": "string",
-                    "default": "|+=#_@/",
+                    "default": "|+=_@/",
                     "description": "Header comment symbols."
                 },
                 "denizenscript.autoInsertTagSeparators": {
@@ -298,13 +306,23 @@
                 },
                 "denizenscript.theme_colors.comment_normal": {
                     "type": "string",
-                    "default": "#007700",
+                    "default": "#8B8B8B",
                     "description": "Color of normal comments."
                 },
                 "denizenscript.theme_colors.comment_code": {
                     "type": "string",
                     "default": "#DD5500",
                     "description": "Color of code comments."
+                },
+                "denizenscript.theme_colors.comment_warning": {
+                    "type": "string",
+                    "default": "#E5C07B",
+                    "description": "Color of ## comments."
+                },
+                "denizenscript.theme_colors.comment_critical": {
+                    "type": "string",
+                    "default": "#FF5555",
+                    "description": "Color of ### comments."
                 },
                 "denizenscript.theme_colors.key": {
                     "type": "string",

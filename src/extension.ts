@@ -24,7 +24,7 @@ import { mergeRules, paletteRules, userLevel } from "./highlight/paletteRules";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
-let headerSymbols : string = "|+=#_@/";
+let headerSymbols : string = "|+=_@/";
 
 let outputChannel = vscode.window.createOutputChannel("Denizen");
 

@@ -6,6 +6,11 @@
 // instead of creating a vscode.Range (its decorFixes line/column mapping is untouched), and the
 // `decorations` parameter is typed HighlightToken[]. The "is this colour type enabled?" filter
 // `addDecor` used to apply now lives in the caller, so this module emits every token it finds.
+//
+// Deliberate changes since the move, each marked where it happens: the definition-name and
+// dotted-name off-by-ones (2.5.0), and comment classification delegated to ./commentKind (2.6.0).
+
+import { commentKind } from "./commentKind";
 
 /** One coloured run. May span lines when a command continues onto indented lines. */
 export interface HighlightToken {
@@ -32,10 +37,12 @@ export const COLOR_TYPES: readonly string[] = [
     "event_line", "event_switch", "event_switch_value",
     "tag", "tag_dot", "tag_param", "tag_param_bracket",
     "bad_space", "space", "normal",
-    "colons", "if_operators", "data_actions"
+    "colons", "if_operators", "data_actions",
+    // Appended in 2.6.0 -- semanticEncoding resolves overlaps by this order, so new types go last.
+    "comment_warning", "comment_critical"
 ];
 
-let headerSymbols : string = "|+=#_@/";
+let headerSymbols : string = "|+=_@/";
 let doInlineColors : boolean = true;
 let displayDarkColors : boolean = false;
 let tagSpecialColors: { [color: string]: string } = {};
@@ -563,20 +570,7 @@ function decorateLine(line : string, lineNumber: number, decorations: HighlightT
     }
     const preSpaces = trimmedEnd.length - trimmed.length;
     if (trimmed.startsWith("#")) {
-        const afterComment = trimmed.substring(1).trim();
-        const symbol = afterComment.length == 0 ? ' ' : afterComment.charAt(0);
-        if (headerSymbols.includes(symbol)) {
-            decorateComment(line, lineNumber, "comment_header", decorations);
-        }
-        else if (afterComment.startsWith("-")) {
-            decorateComment(line, lineNumber, "comment_code", decorations);
-        }
-        else if (afterComment.toLowerCase().startsWith("todo")) {
-            decorateComment(line, lineNumber, "comment_todo", decorations);
-        }
-        else {
-            decorateComment(line, lineNumber, "comment_normal", decorations);
-        }
+        decorateComment(line, lineNumber, commentKind(line, headerSymbols), decorations);
     }
     else if (trimmed.startsWith("-")) {
         const isNonScript : boolean = isData;

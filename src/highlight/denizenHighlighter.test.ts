@@ -14,7 +14,7 @@ for (const type of COLOR_TYPES) {
 
 function opts(overrides: Partial<HighlightOptions> = {}): HighlightOptions {
     return {
-        headerSymbols: '|+=#_@/',
+        headerSymbols: '|+=_@/',
         doInlineColors: true,
         displayDarkColors: false,
         tagSpecialColors: Object.assign({}, baseTagSpecialColors),
@@ -77,6 +77,12 @@ describe('denizenHighlighter (characterization)', () => {
         expect(result).toContain('comment_todo TODO');
         expect(result).toContain('comment_code narrate');
         expect(result).toContain('comment_normal plain');
+    });
+
+    it('## and ### comments are their own levels (2.6.0), and a ## directive is not', () => {
+        expect(runs('## careful')).toContain('comment_warning careful');
+        expect(runs('### danger')).toContain('comment_critical danger');
+        expect(runs('##ignorewarning def_of_nothing')).toContain('comment_normal def_of_nothing');
     });
 
     it('a command continued onto indented lines maps tokens back to their own lines', () => {
