@@ -230,7 +230,7 @@ The TypeScript language server is a **faithful port** of `SharpDenizenTools`, no
 ---
 <img width="840" height="180" alt="Frame 16" src="https://github.com/user-attachments/assets/5e41cb33-1037-455e-bf23-096ee98cba2f" />
 
-Open source, free for everyone to use and contribute to. If you make changes that could benefit the community, please contribute them upstream to [DenizenVSCode](https://github.com/DenizenScript/DenizenVSCode).
+Open source, free for everyone, to use and contribute to. If you make changes that could benefit the community, please contribute them upstream to [DenizenVSCode](https://github.com/DenizenScript/DenizenVSCode).
 
 ---
 <img width="840" height="180" alt="Frame 14" src="https://github.com/user-attachments/assets/fac5372a-2ebb-4d94-a021-b8ba056cbdb5" />
