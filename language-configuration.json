@@ -34,12 +34,15 @@
     // scopes, which is what made "==", "<=", ">=" and ">" render as different colours from each
     // other in the first place -- the native layer was painting just the raw "<"/">" characters on
     // top of the grammar's scope, and "==" has neither character to paint.
-    // symbols that are highlighted in pairs
+    // ONLY "[" "]", ON PURPOSE. Reported 2026-10-25, once the palette stopped painting over VS Code's
+    // bracket-pair colours (2.5.0 draws it with semantic tokens): "likes: [)|(]" in a data container
+    // and "<list[(|)]>" turned red as unmatched. Parentheses and quotes are ordinary text in Denizen --
+    // decoration in player-facing strings, an apostrophe in "don't" -- and the native matcher counts
+    // raw characters across the whole document, so one stray "(" or "'" marks every bracket below it.
+    // Square brackets are tag-parameter syntax and always balanced: the one pair worth colouring.
+    // Typing still auto-closes all of them -- that is "autoClosingPairs", above.
     "brackets": [
-        ["[", "]"],
-        ["(", ")"],
-        ["\"", "\""],
-        ["'", "'"]
+        ["[", "]"]
     ],
     // symbols that that can be used to surround a selection
     "surroundingPairs": [

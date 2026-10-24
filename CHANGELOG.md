@@ -21,6 +21,13 @@
   colour also swallowed the letter before it. Both were off-by-one errors in the highlighter, found
   while moving it to semantic tokens: on a 3371-line test file they miscoloured 603 characters.
 
+- **Brackets in plain text no longer turn red.** `likes: [)|(]` in a data container or
+  `<list[(|)]>` showed their brackets in VS Code's "unmatched bracket" red: parentheses and quotes
+  were declared as bracket pairs, but in Denizen they are ordinary text — decoration in messages,
+  apostrophes in words — and one stray `(` or `'` threw off the count for the rest of the file.
+  Only `[` `]` (tag parameters, always balanced) are paired now. Typing still auto-closes all of
+  them.
+
 - **Turning the palette off now takes effect immediately.** Its colours used to stay on open
   files until the window was reloaded.
 
