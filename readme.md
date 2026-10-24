@@ -137,6 +137,9 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 ### Extra meta sources
 Load documentation for your own add-ons alongside the official Denizen meta — `denizenscript.server.extra_sources`, as direct `.zip` URLs.
 
+### Reporting lag
+If a large file feels slow, turn on `denizenscript.debug.performance`, work in that file for a minute — scroll, type — then run **`Refined DenizenScript: Show Performance Report`** and paste what it prints into your issue. It shows how long each editor feature took, so the report says which one to fix.
+
 ---
 <img width="840" height="180" alt="Frame 13" src="https://github.com/user-attachments/assets/43a32c99-4ebe-46ac-a522-2a5ca475ddc9" />
 
