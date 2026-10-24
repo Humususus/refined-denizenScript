@@ -26,6 +26,16 @@
         "comments": {
             "patterns": [
                 {
+                    "comment": "COMMENT LEVELS (2.6.0): '###' or more is a critical comment. The second scope, markup.deleted, is there because most themes colour it red and none colour plain comments that way -- so in theme mode the level shows without the extension writing any settings; a theme without it falls back to its comment colour. Requires a space or end of line after the hashes, like commentKind.ts.",
+                    "name": "comment.line.critical.denizenscript markup.deleted.denizenscript",
+                    "match": "^\\s*#{3,}(?=\\s|$).*$"
+                },
+                {
+                    "comment": "'##' is a warning comment (markup.changed: yellow/orange in most themes). '##' followed directly by a word is NOT a level: '##ignorewarning x' is the checker's directive and falls through to the plain rule below.",
+                    "name": "comment.line.warning.denizenscript markup.changed.denizenscript",
+                    "match": "^\\s*##(?=\\s|$).*$"
+                },
+                {
                     "comment": "ANCHORED AT THE START OF THE LINE, and that anchor is load-bearing. Denizen has no end-of-line comment: ScriptChecker.cs:184 tests the TRIMMED line with StartsWith('#'), so a '#' anywhere else is ordinary argument text. Unanchored, this rule ran before every other pattern in the file and greyed out the rest of any line holding a '#' -- a hex colour such as <&color[#FF0000]>, a '#' inside a quoted string, or a channel name.",
                     "name": "comment.line.number-sign.denizenscript",
                     "match": "^\\s*#.*$"

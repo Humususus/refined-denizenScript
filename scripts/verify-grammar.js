@@ -83,6 +83,20 @@ function check(name, ok, detail) {
     check('2d. the command before a "#" keeps its colour',
         has(scopesOf('    - narrate channel#5', 'narrate'), 'support.function'));
 
+    // 2e-2i -- Comment levels (2.6.0). In theme mode the grammar is the only colour source, so
+    // `##` and `###` carry a second, commonly-themed scope (markup.changed / markup.deleted) to look
+    // different from `#` without the extension writing any settings. `##ignorewarning` is a
+    // checker directive, not a level.
+    const commentScopes = line => tokenize(line)[0].scopes;
+    check('2e. "##" is a warning comment', has(commentScopes('    ## careful'), 'comment.line.warning') && has(commentScopes('    ## careful'), 'markup.changed'),
+        JSON.stringify(commentScopes('    ## careful')));
+    check('2f. "###" is a critical comment', has(commentScopes('### danger'), 'comment.line.critical') && has(commentScopes('### danger'), 'markup.deleted'),
+        JSON.stringify(commentScopes('### danger')));
+    check('2g. "##ignorewarning" is a plain comment', has(commentScopes('##ignorewarning x'), 'comment.line') && !has(commentScopes('##ignorewarning x'), 'markup.changed'),
+        JSON.stringify(commentScopes('##ignorewarning x')));
+    check('2h. "#" has neither level scope', !has(commentScopes('# plain'), 'markup.'), JSON.stringify(commentScopes('# plain')));
+    check('2i. "###" inside a quoted argument is not a comment', !anyScope('    - narrate "### x"', 'comment'));
+
     // 3 -- a key line's value used to be one flat capture, so tags written there (display names,
     // formats, titles -- where tags are commonest) showed in the plain value colour.
     check('3. a tag on a key line is scoped as a tag',
