@@ -6,7 +6,7 @@
 // touches rule keys that start with `denizen_` -- `enabled`, per-theme `[Theme Name]` blocks and
 // every other rule are carried through untouched.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.mergeRules = exports.paletteRules = exports.parsePaletteColor = void 0;
+exports.mergeRules = exports.paletteRules = exports.userLevel = exports.parsePaletteColor = void 0;
 const semanticEncoding_1 = require("./semanticEncoding");
 /** Reads the palette's `#RRGGBB|weight=bold|style=italic` format. `background=` cannot be a token colour and is ignored. */
 function parsePaletteColor(value) {
@@ -28,6 +28,17 @@ function parsePaletteColor(value) {
 }
 exports.parsePaletteColor = parsePaletteColor;
 const OUR_PREFIX = 'denizen_';
+/**
+ * A setting's USER-level value (global, else default), from `WorkspaceConfiguration.inspect`.
+ * Workspace and folder overrides are ignored on purpose: the rules this feeds are written to user
+ * settings, shared by every open window, so they must be computed the same way in all of them --
+ * otherwise two windows with different workspace palettes rewrite each other's settings forever.
+ */
+function userLevel(inspected) {
+    var _a;
+    return inspected === undefined ? undefined : ((_a = inspected.globalValue) !== null && _a !== void 0 ? _a : inspected.defaultValue);
+}
+exports.userLevel = userLevel;
 /** One rule per palette type that is a semantic token type, keyed `denizen_<type>:denizenscript`. */
 function paletteRules(colors) {
     const rules = {};

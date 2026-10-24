@@ -233,7 +233,7 @@ function loadAllColors() {
             colorSet("bad_space", palette["bad_space"]);
         }
     }
-    syncPaletteRules(useCustomSyntaxColors ? palette : null);
+    syncPaletteRules();
     if (semanticProvider) {
         semanticProvider.setEnabled(useCustomSyntaxColors);
         semanticProvider.refresh();
@@ -242,15 +242,32 @@ function loadAllColors() {
 let semanticProvider = undefined;
 /**
  * Keeps the extension's `denizen_*` rules in the user's `editor.semanticTokenColorCustomizations`
- * equal to the palette (or absent, for null). Writes only when they differ: the write fires a
- * configuration change that calls loadAllColors() -- and so this -- again, and `mergeRules`
- * returning the same object is what ends that loop.
+ * equal to the user-level palette (or absent, when the palette is off at user level). Writes only
+ * when they differ: the write fires a configuration change in EVERY open window, each of which calls
+ * loadAllColors() -- and so this -- again; `mergeRules` returning the same object is what ends that.
+ *
+ * Built from user-level values only (`userLevel`), never this window's effective ones: the rules are
+ * shared by all windows, and two windows whose workspaces set different palettes would otherwise
+ * keep overwriting each other. A workspace palette override therefore recolours nothing -- the cost
+ * of one shared setting, and far rarer than having two windows open.
  */
-function syncPaletteRules(palette) {
+function syncPaletteRules() {
     var _a;
+    const config = vscode.workspace.getConfiguration();
+    let rules = null;
+    if ((0, paletteRules_1.userLevel)(config.inspect("denizenscript.behaviors.use_custom_syntax_colors")) === true) {
+        const palette = {};
+        for (const type of denizenHighlighter_1.COLOR_TYPES) {
+            const value = (0, paletteRules_1.userLevel)(config.inspect("denizenscript.theme_colors." + type));
+            if (value !== undefined) {
+                palette[type] = value;
+            }
+        }
+        rules = (0, paletteRules_1.paletteRules)(palette);
+    }
     const key = "editor.semanticTokenColorCustomizations";
-    const current = (_a = vscode.workspace.getConfiguration().inspect(key)) === null || _a === void 0 ? void 0 : _a.globalValue;
-    const merged = (0, paletteRules_1.mergeRules)(current, palette === null ? null : (0, paletteRules_1.paletteRules)(palette));
+    const current = (_a = config.inspect(key)) === null || _a === void 0 ? void 0 : _a.globalValue;
+    const merged = (0, paletteRules_1.mergeRules)(current, rules);
     if (merged === current) {
         return;
     }
