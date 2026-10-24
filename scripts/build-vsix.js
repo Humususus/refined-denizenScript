@@ -104,6 +104,18 @@ if (!fs.existsSync(vsixPath)) {
     console.error(`\nvsce reported success but ${vsix} is not here.`);
     process.exit(1);
 }
+// The C# server was removed in 2.4.0, but `git rm` only cleans the tree it ran in: a stale,
+// untracked server/ folder in someone's working copy would be packed silently, putting 2 MB of
+// dead .NET binaries back into the package. Checked on the artefact, for the same reason as above.
+const stale = new (require('adm-zip'))(vsixPath).getEntries()
+    .map(e => e.entryName)
+    .filter(n => n.startsWith('extension/server/'));
+if (stale.length > 0) {
+    fs.unlinkSync(vsixPath);
+    console.error(`\n${vsix} contained ${stale.length} file(s) under server/ (e.g. ${stale[0]}).`);
+    console.error('That is the removed C# language server. Delete the server/ folder and build again.');
+    process.exit(1);
+}
 const mb = (fs.statSync(vsixPath).size / 1048576).toFixed(2);
 console.log(`\nDone: ${vsix}  (${mb} MB)`);
 console.log(`  ${vsixPath}`);

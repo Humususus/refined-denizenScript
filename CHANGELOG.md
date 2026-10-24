@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.0
+
+### Removed
+
+- **The C# language server and its engine switch.** The TypeScript server has been the default
+  for a while; it is now the only one. With it goes the hard dependency on Microsoft's .NET
+  runtime extension (`ms-dotnettools.vscode-dotnet-runtime`), which VS Code used to install
+  alongside this one whether or not anyone ever switched engines. If your settings still say
+  `"denizenscript.server.engine": "csharp"`, nothing breaks — the key is simply ignored and the
+  TypeScript server starts.
+
+  Checked against what the old readme listed as C#-only: event completion, deprecation warnings
+  and cross-file analysis all exist in the TypeScript server today. **Hover on tags** is the one
+  real gap, and it is the next hover feature on the list.
+
+- **The GitHub update checker** — the `Check for updates` command and the
+  `refinedDenizenscript.update.*` settings. Updates come from the Marketplace.
+
+- **Settings that only the C# server read:** `denizenscript.extra_sources` (use
+  `denizenscript.server.extra_sources`), `denizenscript.behaviors.do_hover_docs` and
+  `denizenscript.behaviors.do_tab_completes`. The last two had no effect on the TypeScript server;
+  VS Code's own `editor.hover.enabled` and `editor.quickSuggestions` do the same job.
+
+- **The package is 25% smaller:** 2.25 MB → 1.70 MB, all of it the .NET binaries. The build now
+  refuses to package if a leftover `server/` folder would put them back.
+
 ## 2.3.1
 
 ### Fixes
