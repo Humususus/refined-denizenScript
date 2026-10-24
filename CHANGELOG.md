@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.5.0
+
+### Fixes
+
+- **The Denizen palette lagged on large files.** Scrolling and typing in a file of a few thousand
+  lines stuttered — on slower machines badly — whenever `use_custom_syntax_colors` was on. Measured
+  with the 2.4.1 performance report on a 3371-line file: the palette was ~50 800 separate coloured
+  ranges, and every keystroke sent all of them to the editor again. Theme colours, at 355 ranges,
+  were smooth on the same file.
+
+  The palette is now drawn with **semantic tokens**: VS Code receives one compact array, updates
+  only what changed, and renders only the visible part. On the same file the palette now leaves
+  373 decorations (inline `<&6>`-style colours and trailing-space marks, which tokens cannot
+  express) instead of ~50 800. Colours, bold and italic are the same as before.
+
+- **Turning the palette off now takes effect immediately.** Its colours used to stay on open
+  files until the window was reloaded.
+
+### Changed
+
+- **The Denizen palette is on by default.** If you set `denizenscript.behaviors.use_custom_syntax_colors`
+  yourself, your choice is kept; set it to `false` to use your VS Code theme's colours.
+
+- **The extension now writes to `editor.semanticTokenColorCustomizations`** in your user
+  settings — rules named `denizen_*:denizenscript`, one per palette colour, and nothing else. Your
+  own rules, `enabled` and per-theme blocks are left as they are. Turning the palette off removes
+  the `denizen_*` rules again. Semantic highlighting is switched on for `.dsc` files only, because
+  many themes leave it off and the palette would otherwise not show.
+
 ## 2.4.1
 
 ### New features

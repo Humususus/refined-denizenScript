@@ -127,7 +127,7 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 - Inline colour rendering for colour tags (`denizenscript.behaviors.do_inline_colors`), with an option for very dark colours (`display_dark_colors`).
 - **A colour picker on hex colours** — a swatch beside `<&color[#2596be]>` opens VS Code's own picker, and both the `#RRGGBB` and `#RRGGBBAA` forms are handled. Only inside a tag, and never on a commented-out line.
 - Prefixed arguments are coloured too, not just the command name.
-- Uses your active VS Code theme by default; the legacy DenizenScript palette is available via `denizenscript.behaviors.use_custom_syntax_colors`.
+- Uses the DenizenScript palette by default (`denizenscript.theme_colors.*`); set `denizenscript.behaviors.use_custom_syntax_colors` to `false` to use your VS Code theme's colours instead. The palette is drawn with semantic tokens, so it stays smooth in files of several thousand lines.
 
 ### Script scaffolding
 - **`Refined DenizenScript: Create Category`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>C</kbd>
