@@ -7,7 +7,7 @@
 // COLOR_TYPES order -- so for every character, the token whose type is later in COLOR_TYPES wins.
 // Emit order does not matter, which is what makes this a rule rather than an accident.
 
-import { COLOR_TYPES, HighlightToken } from './denizenHighlighter';
+import { COLOR_TYPES, HighlightOptions, HighlightToken, highlightLines } from './denizenHighlighter';
 
 /** Palette types that become semantic tokens. `bad_space` stays a decoration: it is a background. */
 const TOKEN_COLOR_TYPES = COLOR_TYPES.filter(t => t !== 'bad_space');
@@ -81,6 +81,12 @@ export function flattenTokens(tokens: HighlightToken[], lineLengths: number[]): 
         }
     }
     return out;
+}
+
+/** The whole pipeline for one document, split on '\n' as the highlighter expects. */
+export function buildSemanticTokens(splitText: string[], opts: HighlightOptions): Uint32Array {
+    const lineLengths = splitText.map(line => line.endsWith('\r') ? line.length - 1 : line.length);
+    return encodeSemanticTokens(flattenTokens(highlightLines(splitText, opts), lineLengths));
 }
 
 /** Standard LSP relative encoding: deltaLine, deltaStart, length, tokenType, modifiers (none). */

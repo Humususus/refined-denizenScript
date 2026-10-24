@@ -19,6 +19,8 @@ import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, pa
 import { findHexColors, formatHexColor } from "./hexColors";
 import { perf } from "./perfStats";
 import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
+import { DenizenSemanticTokensProvider, SEMANTIC_LEGEND } from "./highlight/semanticProvider";
+import { mergeRules, paletteRules } from "./highlight/paletteRules";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
@@ -184,20 +186,62 @@ function loadAllColors() {
         }
     }
     applyConfigColors();
-    if (!useCustomSyntaxColors) {
-        return;
-    }
-    for (const i in colorTypes) {
-        let str : string = configuration.get("denizenscript.theme_colors." + colorTypes[i]);
-        if (str === undefined) {
-            outputChannel.appendLine("Missing color config for " + colorTypes[i]);
-            continue;
+    // The palette's own decoration types from the previous load go away first, so switching the
+    // palette off takes its colours off open editors without a reload. Inline `auto:` colours stay.
+    // Safe for the highlight caches: every caller of loadAllColors() forces a full refresh next.
+    for (const type of colorTypes) {
+        if (type in highlightDecors) {
+            highlightDecors[type].dispose();
+            delete highlightDecors[type];
         }
-        colorSet(colorTypes[i], str);
+        delete highlightColorRef[type];
+    }
+    const palette : { [type: string]: string } = {};
+    if (useCustomSyntaxColors) {
+        for (const type of colorTypes) {
+            const str : string = configuration.get("denizenscript.theme_colors." + type);
+            if (str === undefined) {
+                outputChannel.appendLine("Missing color config for " + type);
+                continue;
+            }
+            palette[type] = str;
+            highlightColorRef[type] = str;
+        }
+        // Everything else is a semantic token now (R3); a background cannot be one.
+        if ("bad_space" in palette) {
+            colorSet("bad_space", palette["bad_space"]);
+        }
+    }
+    syncPaletteRules(useCustomSyntaxColors ? palette : null);
+    if (semanticProvider) {
+        semanticProvider.setEnabled(useCustomSyntaxColors);
+        semanticProvider.refresh();
     }
 }
 
+let semanticProvider : DenizenSemanticTokensProvider | undefined = undefined;
+
+/**
+ * Keeps the extension's `denizen_*` rules in the user's `editor.semanticTokenColorCustomizations`
+ * equal to the palette (or absent, for null). Writes only when they differ: the write fires a
+ * configuration change that calls loadAllColors() -- and so this -- again, and `mergeRules`
+ * returning the same object is what ends that loop.
+ */
+function syncPaletteRules(palette : { [type: string]: string } | null) {
+    const key = "editor.semanticTokenColorCustomizations";
+    const current = vscode.workspace.getConfiguration().inspect(key)?.globalValue;
+    const merged = mergeRules(current, palette === null ? null : paletteRules(palette));
+    if (merged === current) {
+        return;
+    }
+    vscode.workspace.getConfiguration().update(key, merged, vscode.ConfigurationTarget.Global).then(undefined, err => {
+        outputChannel.appendLine("Failed to write the Denizen palette into " + key + ": " + err);
+    });
+}
+
 function activateHighlighter(context: vscode.ExtensionContext) {
+    semanticProvider = new DenizenSemanticTokensProvider(highlightOptions);
+    context.subscriptions.push(vscode.languages.registerDocumentSemanticTokensProvider({ language: "denizenscript" }, semanticProvider, SEMANTIC_LEGEND));
     loadAllColors();
 }
 

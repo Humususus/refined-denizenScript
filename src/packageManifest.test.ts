@@ -50,6 +50,10 @@ describe('package.json — removed features stay removed', () => {
     it('turns semantic highlighting on for denizenscript files', () => {
         expect(pkg.contributes.configurationDefaults['[denizenscript]']['editor.semanticHighlighting.enabled']).toBe(true);
     });
+    // Spec 3b, user ruling 2026-10-25: everyone is used to the Denizen palette. Explicit user values win.
+    it('uses the Denizen palette by default', () => {
+        expect((props['denizenscript.behaviors.use_custom_syntax_colors'] as { default: unknown }).default).toBe(true);
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);

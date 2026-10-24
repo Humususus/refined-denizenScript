@@ -1,7 +1,7 @@
 // Counts how many coloured ranges the highlighter produces for one file, in both colour modes --
 // the number the performance report shows as `highlight.ranges`.
 //
-//   node scripts/count-highlight-ranges.js [file=.superpowers/perf/big.dsc]
+//   node scripts/count-highlight-ranges.js [file=.superpowers/perf/big.dsc] [--after-r3]
 //
 // R3 uses it twice: right after the highlighter moved out of extension.ts the counts must equal
 // R2's in-editor measurement (palette 50793, theme 355 on the R2 fixture) -- proof the move changed
@@ -15,7 +15,7 @@ const path = require('path');
 const pkg = require('../package.json');
 const { highlightLines, baseTagSpecialColors, COLOR_TYPES } = require('../out/highlight/denizenHighlighter');
 
-const file = process.argv[2] || path.join(__dirname, '..', '.superpowers', 'perf', 'big.dsc');
+const file = process.argv.slice(2).find(a => !a.startsWith('--')) || path.join(__dirname, '..', '.superpowers', 'perf', 'big.dsc');
 const props = pkg.contributes.configuration.properties;
 const setting = key => props[key].default;
 

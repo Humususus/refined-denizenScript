@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { flattenTokens, encodeSemanticTokens, SEMANTIC_TYPES, semanticIndex } from './semanticEncoding';
+import { flattenTokens, encodeSemanticTokens, buildSemanticTokens, SEMANTIC_TYPES, semanticIndex } from './semanticEncoding';
 import { HighlightToken } from './denizenHighlighter';
 
 const tok = (type: string, line: number, start: number, end: number, endLine = line): HighlightToken => ({ type, line, start, end, endLine });
@@ -44,6 +44,18 @@ describe('semantic token encoding', () => {
 
     it('clamps a token that runs past the end of its line', () => {
         expect(named(flattenTokens([tok('normal', 0, 2, 50)], [5]))).toEqual(['denizen_normal 0:2+3']);
+    });
+
+    it('builds the encoded tokens for a document, ignoring a trailing \\r on each line', () => {
+        const opts = { headerSymbols: '|+=#_@/', doInlineColors: true, displayDarkColors: false, tagSpecialColors: {}, colorRef: {} };
+        expect(Array.from(buildSemanticTokens(['my_task:\r', '    type: task'], opts))).toEqual([
+            0, 0, 7, semanticIndex('key'), 0,
+            0, 7, 1, semanticIndex('colons'), 0,
+            1, 4, 4, semanticIndex('key_inline'), 0,
+            0, 4, 1, semanticIndex('colons'), 0,
+            0, 1, 1, semanticIndex('space'), 0,
+            0, 1, 4, semanticIndex('normal'), 0,
+        ]);
     });
 
     it('delta-encodes line, start, length and type', () => {

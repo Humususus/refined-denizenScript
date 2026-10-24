@@ -418,8 +418,8 @@
                 },
                 "denizenscript.behaviors.use_custom_syntax_colors": {
                     "type": "boolean",
-                    "default": false,
-                    "description": "Use the legacy DenizenScript decoration colors instead of the active VS Code theme's TextMate colors."
+                    "default": true,
+                    "description": "Colour scripts with the Denizen palette (denizenscript.theme_colors.*). Off: use your VS Code theme's colours."
                 },
                 "denizenscript.behaviors.track_full_workspace": {
                     "type": "boolean",
