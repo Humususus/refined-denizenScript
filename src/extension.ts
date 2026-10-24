@@ -997,7 +997,7 @@ function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
         provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.CompletionItem[]> {
             perf.time('index.updateOnCompletion', () => workspaceIndex.updateDocument(document));
-            return getDenizenCompletions(document, position);
+            return perf.time('completion.provide', () => getDenizenCompletions(document, position));
         }
     }, "<", "[", ".", "&", " "));
     // The hover provider that lived here served only the hardcoded third-party doc tables,

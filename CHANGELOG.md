@@ -9,9 +9,10 @@
   optimised. Turn on `denizenscript.debug.performance`, work in the slow file, then run
   **Refined DenizenScript: Show Performance Report**: it lists every editor feature that runs on
   scroll or keystroke — highlighting (whole-file and partial repaints separately), colour swatches,
-  folding, the "Expand tag" lenses, argument hints, the definition index, diagnostics filtering —
-  with call count, total, mean, 95th percentile and worst time, plus how many ranges were
-  decorated and how many lenses were shown. **Reset Performance Stats** starts a clean measurement.
+  folding, the "Expand tag" lenses, argument hints, completion, the definition index, diagnostics
+  filtering — with call count, total, mean, 95th percentile and worst time, plus how many ranges
+  were decorated and how many lenses were shown. Rows marked *async* include time spent waiting
+  on the language server, which does not freeze the editor. **Reset Performance Stats** starts a clean measurement.
   With the setting off (the default) nothing is timed and nothing changes.
 
 ## 2.4.0

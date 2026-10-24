@@ -47,6 +47,16 @@ describe('PerfRecorder', () => {
         expect(r.report()).toMatch(/slow\s+5\s+110\.0\s+22\.0\s+100\.0\s+100\.0/);
     });
 
+    it('marks timeAsync rows as wall-clock, so waiting on the server is not read as blocking work', async () => {
+        const r = new PerfRecorder();
+        r.enabled = true;
+        await r.timeAsync('hints', async () => 1);
+        r.time('sync', () => 1);
+        const lines = r.report().split('\n');
+        expect(lines.find(l => l.startsWith('hints'))).toContain('(async, incl. waits)');
+        expect(lines.find(l => l.startsWith('sync'))).not.toContain('async');
+    });
+
     it('reports the last value of each gauge', () => {
         const r = new PerfRecorder();
         r.enabled = true;

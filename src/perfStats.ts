@@ -8,6 +8,8 @@ export class PerfRecorder {
     enabled = false;
     private readonly samples = new Map<string, number[]>();
     private readonly gauges = new Map<string, number>();
+    /** Labels timed with `timeAsync`: their time includes awaits, which block nothing. */
+    private readonly asyncLabels = new Set<string>();
 
     constructor(private readonly now: () => number = () => performance.now()) {}
 
@@ -30,6 +32,7 @@ export class PerfRecorder {
         if (!this.enabled) {
             return fn();
         }
+        this.asyncLabels.add(label);
         const start = this.now();
         try {
             return await fn();
@@ -61,6 +64,7 @@ export class PerfRecorder {
     reset(): void {
         this.samples.clear();
         this.gauges.clear();
+        this.asyncLabels.clear();
     }
 
     /** One fixed-width row per label, slowest total first, then the gauges. */
@@ -79,7 +83,10 @@ export class PerfRecorder {
         const num = (n: number) => n.toFixed(1).padStart(10);
         const lines = ['Denizen performance (ms)', `${'label'.padEnd(width)}  ${'count'.padStart(7)}${'total'.padStart(10)}${'mean'.padStart(10)}${'p95'.padStart(10)}${'max'.padStart(10)}`];
         for (const r of rows) {
-            lines.push(`${r.label.padEnd(width)}  ${String(r.count).padStart(7)}${num(r.total)}${num(r.mean)}${num(r.p95)}${num(r.max)}`);
+            // Wall-clock rows sit in the same table as blocking ones, so say which is which: an
+            // async row's time is mostly waiting on the language server, which freezes nothing.
+            const note = this.asyncLabels.has(r.label) ? '  (async, incl. waits)' : '';
+            lines.push(`${r.label.padEnd(width)}  ${String(r.count).padStart(7)}${num(r.total)}${num(r.mean)}${num(r.p95)}${num(r.max)}${note}`);
         }
         if (this.gauges.size > 0) {
             lines.push('', 'gauges (last value)');
