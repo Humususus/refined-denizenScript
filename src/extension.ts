@@ -4,7 +4,6 @@ import * as languageClientNode from "vscode-languageclient/node";
 import * as path from "path";
 import * as fs from "fs";
 import * as https from "https";
-import { shouldUseTypeScriptServer } from './serverEngineSelector';
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 import { findSaveEntries, entryTagsFor } from "./entryTags";
 import { activateMapTagPeek, SCHEME as MAP_TAG_SCHEME } from "./mapTagPeek";
@@ -20,12 +19,7 @@ import { definitionsInScope } from "./scopeDefinitions";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from "./denizenEvents";
 import { findHexColors, formatHexColor } from "./hexColors";
 
-const languageServerPath : string = "server/DenizenLangServer.dll";
-
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
-
-/** Which language server engine is actually running, captured once at activation so live setting changes can't desync the hardcoded-provider gates from the server that's actually started. */
-let usingTypeScriptServer : boolean = false;
 
 let headerSymbols : string = "|+=#_@/";
 
@@ -57,15 +51,10 @@ function getCache(path : string) {
 }
 
 /**
- * Builds the middleware shared by both language clients (C# and TypeScript engines).
- *
- * This was previously inlined only in the C# client's `clientOptions`, so the TypeScript
- * client ran with no middleware at all. Sharing it here means the TS client now also gets
- * `provideCompletionItem`'s workspace-flag-completion suppression and `handleDiagnostics`'s
- * dialog/DenizenM diagnostic filtering — that is an intentional consequence of sharing one
- * middleware object, not an accident. Do not remove it from the TS client under the
- * assumption it's unused; Task 3's selection-mute filter depends on both clients routing
- * diagnostics through here.
+ * Builds the language client's middleware: `provideCompletionItem`'s workspace-flag-completion
+ * suppression and `handleDiagnostics`'s dialog/DenizenM diagnostic filtering. Do not drop it
+ * under the assumption it's unused; the selection-mute filter depends on every diagnostic
+ * routing through here.
  */
 function buildSharedMiddleware() : languageClient.Middleware {
     return {
@@ -77,12 +66,11 @@ function buildSharedMiddleware() : languageClient.Middleware {
         },
         handleDiagnostics: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[], next: Function) => {
             // An expanded-tag buffer is a FRAGMENT, not a script: its whole content is one
-            // `<map[ ... ]>` spread over several lines. Both servers happily lint it anyway,
-            // because they gate on the URI ending in ".dsc" and the virtual document is named
+            // `<map[ ... ]>` spread over several lines. The server happily lints it anyway,
+            // because it gates on the URI ending in ".dsc" and the virtual document is named
             // "tag-N.dsc" - so every line comes back as a warning and the entire block goes
-            // yellow. Dropping them here rather than in either server is deliberate: it is one
-            // place, it covers the C# engine too (which this repo cannot change), and it leaves
-            // real files completely untouched.
+            // yellow. Dropping them here rather than in the server keeps the server ignorant of
+            // this client-only scheme and leaves real files completely untouched.
             if (uri.scheme === MAP_TAG_SCHEME) {
                 next(uri, []);
                 return;
@@ -94,32 +82,6 @@ function buildSharedMiddleware() : languageClient.Middleware {
             next(uri, filterDenizenDiagnostics(uri, diagnostics));
         }
     }
-}
-
-function activateLanguageServer(context: vscode.ExtensionContext, dotnetPath : string) {
-    if (!dotnetPath || dotnetPath.length === 0) {
-        dotnetPath = "dotnet";
-    }
-    let pathFile : string = context.asAbsolutePath(languageServerPath);
-    if (!fs.existsSync(pathFile)) {
-        return;
-    }
-    let pathDir : string = path.dirname(pathFile);
-    let serverOptions: languageClientNode.ServerOptions = {
-        run: { command: dotnetPath, args: [pathFile], options: { cwd: pathDir } },
-        debug: { command: dotnetPath, args: [pathFile, "--debug"], options: { cwd: pathDir } }
-    }
-    let clientOptions: languageClient.LanguageClientOptions = {
-        documentSelector: ["denizenscript"],
-        synchronize: {
-            configurationSection: "denizenscript",
-        },
-        middleware: buildSharedMiddleware()
-    }
-    let client = new languageClientNode.LanguageClient("DenizenLangServer", "Denizen Language Server", serverOptions, clientOptions);
-    let disposable = client.start();
-    context.subscriptions.push(disposable);
-    registerDiagnosticClient(client);
 }
 
 function activateTsLanguageServer(context: vscode.ExtensionContext) {
@@ -308,10 +270,9 @@ function repaintDiagnostics(uri: vscode.Uri) : void {
         return;
     }
     const filtered = filterDenizenDiagnostics(uri, raw);
-    // activate() starts exactly one engine (C# or TypeScript), so in practice this
-    // writes to exactly one collection - the one that published `raw` in the first
-    // place. If both engines were ever started at once they would each publish their
-    // own diagnostics anyway, and this cache would need to be keyed per client too.
+    // activate() starts exactly one language client, so this writes to exactly one
+    // collection - the one that published `raw` in the first place. A second client
+    // would need this cache keyed per client too.
     for (const client of diagnosticClients) {
         const collection = client.diagnostics;
         if (collection) {
@@ -2335,19 +2296,6 @@ function scheduleRefresh() {
     refreshTimer = setTimeout(refreshDecor, 50);
 }
 
-async function activateDotNet() {
-    try {
-        outputChannel.appendLine("DenizenScript extension attempting to acquire .NET 8");
-        const requestingExtensionId = 'DenizenScript.denizenscript';
-        const result = await vscode.commands.executeCommand('dotnet.acquire', { version: '8.0', requestingExtensionId });
-        outputChannel.appendLine("DenizenScript extension NET 8 Acquire result: " + result + ": " + result["dotnetPath"]);
-        return result["dotnetPath"];
-    }
-    catch (error) {
-        outputChannel.appendLine("Error: " + error);
-        return "";
-    }
-}
 
 function forceRefresh(reason: String) {
     if (debugHighlighting) {
@@ -2693,14 +2641,7 @@ function tryLoadConfigYaml(relativeTo : vscode.TextDocument) {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-    usingTypeScriptServer = shouldUseTypeScriptServer(configuration.get("denizenscript.server.engine"));
-    if (usingTypeScriptServer) {
-        activateTsLanguageServer(context);
-    }
-    else {
-        let path : string = await activateDotNet();
-        activateLanguageServer(context, path);
-    }
+    activateTsLanguageServer(context);
     activateHighlighter(context);
     activateUpdateChecks(context);
     activateDenizenFileCommands(context);
@@ -2709,8 +2650,8 @@ export async function activate(context: vscode.ExtensionContext) {
     activateDenizenEscaping(context);
     activateDiagnosticMuting(context);
     activateQuickFixes(context);
-    activateScriptDefinitions(context, activateDefinitionProvider(context), usingTypeScriptServer);
-    activateArgumentHints(context, usingTypeScriptServer);
+    activateScriptDefinitions(context, activateDefinitionProvider(context));
+    activateArgumentHints(context);
     activateMathEval(context);
     activateDefinitionValueHover(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
