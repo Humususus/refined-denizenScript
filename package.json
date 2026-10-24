@@ -169,9 +169,100 @@
             "[denizenscript]": {
                 "editor.insertSpaces": true,
                 "editor.wordBasedSuggestions": "off",
-                "editor.autoIndent": "keep"
+                "editor.autoIndent": "keep",
+                "editor.semanticHighlighting.enabled": true
             }
         },
+        "semanticTokenTypes": [
+            {
+                "id": "denizen_comment_header",
+                "description": "Denizen palette: Color of header comments."
+            },
+            {
+                "id": "denizen_comment_normal",
+                "description": "Denizen palette: Color of normal comments."
+            },
+            {
+                "id": "denizen_comment_todo",
+                "description": "Denizen palette: Color of TODO comments."
+            },
+            {
+                "id": "denizen_comment_code",
+                "description": "Denizen palette: Color of code comments."
+            },
+            {
+                "id": "denizen_key",
+                "description": "Denizen palette: Color of basic keys (lines that end with a colon)."
+            },
+            {
+                "id": "denizen_key_inline",
+                "description": "Denizen palette: Color of inline keys (lines that contain a colon, and don't start with a dash)."
+            },
+            {
+                "id": "denizen_command",
+                "description": "Denizen palette: Color of command names."
+            },
+            {
+                "id": "denizen_quote_double",
+                "description": "Denizen palette: Color of double-quoted sections."
+            },
+            {
+                "id": "denizen_quote_single",
+                "description": "Denizen palette: Color of single-quoted sections."
+            },
+            {
+                "id": "denizen_def_name",
+                "description": "Denizen palette: Color of definition names."
+            },
+            {
+                "id": "denizen_event_line",
+                "description": "Denizen palette: Color of basic event line after the 'on' / 'after' prefix."
+            },
+            {
+                "id": "denizen_event_switch",
+                "description": "Denizen palette: Color of an event switch label."
+            },
+            {
+                "id": "denizen_event_switch_value",
+                "description": "Denizen palette: Color of an event switch value."
+            },
+            {
+                "id": "denizen_tag",
+                "description": "Denizen palette: Color of <tags>."
+            },
+            {
+                "id": "denizen_tag_dot",
+                "description": "Denizen palette: Color of the dot symbol within tags."
+            },
+            {
+                "id": "denizen_tag_param",
+                "description": "Denizen palette: Color of [parameters] within tags, inside the brackets."
+            },
+            {
+                "id": "denizen_tag_param_bracket",
+                "description": "Denizen palette: Color of the brackets for [parameters] within tags."
+            },
+            {
+                "id": "denizen_space",
+                "description": "Denizen palette: Highlighting for a normal space (incase spaces are rendered)."
+            },
+            {
+                "id": "denizen_normal",
+                "description": "Denizen palette: Highlighting for anything not otherwise specified."
+            },
+            {
+                "id": "denizen_colons",
+                "description": "Denizen palette: Colons, on a key, the end of a command, or inside events (and also some other operators)."
+            },
+            {
+                "id": "denizen_if_operators",
+                "description": "Denizen palette: If command operator symbols."
+            },
+            {
+                "id": "denizen_data_actions",
+                "description": "Denizen palette: Data action symbols."
+            }
+        ],
         "configuration": {
             "title": "DenizenScript",
             "properties": {

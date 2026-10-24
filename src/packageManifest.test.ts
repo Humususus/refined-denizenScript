@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SEMANTIC_TYPES } from './highlight/semanticEncoding';
 
 // Pins what 2.4.0 removed: the C# engine, its settings and .NET dependency, and the GitHub
 // updater. Read straight from package.json so a revert of any one of them fails here.
@@ -39,6 +40,15 @@ describe('package.json — removed features stay removed', () => {
         for (const id of ['refinedDenizenscript.showPerformanceReport', 'refinedDenizenscript.resetPerformanceStats']) {
             expect(pkg.activationEvents).toContain(`onCommand:${id}`);
         }
+    });
+    it('declares every Denizen semantic token type', () => {
+        const declared = (pkg.contributes.semanticTokenTypes ?? []).map((t: { id: string }) => t.id);
+        expect(declared).toEqual(expect.arrayContaining([...SEMANTIC_TYPES]));
+    });
+    // Many themes leave semantic highlighting off ("configuredByTheme"), and then the palette's
+    // token colours are silently ignored. Turned on for Denizen files only.
+    it('turns semantic highlighting on for denizenscript files', () => {
+        expect(pkg.contributes.configurationDefaults['[denizenscript]']['editor.semanticHighlighting.enabled']).toBe(true);
     });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
