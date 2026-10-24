@@ -479,7 +479,11 @@ function decorateArg(arg : string, start: number, lineNumber: number, decoration
                         }
                         decorateDefName(decorations, nextArg.substring(bump, colonIndex), lineNumber, start + i + 1 + bump);
                         i += colonIndex;
-                        lastDecor = i + bump;
+                        // The name ends at i + 1 (where its ':' is, if any) whether or not it was
+                        // quoted -- colonIndex is measured in nextArg, which includes the quote.
+                        // This was `i + bump`, one short for an unquoted name, so a `normal` run
+                        // covered the name's last letter (fixed 2.5.0).
+                        lastDecor = i + 1;
                         const afterColon = nextArg.substring(colonIndex);
                         for (let possible of dataActions) {
                             if (afterColon.startsWith(possible)) {
@@ -514,7 +518,7 @@ function decorateDefName(decorations: HighlightToken[], part : string, lineNumbe
     let lastIndex : number = 0;
     while (dot != -1) {
         addDecor(decorations, "def_name", lineNumber, start + lastIndex, start + dot);
-        addDecor(decorations, "tag_dot", lineNumber, start + dot - 1, start + dot + 1);
+        addDecor(decorations, "tag_dot", lineNumber, start + dot, start + dot + 1);
         lastIndex = dot + 1;
         dot = indexOfAny(part, ['.', '|'], dot + 1);
     }

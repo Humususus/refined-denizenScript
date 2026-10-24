@@ -91,6 +91,32 @@ describe('denizenHighlighter (characterization)', () => {
         expect(tokens.some(t => t.type === 'space' && t.line === 0 && t.start === 11 && t.endLine === 1 && t.end === 0)).toBe(true);
     });
 
+    /** Every token touching [from, to) on line 0, as "type text". */
+    function covering(source: string, from: number, to: number): string[] {
+        return highlightLines([source], opts())
+            .filter(t => t.end > t.start && t.start < to && t.end > from)
+            .map(t => `${t.type} ${source.slice(t.start, t.end)}`);
+    }
+
+    // Fixed in 2.5.0. Before, the run after a define/flag name started one character early, so a
+    // `normal` run covered the name's last letter and the palette showed it in the normal colour.
+    it('a define name is coloured as a definition to its last letter', () => {
+        expect(covering('- define health <player.health>', 9, 15)).toEqual(['def_name health']);
+        expect(covering('- define health 5', 9, 15)).toEqual(['def_name health']);
+        expect(covering('- flag player inventory.hookUser:<context.item>', 14, 32))
+            .toEqual(['def_name inventory', 'tag_dot .', 'def_name hookUser']);
+    });
+
+    // Fixed in 2.5.0. The dot inside a dotted name was coloured starting one character early,
+    // taking the letter before it along.
+    it('the dot in a dotted definition name covers only the dot', () => {
+        expect(covering('- define a.b <x>', 9, 12)).toEqual(['def_name a', 'tag_dot .', 'def_name b']);
+    });
+
+    it('a quoted define name with a value still ends at the colon', () => {
+        expect(covering('- define "health:5"', 10, 16)).toEqual(['def_name health']);
+    });
+
     it('trailing spaces are bad_space', () => {
         const tokens = highlightLines(['- narrate hi   '], opts());
         expect(tokens.find(t => t.type === 'bad_space')).toMatchObject({ line: 0, start: 12, end: 15 });

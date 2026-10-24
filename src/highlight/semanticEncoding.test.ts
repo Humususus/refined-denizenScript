@@ -16,9 +16,9 @@ describe('semantic token encoding', () => {
             .toEqual(['denizen_tag 0:0+5', 'denizen_tag_dot 0:5+1', 'denizen_tag 0:6+14']);
     });
 
-    it('keeps 2.4.1 rendering where an earlier type overlaps a later one: `- define id <x>` ends the name in `normal`', () => {
-        // Real output on the corpus: def_name covers "id" (10-12), normal covers its last letter (11-12).
-        // 2.4.1 painted normal on top, so the name's last letter showed in the normal colour.
+    it('an earlier type under a later one loses the overlapped part', () => {
+        // The shape of the define-name bug fixed in 2.5.0 (a `normal` run over a name's last letter):
+        // the highlighter no longer emits it, but the rule still decides any overlap that appears.
         expect(named(flattenTokens([tok('def_name', 0, 10, 12), tok('normal', 0, 11, 12)], [20])))
             .toEqual(['denizen_def_name 0:10+1', 'denizen_normal 0:11+1']);
     });

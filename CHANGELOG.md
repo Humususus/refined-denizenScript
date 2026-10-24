@@ -15,6 +15,12 @@
   373 decorations (inline `<&6>`-style colours and trailing-space marks, which tokens cannot
   express) instead of ~50 800. Colours, bold and italic are the same as before.
 
+- **The last letter of a definition name was the wrong colour.** In `- define health <...>`,
+  `- flag player rewards:+:1` and the like, the palette coloured the name as a definition except
+  its final letter, which came out in the plain-text colour; in a dotted name such as `a.b` the dot's
+  colour also swallowed the letter before it. Both were off-by-one errors in the highlighter, found
+  while moving it to semantic tokens: on a 3371-line test file they miscoloured 603 characters.
+
 - **Turning the palette off now takes effect immediately.** Its colours used to stay on open
   files until the window was reloaded.
 
