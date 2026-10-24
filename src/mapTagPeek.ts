@@ -16,6 +16,7 @@
 
 import * as vscode from 'vscode';
 import { findTagAt, formatTag, collapseTag, isCollapsible } from './tagFormatter';
+import { perf } from './perfStats';
 
 /** The URI scheme the expanded views live under. */
 export const SCHEME = 'denizen-maptag';
@@ -236,6 +237,12 @@ async function syncOnce(document: vscode.TextDocument, expansion: Expansion): Pr
  */
 class ExpandTagLensProvider implements vscode.CodeLensProvider {
     provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+        const lenses = perf.time('codelens.provide', () => this.lensesFor(document));
+        perf.gauge('codelens.count', lenses.length);
+        return lenses;
+    }
+
+    private lensesFor(document: vscode.TextDocument): vscode.CodeLens[] {
         if (!vscode.workspace.getConfiguration().get<boolean>('refinedDenizenscript.mapTag.showExpandLens', true)) {
             return [];
         }

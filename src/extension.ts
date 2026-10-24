@@ -17,6 +17,7 @@ import { activateDefinitionValueHover } from "./definitionValueHoverProvider";
 import { definitionsInScope } from "./scopeDefinitions";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from "./denizenEvents";
 import { findHexColors, formatHexColor } from "./hexColors";
+import { perf } from "./perfStats";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
@@ -78,7 +79,7 @@ function buildSharedMiddleware() : languageClient.Middleware {
             // able to repaint a file the user isn't typing in, and the server may
             // never republish for such a file - see repaintDiagnostics.
             rawDiagnostics.set(pathKey(uri), diagnostics);
-            next(uri, filterDenizenDiagnostics(uri, diagnostics));
+            next(uri, perf.time('diagnostics.filter', () => filterDenizenDiagnostics(uri, diagnostics)));
         }
     }
 }
@@ -167,6 +168,7 @@ function loadAllColors() {
     headerSymbols = configuration.get("denizenscript.header_symbols");
     debugHighlighting = configuration.get("denizenscript.debug.highlighting");
     debugFolding = configuration.get("denizenscript.debug.folding");
+    perf.enabled = configuration.get("denizenscript.debug.performance") === true;
     doInlineColors = configuration.get("denizenscript.behaviors.do_inline_colors");
     displayDarkColors = configuration.get("denizenscript.behaviors.display_dark_colors");
     tagSpecialColors = Object.assign({}, baseTagSpecialColors);
@@ -520,7 +522,7 @@ function scheduleIndexUpdate(document: vscode.TextDocument) {
     }
     pendingIndexUpdates.set(key, setTimeout(() => {
         pendingIndexUpdates.delete(key);
-        workspaceIndex.updateDocument(document);
+        perf.time('index.update', () => workspaceIndex.updateDocument(document));
     }, INDEX_DEBOUNCE_MS));
 }
 
@@ -994,7 +996,7 @@ function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
     workspaceIndex.refreshWorkspace();
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider("denizenscript", {
         provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) : vscode.ProviderResult<vscode.CompletionItem[]> {
-            workspaceIndex.updateDocument(document);
+            perf.time('index.updateOnCompletion', () => workspaceIndex.updateDocument(document));
             return getDenizenCompletions(document, position);
         }
     }, "<", "[", ".", "&", " "));
@@ -1914,6 +1916,13 @@ function decorateEventLine(line : string, preLength: number, lineNumber: number,
 }
 
 function decorateFullFile(editor: vscode.TextEditor) {
+    // Split by branch so the baseline can tell a whole-file repaint from an edit's partial one.
+    const highlight : HighlightCache = getCache(editor.document.uri.toString());
+    const full = Object.keys(highlight.lastDecorations).length === 0 || highlight.needRefreshStartLine == -1;
+    perf.time(full ? 'highlight.full' : 'highlight.partial', () => decorateFile(editor));
+}
+
+function decorateFile(editor: vscode.TextEditor) {
     let decorations: { [color: string]: vscode.Range[] } = {};
     let highlight : HighlightCache = getCache(editor.document.uri.toString());
     if (Object.keys(highlight.lastDecorations).length === 0) {
@@ -2020,8 +2029,17 @@ function decorateFullFile(editor: vscode.TextEditor) {
         }
     }
     // Apply them
-    for (const c in decorations) {
-        editor.setDecorations(highlightDecors[c], decorations[c]);
+    perf.time('highlight.setDecorations', () => {
+        for (const c in decorations) {
+            editor.setDecorations(highlightDecors[c], decorations[c]);
+        }
+    });
+    if (perf.enabled) {
+        let ranges = 0;
+        for (const c in decorations) {
+            ranges += decorations[c].length;
+        }
+        perf.gauge('highlight.ranges', ranges);
     }
     highlight.lastDecorations = decorations;
     highlight.needRefreshStartLine = -1;
@@ -2452,7 +2470,7 @@ export async function activate(context: vscode.ExtensionContext) {
             forceRefresh("onDidOpenTextDocument");
         }
     }, null, context.subscriptions);
-    vscode.workspace.onDidChangeTextDocument(event => {
+    vscode.workspace.onDidChangeTextDocument(event => perf.time('textChange.handler', () => {
         const curFile : string = event.document.uri.toString();
         if (curFile.endsWith(".dsc")) {
             scheduleIndexUpdate(event.document);
@@ -2475,7 +2493,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 forceRefresh("onDidChangeTextDocument" + changeCounter);
             }
         }
-    }, null, context.subscriptions);
+    }), null, context.subscriptions);
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.showPerformanceReport", () => {
+        outputChannel.appendLine(perf.report());
+        outputChannel.show(true);
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.resetPerformanceStats", () => perf.reset()));
     vscode.window.onDidChangeVisibleTextEditors(editors => {
         for (const editor of editors) {
             const uri = editor.document.uri.toString();
@@ -2493,7 +2516,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     vscode.languages.registerFoldingRangeProvider('denizenscript', {
         provideFoldingRanges(document: vscode.TextDocument, context: vscode.FoldingContext, token: vscode.CancellationToken) : vscode.ProviderResult<vscode.FoldingRange[]> {
-            return denizenScriptFoldingProvider(document, context, token);
+            return perf.time('folding.provide', () => denizenScriptFoldingProvider(document, context, token));
         }
     });
     // A swatch beside every hex colour written inside a tag, opening VS Code's own picker.
@@ -2506,42 +2529,50 @@ export async function activate(context: vscode.ExtensionContext) {
     // the matches themselves.
     context.subscriptions.push(vscode.languages.registerColorProvider('denizenscript', {
         provideDocumentColors(document: vscode.TextDocument): vscode.ProviderResult<vscode.ColorInformation[]> {
-            // Keyed by (uri, version) because VS Code asks for colours far more often than the
-            // document actually changes -- a decoration refresh, an editor regaining focus or a
-            // configuration change all re-request them at the SAME version, and on a 4000-line
-            // file each of those was a fresh full-document scan.
-            //
-            // This does NOT make the typing path cheaper: every keystroke bumps `version`, so the
-            // edit itself still costs one scan. It removes the repeats around it, nothing more.
-            // A single slot rather than a Map: the requests come in bursts for whichever file is
-            // in front of the user, so a one-entry cache catches them without holding documents
-            // alive after the user moves on.
-            const cacheKey = document.uri.toString();
-            if (colorCache !== undefined && colorCache.uri === cacheKey && colorCache.version === document.version) {
-                return colorCache.colors;
-            }
-            const results: vscode.ColorInformation[] = [];
-            for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
-                for (const found of findHexColors(document.lineAt(lineNumber).text)) {
-                    const range = new vscode.Range(lineNumber, found.start, lineNumber, found.end);
-                    // vscode.Color channels are 0-1; the match carries them as 0-255 bytes.
-                    const color = new vscode.Color(found.red / 255, found.green / 255, found.blue / 255, found.alpha / 255);
-                    results.push(new vscode.ColorInformation(range, color));
-                }
-            }
-            colorCache = { uri: cacheKey, version: document.version, colors: results };
-            return results;
+            return perf.time('colors.provide', () => provideHexColors(document));
         },
         provideColorPresentations(color: vscode.Color, context: { document: vscode.TextDocument, range: vscode.Range }): vscode.ProviderResult<vscode.ColorPresentation[]> {
-            // Whether the author wrote the 8-digit form is read back off the document rather than
-            // remembered, because VS Code hands this callback only the colour and its range. It
-            // decides whether an opaque colour keeps its alpha byte -- see `formatHexColor`.
-            const hadAlpha = context.document.getText(context.range).length === '#rrggbbaa'.length;
-            return [new vscode.ColorPresentation(formatHexColor(color.red * 255, color.green * 255, color.blue * 255, color.alpha * 255, hadAlpha))];
+            return presentHexColor(color, context);
         }
     }));
     scheduleRefresh();
     outputChannel.appendLine('Denizen extension has been activated');
+}
+
+function provideHexColors(document: vscode.TextDocument): vscode.ColorInformation[] {
+    // Keyed by (uri, version) because VS Code asks for colours far more often than the
+    // document actually changes -- a decoration refresh, an editor regaining focus or a
+    // configuration change all re-request them at the SAME version, and on a 4000-line
+    // file each of those was a fresh full-document scan.
+    //
+    // This does NOT make the typing path cheaper: every keystroke bumps `version`, so the
+    // edit itself still costs one scan. It removes the repeats around it, nothing more.
+    // A single slot rather than a Map: the requests come in bursts for whichever file is
+    // in front of the user, so a one-entry cache catches them without holding documents
+    // alive after the user moves on.
+    const cacheKey = document.uri.toString();
+    if (colorCache !== undefined && colorCache.uri === cacheKey && colorCache.version === document.version) {
+        return colorCache.colors;
+    }
+    const results: vscode.ColorInformation[] = [];
+    for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
+        for (const found of findHexColors(document.lineAt(lineNumber).text)) {
+            const range = new vscode.Range(lineNumber, found.start, lineNumber, found.end);
+            // vscode.Color channels are 0-1; the match carries them as 0-255 bytes.
+            const color = new vscode.Color(found.red / 255, found.green / 255, found.blue / 255, found.alpha / 255);
+            results.push(new vscode.ColorInformation(range, color));
+        }
+    }
+    colorCache = { uri: cacheKey, version: document.version, colors: results };
+    return results;
+}
+
+function presentHexColor(color: vscode.Color, context: { document: vscode.TextDocument, range: vscode.Range }): vscode.ColorPresentation[] {
+    // Whether the author wrote the 8-digit form is read back off the document rather than
+    // remembered, because VS Code hands this callback only the colour and its range. It
+    // decides whether an opaque colour keeps its alpha byte -- see `formatHexColor`.
+    const hadAlpha = context.document.getText(context.range).length === '#rrggbbaa'.length;
+    return [new vscode.ColorPresentation(formatHexColor(color.red * 255, color.green * 255, color.blue * 255, color.alpha * 255, hadAlpha))];
 }
 
 class InProcFold {

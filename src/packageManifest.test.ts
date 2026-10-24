@@ -29,6 +29,10 @@ describe('package.json — removed features stay removed', () => {
         const text = JSON.stringify(props);
         expect(text).not.toMatch(/C# engine|TypeScript (language server )?engine|server\.engine/);
     });
+    it('ships the performance debug setting and its two commands', () => {
+        expect(props).toHaveProperty(['denizenscript.debug.performance']);
+        expect(commandIds).toEqual(expect.arrayContaining(['refinedDenizenscript.showPerformanceReport', 'refinedDenizenscript.resetPerformanceStats']));
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);

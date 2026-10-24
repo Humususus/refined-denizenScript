@@ -69,6 +69,14 @@
             {
                 "command": "refinedDenizenscript.evaluateMathTag",
                 "title": "Refined DenizenScript: Evaluate Math Tag"
+            },
+            {
+                "command": "refinedDenizenscript.showPerformanceReport",
+                "title": "Refined DenizenScript: Show Performance Report"
+            },
+            {
+                "command": "refinedDenizenscript.resetPerformanceStats",
+                "title": "Refined DenizenScript: Reset Performance Stats"
             }
         ],
         "keybindings": [
@@ -352,6 +360,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Whether to output debug logs for syntax folding."
+                },
+                "denizenscript.debug.performance": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "Record how long each editor feature takes. Run **Refined DenizenScript: Show Performance Report** to see the numbers. For diagnosing lag; leave off otherwise."
                 },
                 "refinedDenizenscript.mapTag.showExpandLens": {
                     "type": "boolean",

@@ -21,6 +21,7 @@
 
 import * as vscode from 'vscode';
 import { hintTextFor, parseSyntaxParameter, SyntaxParameter } from './argumentHints';
+import { perf } from './perfStats';
 
 /** Reads the parameter texts out of a signature help response. */
 function parametersOf(help: vscode.SignatureHelp | undefined): SyntaxParameter[] {
@@ -50,7 +51,11 @@ export class ArgumentHintsProvider implements vscode.InlayHintsProvider {
         this.changed.fire();
     }
 
-    async provideInlayHints(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.InlayHint[]> {
+    provideInlayHints(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.InlayHint[]> {
+        return perf.timeAsync('inlayHints.provide', () => this.hintsFor(document, range));
+    }
+
+    private async hintsFor(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.InlayHint[]> {
         if (!vscode.workspace.getConfiguration('denizenscript').get<boolean>('inlineArgumentHints', true)) {
             return [];
         }
