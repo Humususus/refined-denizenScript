@@ -26,7 +26,8 @@
 - **The extension now writes to `editor.semanticTokenColorCustomizations`** in your user
   settings — rules named `denizen_*:denizenscript`, one per palette colour, and nothing else. Your
   own rules, `enabled` and per-theme blocks are left as they are. Turning the palette off removes
-  the `denizen_*` rules again. Semantic highlighting is switched on for `.dsc` files only, because
+  the `denizen_*` rules again. The rules follow your **user** settings: a palette colour set only
+  in a workspace's settings does not change them, because they are shared by every open window. Semantic highlighting is switched on for `.dsc` files only, because
   many themes leave it off and the palette would otherwise not show.
 
 ## 2.4.1

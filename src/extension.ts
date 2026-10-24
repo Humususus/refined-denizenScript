@@ -20,7 +20,7 @@ import { findHexColors, formatHexColor } from "./hexColors";
 import { perf } from "./perfStats";
 import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
 import { DenizenSemanticTokensProvider, SEMANTIC_LEGEND } from "./highlight/semanticProvider";
-import { mergeRules, paletteRules } from "./highlight/paletteRules";
+import { mergeRules, paletteRules, userLevel } from "./highlight/paletteRules";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
@@ -212,7 +212,7 @@ function loadAllColors() {
             colorSet("bad_space", palette["bad_space"]);
         }
     }
-    syncPaletteRules(useCustomSyntaxColors ? palette : null);
+    syncPaletteRules();
     if (semanticProvider) {
         semanticProvider.setEnabled(useCustomSyntaxColors);
         semanticProvider.refresh();
@@ -223,14 +223,31 @@ let semanticProvider : DenizenSemanticTokensProvider | undefined = undefined;
 
 /**
  * Keeps the extension's `denizen_*` rules in the user's `editor.semanticTokenColorCustomizations`
- * equal to the palette (or absent, for null). Writes only when they differ: the write fires a
- * configuration change that calls loadAllColors() -- and so this -- again, and `mergeRules`
- * returning the same object is what ends that loop.
+ * equal to the user-level palette (or absent, when the palette is off at user level). Writes only
+ * when they differ: the write fires a configuration change in EVERY open window, each of which calls
+ * loadAllColors() -- and so this -- again; `mergeRules` returning the same object is what ends that.
+ *
+ * Built from user-level values only (`userLevel`), never this window's effective ones: the rules are
+ * shared by all windows, and two windows whose workspaces set different palettes would otherwise
+ * keep overwriting each other. A workspace palette override therefore recolours nothing -- the cost
+ * of one shared setting, and far rarer than having two windows open.
  */
-function syncPaletteRules(palette : { [type: string]: string } | null) {
+function syncPaletteRules() {
+    const config = vscode.workspace.getConfiguration();
+    let rules : ReturnType<typeof paletteRules> | null = null;
+    if (userLevel(config.inspect<boolean>("denizenscript.behaviors.use_custom_syntax_colors")) === true) {
+        const palette : { [type: string]: string } = {};
+        for (const type of colorTypes) {
+            const value = userLevel(config.inspect<string>("denizenscript.theme_colors." + type));
+            if (value !== undefined) {
+                palette[type] = value;
+            }
+        }
+        rules = paletteRules(palette);
+    }
     const key = "editor.semanticTokenColorCustomizations";
-    const current = vscode.workspace.getConfiguration().inspect(key)?.globalValue;
-    const merged = mergeRules(current, palette === null ? null : paletteRules(palette));
+    const current = config.inspect(key)?.globalValue;
+    const merged = mergeRules(current, rules);
     if (merged === current) {
         return;
     }

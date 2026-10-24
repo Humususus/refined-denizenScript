@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { parsePaletteColor, paletteRules, mergeRules } from './paletteRules';
+import { parsePaletteColor, paletteRules, mergeRules, userLevel } from './paletteRules';
+
+// The rules live in USER settings, shared by every window. If each window built them from its own
+// effective value (workspace overrides included), two windows with different palettes would keep
+// rewriting each other's settings.json. Built from user-level values, every window agrees.
+describe('userLevel', () => {
+    it('prefers the user (global) value', () => {
+        expect(userLevel({ globalValue: '#111111', workspaceValue: '#222222', defaultValue: '#333333' })).toBe('#111111');
+    });
+    it('ignores workspace and folder overrides, falling back to the default', () => {
+        expect(userLevel({ workspaceValue: '#222222', workspaceFolderValue: '#444444', defaultValue: '#333333' })).toBe('#333333');
+        expect(userLevel({ workspaceValue: false, defaultValue: true })).toBe(true);
+    });
+    it('is undefined when nothing is known', () => {
+        expect(userLevel(undefined)).toBeUndefined();
+    });
+});
 
 describe('parsePaletteColor', () => {
     it('reads colour, weight and style', () => {

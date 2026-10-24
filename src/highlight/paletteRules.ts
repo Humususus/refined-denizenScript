@@ -40,6 +40,16 @@ export function parsePaletteColor(value: string): PaletteColor | null {
 
 const OUR_PREFIX = 'denizen_';
 
+/**
+ * A setting's USER-level value (global, else default), from `WorkspaceConfiguration.inspect`.
+ * Workspace and folder overrides are ignored on purpose: the rules this feeds are written to user
+ * settings, shared by every open window, so they must be computed the same way in all of them --
+ * otherwise two windows with different workspace palettes rewrite each other's settings forever.
+ */
+export function userLevel<T>(inspected: { globalValue?: T; defaultValue?: T; workspaceValue?: T; workspaceFolderValue?: T } | undefined): T | undefined {
+    return inspected === undefined ? undefined : (inspected.globalValue ?? inspected.defaultValue);
+}
+
 /** One rule per palette type that is a semantic token type, keyed `denizen_<type>:denizenscript`. */
 export function paletteRules(colors: Record<string, string>): Record<string, TokenRule> {
     const rules: Record<string, TokenRule> = {};
