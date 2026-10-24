@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.6.0
+
+### New features
+
+- **Comment levels.** `## text` is a warning comment (yellow) and `### text` a critical one — red,
+  with a light red band across the line so it is hard to scroll past. `# text` stays a plain
+  comment. In theme-colour mode the two levels get the `markup.changed` / `markup.deleted` scopes,
+  which most themes colour yellow and red, so they stand out there too. `##ignorewarning …` and any
+  other `##` directly followed by a word stays a plain comment: it is an instruction to the checker,
+  and a yellow directive would read as a warning about itself.
+- **Runs of comments fold.** Two or more comment lines of the same level and indentation in a row
+  get one fold, so a long note or a block of commented-out code collapses to a line.
+- **Icons on TODO and commented-out code.** A checkbox before `# TODO` and a ▸ before `# -`, in
+  their palette colours. They are drawn in front of the `#`, not instead of it — the file is not
+  changed. Turn them off with `denizenscript.behaviors.comment_icons`.
+
+### Changed
+
+- **Plain comments are grey by default** (`theme_colors.comment_normal`: `#007700` → `#8B8B8B`), so
+  the new levels have something calm to stand out against. A colour you set yourself is kept.
+- **`#` is no longer a default header symbol** (`header_symbols`: `|+=#_@/` → `|+=_@/`). With it,
+  `## text` was a header, not a warning.
+
 ## 2.5.0
 
 ### Fixes

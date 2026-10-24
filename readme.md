@@ -129,6 +129,19 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 - Prefixed arguments are coloured too, not just the command name.
 - Uses the DenizenScript palette by default (`denizenscript.theme_colors.*`); set `denizenscript.behaviors.use_custom_syntax_colors` to `false` to use your VS Code theme's colours instead. The palette is drawn with semantic tokens, so it stays smooth in files of several thousand lines.
 
+### Comment levels
+| Write | Shows as |
+|---|---|
+| `# note` | a plain comment (grey) |
+| `## careful` | a warning (yellow) |
+| `### do not touch` | a critical block (red, with a light red band across the line) |
+| `# TODO …` / `# - narrate …` | a TODO / commented-out code, with an icon in front |
+
+- Several comment lines of the same level in a row fold into one.
+- `##ignorewarning …` and other `##word` directives stay plain comments — they are instructions to the checker, not emphasis.
+- In theme-colour mode `##` and `###` use the `markup.changed` / `markup.deleted` scopes, which most themes colour yellow and red.
+- Turn the icons off with `denizenscript.behaviors.comment_icons`.
+
 ### Script scaffolding
 - **`Refined DenizenScript: Create Category`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>C</kbd>
 - **`Refined DenizenScript: Create Script File`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>F</kbd>
