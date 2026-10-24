@@ -29,6 +29,8 @@
         "onLanguage:denizenscript",
         "onCommand:refinedDenizenscript.createCategory",
         "onCommand:refinedDenizenscript.createScriptFile",
+        "onCommand:refinedDenizenscript.showPerformanceReport",
+        "onCommand:refinedDenizenscript.resetPerformanceStats",
         "onStartupFinished"
     ],
     "main": "./out/extension.js",

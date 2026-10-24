@@ -33,6 +33,13 @@ describe('package.json — removed features stay removed', () => {
         expect(props).toHaveProperty(['denizenscript.debug.performance']);
         expect(commandIds).toEqual(expect.arrayContaining(['refinedDenizenscript.showPerformanceReport', 'refinedDenizenscript.resetPerformanceStats']));
     });
+    // engines.vscode is below 1.74, so VS Code does NOT synthesise onCommand activation: a palette
+    // command run before any .dsc opened answers "command not found" without these.
+    it('activates on the palette-only commands', () => {
+        for (const id of ['refinedDenizenscript.showPerformanceReport', 'refinedDenizenscript.resetPerformanceStats']) {
+            expect(pkg.activationEvents).toContain(`onCommand:${id}`);
+        }
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);
