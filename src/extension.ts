@@ -21,6 +21,7 @@ import { perf } from "./perfStats";
 import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
 import { DenizenSemanticTokensProvider, SEMANTIC_LEGEND } from "./highlight/semanticProvider";
 import { mergeRules, paletteRules, userLevel } from "./highlight/paletteRules";
+import { commentFoldRanges } from "./highlight/commentFolds";
 
 let configuration : vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration();
 
@@ -1466,6 +1467,9 @@ function denizenScriptFoldingProvider(document: vscode.TextDocument, context: vs
     for (let i : number = 0; i < processing.length; i++) { // for-each style loop bugs out and thinks the value is a String, so have to do 'i' counter style loop
         const extraFold : InProcFold = processing[i];
         output.push(new vscode.FoldingRange(extraFold.start, totalLines - 1));
+    }
+    for (const run of commentFoldRanges(splitText, headerSymbols)) {
+        output.push(new vscode.FoldingRange(run.start, run.end, vscode.FoldingRangeKind.Comment));
     }
     return output;
 }
