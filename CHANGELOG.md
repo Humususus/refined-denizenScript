@@ -24,6 +24,12 @@
   Bracket-pair colouring is now off for Denizen files; the matching bracket is still highlighted
   when the cursor is next to one.
 
+- **Trailing spaces are no longer painted as an error.** A red block marked whitespace at the end of
+  a line — and, after a command, a blank line holding only spaces was read as part of that command,
+  so the block appeared in the next line's indentation where nothing was wrong. Trailing whitespace
+  is harmless in Denizen; the mark is gone. Real mistakes keep theirs: `-narrate` with no space
+  after the dash, and a line that cannot be read as a key or a command.
+
 ### Changed
 
 - **Plain comments are grey by default** (`theme_colors.comment_normal`: `#007700` → `#8B8B8B`), so

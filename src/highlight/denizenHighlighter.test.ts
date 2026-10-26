@@ -123,9 +123,17 @@ describe('denizenHighlighter (characterization)', () => {
         expect(covering('- define "health:5"', 10, 16)).toEqual(['def_name health']);
     });
 
-    it('trailing spaces are bad_space', () => {
-        const tokens = highlightLines(['- narrate hi   '], opts());
-        expect(tokens.find(t => t.type === 'bad_space')).toMatchObject({ line: 0, start: 12, end: 15 });
+    // Changed 2026-10-26 (user report): trailing whitespace is harmless in Denizen, but it was painted
+    // as an error -- and after a command, a blank line of spaces joined onto it, so the red block
+    // landed in the NEXT line's indentation. Real errors keep their mark (below).
+    it('trailing spaces are not marked as an error', () => {
+        expect(highlightLines(['- narrate hi   '], opts()).some(t => t.type === 'bad_space')).toBe(false);
+        expect(highlightLines(['    - narrate a', '      ', '    - narrate b'], opts()).some(t => t.type === 'bad_space')).toBe(false);
+        expect(highlightLines(['    script: '], opts()).some(t => t.type === 'bad_space')).toBe(false);
+    });
+
+    it('a command with no space after the dash is still marked', () => {
+        expect(highlightLines(['    -narrate hi'], opts()).some(t => t.type === 'bad_space')).toBe(true);
     });
 
     it('a partial range emits only its lines, with the same key context as a full run', () => {
