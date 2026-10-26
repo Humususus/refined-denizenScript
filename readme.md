@@ -153,8 +153,14 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 - **`Refined DenizenScript: Create Script File`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>F</kbd>
 - Automatic `.dsc` extension handling for files created under `denizen/script`.
 
-### Extra meta sources
-Load documentation for your own add-ons alongside the official Denizen meta — `denizenscript.server.extra_sources`, as direct `.zip` URLs.
+### Meta sources
+Commands, tags and events come from the meta of the sources you enable. Manage them on the settings page (**Refined DenizenScript: Settings** → *Meta sources*):
+- **Official** — Denizen, Denizen-Core, Depenizen and dDiscordBot, always loaded.
+- **Add-ons** — DenizenM and DenizenM-Core (EnergoBro), denizen-utilities and denizen-reflect (isnsest). Off by default; a disabled add-on is never downloaded.
+- **Your own** — paste a direct `.zip` link or just a GitHub repository (`github.com/owner/repo`); each has its own switch.
+- *Use custom sources instead of official ones* — for a Denizen fork that removes things from upstream.
+
+Switching a source restarts the language server by itself. Every start asks GitHub whether each source changed (an unchanged one costs no download), so an updated add-on is picked up on the next start; **Reinstall instances** (or the command *Refined DenizenScript: Reinstall Meta Sources*) clears the cache and downloads everything again. The settings behind the page are `denizenscript.server.enabled_addons`, `extra_sources` and `replace_default_sources`.
 
 ### Reporting lag
 If a large file feels slow, turn on `denizenscript.debug.performance`, work in that file for a minute — scroll, type — then run **`Refined DenizenScript: Show Performance Report`** and paste what it prints into your issue. It shows how long each editor feature took, so the report says which one to fix.

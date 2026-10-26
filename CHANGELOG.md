@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.8.0
+
+### New features
+
+- **Meta sources on the settings page.** The official sources (always on), four built-in add-ons
+  — DenizenM and DenizenM-Core by EnergoBro, denizen-utilities and denizen-reflect by isnsest — and
+  your own, each with a switch. The add-ons are **off by default**, and a disabled source is never
+  downloaded. Your own sources can be added as a direct `.zip` link or just a GitHub repository
+  link. A status line shows when the meta last loaded and how much of it there is.
+- **No reload needed.** Switching a source restarts the language server by itself; several quick
+  clicks are one restart.
+- **Reinstall instances** (also the command *Refined DenizenScript: Reinstall Meta Sources*)
+  clears the meta cache, downloads every enabled source again and restarts the server.
+
+### Fixes
+
+- **Add-ons now update when you restart VS Code.** The meta cache was one file for the whole
+  source list, reused for 12 hours: an add-on its author updated within that window was not
+  fetched again, so a restart changed nothing. Each source now has its own cache and is checked
+  on every start with GitHub's ETag — an unchanged archive answers "not modified" with no
+  download. Measured with the official sources plus denizen-reflect: 2.5 s for the first load,
+  0.4 s for the next, with every source checked. Offline, the cached meta is used as before.
+  Turning one add-on on downloads only that add-on, not everything again.
+
+### Upgrading
+
+- Nothing in your settings is rewritten. Existing `denizenscript.server.extra_sources` entries
+  (plain URLs) still load, read as enabled; one that is a built-in add-on's link shows as that
+  add-on switched on. The new form is written only when you change something on the page. The
+  2.7.0 cache file is left in place and no longer read, so the first start downloads once.
+
 ## 2.7.0
 
 ### New features
