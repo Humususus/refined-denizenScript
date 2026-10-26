@@ -1527,7 +1527,9 @@ function denizenScriptFoldingProvider(document, context, token) {
         }
         const spaces = line.length - preTrimmed.length;
         const fullTrimmed = preTrimmed.trimEnd();
-        const isBlock = fullTrimmed.endsWith(":");
+        // A comment never opens a code fold: `# Flags:` or `    # Usage:` used to start one that ran
+        // to the end of the script, on the same line as the comment block's own fold (2.8.0).
+        const isBlock = fullTrimmed.endsWith(":") && !fullTrimmed.startsWith("#");
         const isCommand = fullTrimmed.startsWith("-");
         while (processing.length > 0) {
             const lastFold = processing[processing.length - 1];
