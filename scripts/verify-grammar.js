@@ -97,6 +97,19 @@ function check(name, ok, detail) {
     check('2h. "#" has neither level scope', !has(commentScopes('# plain'), 'markup.'), JSON.stringify(commentScopes('# plain')));
     check('2i. "###" inside a quoted argument is not a comment', !anyScope('    - narrate "### x"', 'comment'));
 
+    // 2j-2p -- Scopes the palette colours the grammar layer with (2.6.0), so text being typed is
+    // in the palette at once instead of switching when VS Code next asks for semantic tokens.
+    // Each mirrors what the semantic tokens call the same text.
+    check('2j. "# - code" is a code comment', has(commentScopes('    # - narrate x'), 'comment.line.code'));
+    check('2k. "# TODO" is a todo comment', has(commentScopes('# TODO later'), 'comment.line.todo'));
+    check('2l. "# | header" is a header comment', has(commentScopes('# | Title |'), 'comment.line.header'));
+    check('2m. "<[name]>" names a definition', has(scopesOf('    - narrate <[myname]>', 'myname'), 'variable.other.definition'));
+    check('2n. a plain tag parameter is a parameter', has(scopesOf('    - narrate <player.get[helmet]>', 'helmet'), 'variable.parameter'));
+    check('2o. "- define NAME" names a definition', has(scopesOf('    - define health 5', 'health'), 'variable.other.definition')
+        && has(scopesOf('    - define health 5', 'define'), 'support.function'));
+    check('2p. a key\'s colon is key-value punctuation', has(scopesOf('    type: task', ': '), 'punctuation.separator.key-value'),
+        JSON.stringify(tokenize('    type: task').map(t => [t.text, t.scopes.slice(-1)[0]])));
+
     // 3 -- a key line's value used to be one flat capture, so tags written there (display names,
     // formats, titles -- where tags are commonest) showed in the plain value colour.
     check('3. a tag on a key line is scoped as a tag',

@@ -18,6 +18,20 @@
 
 ### Fixes
 
+- **Typed text no longer changes colour a moment later.** With the palette on, a command or tag
+  you were typing first showed your theme's colour and switched to the palette's with a visible
+  delay: the palette came only with semantic tokens, which VS Code asks for at least 300 ms after
+  the last keystroke. The palette is now also given to the grammar, which colours instantly — the
+  extension writes `denizen-palette:*` rules into `editor.tokenColorCustomizations` alongside the
+  semantic-token rules, and removes them when the palette is off. On a 3371-line test file the
+  instant colour now matches the final one for 95% of characters (it was 61%); the rest are fine
+  details such as text next to a tag nested inside a parameter.
+
+  To make that possible the grammar now tells apart commented-out code, TODO and header comments,
+  a definition in `<[name]>` and `- define name`, a flag name, a plain tag parameter, and the colon
+  after a key. In theme-colour mode some themes may colour those few pieces slightly differently
+  than before.
+
 - **Square brackets are the palette's colour again.** Since 2.5.0 the brackets in `<[x]>` and
   `tag[...]` showed VS Code's per-depth bracket colours — yellow, then pink, then blue — instead of
   the palette's `tag_param_bracket`, which made the palette look noticeably different from before.

@@ -1,5 +1,59 @@
 import { describe, it, expect } from 'vitest';
-import { parsePaletteColor, paletteRules, mergeRules, userLevel } from './paletteRules';
+import { parsePaletteColor, paletteRules, mergeRules, userLevel, textMateRules, mergeTextMateRules, TEXTMATE_SCOPES } from './paletteRules';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Reported 2026-10-26: while typing, new text first showed the theme's colour and switched to the
+// palette's only when VS Code got round to asking for semantic tokens (>= 300 ms after the last
+// keystroke). The grammar colours instantly, so the palette is given to the grammar's scopes too.
+describe('textMateRules', () => {
+    it('one named rule per palette type that has grammar scopes, with the palette font style', () => {
+        const rules = textMateRules({ command: '#DD99FF|style=italic', colons: '#66CCFF|weight=bold', normal: '#E8E8E8' });
+        expect(rules).toContainEqual({ name: 'denizen-palette:command', scope: TEXTMATE_SCOPES.command, settings: { foreground: '#DD99FF', fontStyle: 'italic' } });
+        expect(rules).toContainEqual({ name: 'denizen-palette:colons', scope: TEXTMATE_SCOPES.colons, settings: { foreground: '#66CCFF', fontStyle: 'bold' } });
+        // An explicit empty fontStyle, so a theme's italic does not leak into plain palette text.
+        expect(rules).toContainEqual({ name: 'denizen-palette:normal', scope: TEXTMATE_SCOPES.normal, settings: { foreground: '#E8E8E8', fontStyle: '' } });
+    });
+
+    it('only touches Denizen scopes', () => {
+        for (const scopes of Object.values(TEXTMATE_SCOPES)) {
+            for (const scope of scopes) {
+                expect(scope.endsWith('.denizenscript')).toBe(true);
+            }
+        }
+    });
+
+    it('every mapped scope exists in the grammar', () => {
+        const grammar = fs.readFileSync(path.join(__dirname, '..', '..', 'syntaxes', 'denizenscript.tmLanguage.json'), 'utf8');
+        for (const scopes of Object.values(TEXTMATE_SCOPES)) {
+            for (const scope of scopes) {
+                expect(grammar).toContain(scope);
+            }
+        }
+    });
+});
+
+describe('mergeTextMateRules', () => {
+    const ours = [{ name: 'denizen-palette:command', scope: ['support.function.denizenscript'], settings: { foreground: '#DD99FF', fontStyle: 'italic' } }];
+
+    it('keeps the user\'s own rules and other keys, replacing only ours', () => {
+        const userRule = { scope: 'comment', settings: { foreground: '#00FF00' } };
+        const stale = { name: 'denizen-palette:tag', scope: ['meta.tag.denizenscript'], settings: { foreground: '#000000' } };
+        const existing = { comments: '#888888', textMateRules: [userRule, stale] };
+        expect(mergeTextMateRules(existing, ours)).toEqual({ comments: '#888888', textMateRules: [userRule, ...ours] });
+    });
+
+    it('null removes only ours', () => {
+        const userRule = { scope: 'comment', settings: { foreground: '#00FF00' } };
+        expect(mergeTextMateRules({ textMateRules: [userRule, ...ours] }, null)).toEqual({ textMateRules: [userRule] });
+    });
+
+    it('returns the same object when nothing changes', () => {
+        const existing = { textMateRules: [...ours] };
+        expect(mergeTextMateRules(existing, ours)).toBe(existing);
+        expect(mergeTextMateRules(undefined, null)).toBeUndefined();
+    });
+});
 
 // The rules live in USER settings, shared by every window. If each window built them from its own
 // effective value (workspace overrides included), two windows with different palettes would keep

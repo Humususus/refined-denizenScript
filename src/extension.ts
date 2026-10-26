@@ -20,7 +20,7 @@ import { findHexColors, formatHexColor } from "./hexColors";
 import { perf } from "./perfStats";
 import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
 import { DenizenSemanticTokensProvider, SEMANTIC_LEGEND } from "./highlight/semanticProvider";
-import { mergeRules, paletteRules, parsePaletteColor, userLevel } from "./highlight/paletteRules";
+import { mergeRules, mergeTextMateRules, paletteRules, parsePaletteColor, textMateRules, userLevel } from "./highlight/paletteRules";
 import { commentFoldRanges } from "./highlight/commentFolds";
 import { commentLines, criticalBackground, iconSvg } from "./highlight/commentDecorations";
 
@@ -237,20 +237,28 @@ let semanticProvider : DenizenSemanticTokensProvider | undefined = undefined;
  */
 function syncPaletteRules() {
     const config = vscode.workspace.getConfiguration();
-    let rules : ReturnType<typeof paletteRules> | null = null;
+    let palette : { [type: string]: string } | null = null;
     if (userLevel(config.inspect<boolean>("denizenscript.behaviors.use_custom_syntax_colors")) === true) {
-        const palette : { [type: string]: string } = {};
+        palette = {};
         for (const type of colorTypes) {
             const value = userLevel(config.inspect<string>("denizenscript.theme_colors." + type));
             if (value !== undefined) {
                 palette[type] = value;
             }
         }
-        rules = paletteRules(palette);
     }
-    const key = "editor.semanticTokenColorCustomizations";
-    const current = config.inspect(key)?.globalValue;
-    const merged = mergeRules(current, rules);
+    // Semantic tokens for the full detail; the same colours on the grammar's scopes so that text
+    // being typed is in the palette at once, not only when VS Code next asks for tokens (2.6.0).
+    writeUserSetting("editor.semanticTokenColorCustomizations",
+        current => mergeRules(current, palette === null ? null : paletteRules(palette)));
+    writeUserSetting("editor.tokenColorCustomizations",
+        current => mergeTextMateRules(current, palette === null ? null : textMateRules(palette)));
+}
+
+/** Writes a user setting through `merge`, but only when `merge` returns a different object. */
+function writeUserSetting(key : string, merge : (current : unknown) => unknown) {
+    const current = vscode.workspace.getConfiguration().inspect(key)?.globalValue;
+    const merged = merge(current);
     if (merged === current) {
         return;
     }

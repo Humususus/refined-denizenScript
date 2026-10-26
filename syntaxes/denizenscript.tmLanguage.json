@@ -36,6 +36,19 @@
                     "match": "^\\s*##(?=\\s|$).*$"
                 },
                 {
+                    "comment": "Comment kinds the palette colours differently (2.6.0): commented-out code, TODO, and a header -- the DEFAULT header symbols only, the grammar cannot read the setting. All stay comment.line.*, so theme mode shows them as comments as before.",
+                    "name": "comment.line.code.denizenscript",
+                    "match": "^\\s*#\\s*-.*$"
+                },
+                {
+                    "name": "comment.line.todo.denizenscript",
+                    "match": "^\\s*#\\s*(?i:todo).*$"
+                },
+                {
+                    "name": "comment.line.header.denizenscript",
+                    "match": "^\\s*#\\s*[|+=_@/].*$"
+                },
+                {
                     "comment": "ANCHORED AT THE START OF THE LINE, and that anchor is load-bearing. Denizen has no end-of-line comment: ScriptChecker.cs:184 tests the TRIMMED line with StartsWith('#'), so a '#' anywhere else is ordinary argument text. Unanchored, this rule ran before every other pattern in the file and greyed out the rest of any line holding a '#' -- a hex colour such as <&color[#FF0000]>, a '#' inside a quoted string, or a channel name.",
                     "name": "comment.line.number-sign.denizenscript",
                     "match": "^\\s*#.*$"
@@ -83,8 +96,49 @@
                             "include": "#tags"
                         },
                         {
-                            "name": "variable.other.readwrite.denizenscript",
-                            "match": "\\[([A-Za-z_][A-Za-z0-9_]*)\\]"
+                            "comment": "<[name]>: a definition. Matched right after the tag opening, before the general parameter rule.",
+                            "match": "(?<=<)(\\[)([A-Za-z_][A-Za-z0-9_.]*)(\\])",
+                            "captures": {
+                                "1": {
+                                    "name": "punctuation.definition.arguments.begin.denizenscript"
+                                },
+                                "2": {
+                                    "name": "variable.other.definition.denizenscript"
+                                },
+                                "3": {
+                                    "name": "punctuation.definition.arguments.end.denizenscript"
+                                }
+                            }
+                        },
+                        {
+                            "comment": ".flag[name] and friends: a flag name, coloured like a definition (as the palette always has).",
+                            "match": "(?<=flag|has_flag|flag_expiration)(\\[)([^\\[\\]<>]*)(\\])",
+                            "captures": {
+                                "1": {
+                                    "name": "punctuation.definition.arguments.begin.denizenscript"
+                                },
+                                "2": {
+                                    "name": "variable.other.definition.denizenscript"
+                                },
+                                "3": {
+                                    "name": "punctuation.definition.arguments.end.denizenscript"
+                                }
+                            }
+                        },
+                        {
+                            "comment": "A plain parameter with no nested tag: .get[helmet], .add[1]. One scope for the text so the palette can colour it as a parameter; a parameter holding a tag falls through to the bracket rules below.",
+                            "match": "(\\[)([^\\[\\]<>]*)(\\])",
+                            "captures": {
+                                "1": {
+                                    "name": "punctuation.definition.arguments.begin.denizenscript"
+                                },
+                                "2": {
+                                    "name": "variable.parameter.denizenscript"
+                                },
+                                "3": {
+                                    "name": "punctuation.definition.arguments.end.denizenscript"
+                                }
+                            }
                         },
                         {
                             "name": "entity.name.function.denizenscript",
@@ -108,6 +162,82 @@
         },
         "commands": {
             "patterns": [
+                {
+                    "comment": "- define NAME / - definemap NAME: the definition being set (2.6.0). Same as the generic command rule otherwise.",
+                    "name": "meta.command.denizenscript",
+                    "begin": "^\\s*(-)\\s+([~^]?)(define|definemap)\\s+([^\\s:<\\[]+)",
+                    "end": "$",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.control.denizenscript"
+                        },
+                        "2": {
+                            "name": "keyword.operator.denizenscript"
+                        },
+                        "3": {
+                            "name": "support.function.denizenscript"
+                        },
+                        "4": {
+                            "name": "variable.other.definition.denizenscript"
+                        }
+                    },
+                    "patterns": [
+                        {
+                            "comment": "Order matters: tags and strings first, so a ':' inside either is never read as an argument prefix.",
+                            "include": "#tags"
+                        },
+                        {
+                            "include": "#strings"
+                        },
+                        {
+                            "include": "#definitionArgument"
+                        },
+                        {
+                            "include": "#argumentPrefix"
+                        },
+                        {
+                            "include": "#operators"
+                        }
+                    ]
+                },
+                {
+                    "comment": "- flag TARGET NAME: the flag being set (2.6.0).",
+                    "name": "meta.command.denizenscript",
+                    "begin": "^\\s*(-)\\s+([~^]?)(flag)\\s+\\S+\\s+([^\\s:<\\[]+)",
+                    "end": "$",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.control.denizenscript"
+                        },
+                        "2": {
+                            "name": "keyword.operator.denizenscript"
+                        },
+                        "3": {
+                            "name": "support.function.denizenscript"
+                        },
+                        "4": {
+                            "name": "variable.other.definition.denizenscript"
+                        }
+                    },
+                    "patterns": [
+                        {
+                            "comment": "Order matters: tags and strings first, so a ':' inside either is never read as an argument prefix.",
+                            "include": "#tags"
+                        },
+                        {
+                            "include": "#strings"
+                        },
+                        {
+                            "include": "#definitionArgument"
+                        },
+                        {
+                            "include": "#argumentPrefix"
+                        },
+                        {
+                            "include": "#operators"
+                        }
+                    ]
+                },
                 {
                     "comment": "A begin/end block rather than a single match, so the REST of a command line can be scoped too. As one match it coloured the command name and stopped, leaving `targets:` and `format:` in `- narrate hi targets:<player> format:x` as plain text. The block ends at end of line: Denizen commands are single-line, and a continuation line is an argument block the parser treats separately.",
                     "name": "meta.command.denizenscript",
@@ -191,7 +321,7 @@
                             "name": "constant.language.denizenscript"
                         },
                         "5": {
-                            "name": "entity.name.section.denizenscript"
+                            "name": "entity.name.section.denizenscript punctuation.separator.key-value.denizenscript"
                         }
                     }
                 },
@@ -203,7 +333,7 @@
                             "name": "entity.name.section.denizenscript"
                         },
                         "3": {
-                            "name": "entity.name.section.denizenscript"
+                            "name": "entity.name.section.denizenscript punctuation.separator.key-value.denizenscript"
                         }
                     }
                 },
@@ -216,7 +346,7 @@
                             "name": "entity.name.section.denizenscript"
                         },
                         "3": {
-                            "name": "entity.name.section.denizenscript"
+                            "name": "entity.name.section.denizenscript punctuation.separator.key-value.denizenscript"
                         },
                         "4": {
                             "name": "constant.language.denizenscript",
@@ -239,7 +369,7 @@
                             "name": "entity.name.section.denizenscript"
                         },
                         "3": {
-                            "name": "entity.name.section.denizenscript"
+                            "name": "entity.name.section.denizenscript punctuation.separator.key-value.denizenscript"
                         }
                     }
                 }
