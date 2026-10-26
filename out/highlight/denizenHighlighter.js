@@ -525,9 +525,9 @@ function decorateLine(line, lineNumber, decorations, lastKey, isData) {
     if (trimmed.length == 0) {
         return;
     }
-    if (trimmedEnd.length != line.length) {
-        addDecor(decorations, "bad_space", lineNumber, trimmedEnd.length, line.length);
-    }
+    // Trailing whitespace used to be marked bad_space here (removed 2026-10-26, user report): it is
+    // harmless in Denizen, and after a command a blank line of spaces is joined on as a
+    // continuation, so the red block landed in the next line's indentation where nothing was wrong.
     const preSpaces = trimmedEnd.length - trimmed.length;
     if (trimmed.startsWith("#")) {
         decorateComment(line, lineNumber, (0, commentKind_1.commentKind)(line, headerSymbols), decorations);
