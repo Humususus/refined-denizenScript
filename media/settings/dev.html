@@ -26,6 +26,9 @@
         setTimeout(() => window.postMessage(window.DEV_STATE, '*'), 0);
       } else if (m.kind === 'set') {
         window.DEV_WRITES.push(m);
+        // ?stale=1: before each write lands, a state from before it arrives (the echo of an
+        // earlier write, as happens in VS Code when writes overlap).
+        if (q.get('stale')) window.postMessage(JSON.parse(JSON.stringify(window.DEV_STATE)), '*');
         console.log('set', m.key, JSON.stringify(m.value));
         const s = window.DEV_STATE;
         const color = m.key.replace(/^denizenscript\.theme_colors\./, '');
@@ -42,6 +45,11 @@
     },
   });
 </script>
-<script src="settings.js"></script>
+<script>
+  // Cache-busted, so an edit to settings.js is picked up on reload.
+  const s = document.createElement('script');
+  s.src = 'settings.js?t=' + Date.now();
+  document.body.appendChild(s);
+</script>
 </body>
 </html>

@@ -42,13 +42,22 @@
 
     /** Same rule as settingsModel.formatPaletteValue. */
     function formatPaletteValue(v) {
-        const head = v.color !== null && normalizeHex(v.text) !== v.color ? v.color : v.text;
+        const head = v.color !== null ? v.color : v.text;
         return [head].concat(v.bold ? ['weight=bold'] : [], v.italic ? ['style=italic'] : [], v.rest).join('|');
     }
 
+    /**
+     * The value each card last wrote, until the state echoing it arrives. A state from before that
+     * write (the echo of an earlier click) would otherwise reset the card mid-edit, and the next
+     * B / I would be built on the stale value. Expires so an echo that never comes cannot pin it.
+     */
+    const pending = {};
+    const PENDING_MS = 3000;
+
     function paint(type) {
         const v = colors[type];
-        root.style.setProperty('--c-' + type, v.color || v.text || 'inherit');
+        // An unreadable colour is ignored by the editor, which falls back to the theme: not shown here either.
+        root.style.setProperty('--c-' + type, v.color || 'var(--code-fg)');
         root.style.setProperty('--w-' + type, v.bold ? '700' : '400');
         root.style.setProperty('--s-' + type, v.italic ? 'italic' : 'normal');
     }
@@ -191,7 +200,12 @@
         const ovr = el('div', 'ovr', 'Overridden in this workspace — this edits your user value');
         wrap.append(c, ovr);
 
-        const commit = () => set('denizenscript.theme_colors.' + type, formatPaletteValue(colors[type]));
+        const commit = () => {
+            const value = formatPaletteValue(colors[type]);
+            clearTimeout(pending[type] && pending[type].timer);
+            pending[type] = { value, timer: setTimeout(() => { delete pending[type]; if (state) update(); }, PENDING_MS) };
+            set('denizenscript.theme_colors.' + type, value);
+        };
         const preview = color => {
             colors[type].color = color;
             paint(type);
@@ -203,7 +217,8 @@
             hex.value = color;
             hex.classList.remove('bad');
         });
-        picker.addEventListener('change', commit);
+        // Commit what the control holds, not the model, which a state may have reset meanwhile.
+        picker.addEventListener('change', () => { preview(picker.value.toUpperCase()); commit(); });
         hex.addEventListener('input', () => {
             const color = normalizeHex(hex.value);
             hex.classList.toggle('bad', color === null);
@@ -216,6 +231,7 @@
             const color = normalizeHex(hex.value);
             hex.classList.remove('bad');
             if (color !== null && color !== state.colors[type].color) {
+                preview(color);
                 commit();
             }
             else {
@@ -223,6 +239,7 @@
                 colors[type].color = state.colors[type].color;
                 paint(type);
                 syncCard(type);
+                hex.value = colors[type].color || colors[type].text;
             }
         };
         hex.addEventListener('blur', leaveHex);
@@ -359,19 +376,35 @@
         const shown = v.color || '#000000';
         if (document.activeElement !== card.hex) {
             card.hex.value = v.color || v.text;
-            card.hex.classList.remove('bad');
+            // Not a colour the editor can use: shown as an error until replaced.
+            card.hex.classList.toggle('bad', v.color === null);
         }
-        card.picker.value = shown.toLowerCase();
-        card.dot.style.background = v.color || v.text;
+        if (document.activeElement !== card.picker) {
+            card.picker.value = shown.slice(0, 7).toLowerCase();
+        }
+        card.dot.style.background = v.color || 'transparent';
         card.b.classList.toggle('on', v.bold);
         card.i.classList.toggle('on', v.italic);
     }
 
     function update() {
+        const previous = colors;
         colors = {};
         for (const type in state.colors) {
             const v = state.colors[type];
-            colors[type] = { color: v.color, text: v.text, bold: v.bold, italic: v.italic, rest: v.rest.slice() };
+            if (pending[type] && formatPaletteValue(v) === pending[type].value) {
+                clearTimeout(pending[type].timer);
+                delete pending[type];
+            }
+            if (pending[type] && previous[type]) {
+                colors[type] = previous[type];
+            }
+            else {
+                colors[type] = { color: v.color, text: v.text, bold: v.bold, italic: v.italic, rest: v.rest.slice() };
+                // A HEX edit in progress stays in the preview.
+                const typed = document.activeElement === ui.cards[type].hex ? normalizeHex(ui.cards[type].hex.value) : null;
+                if (typed !== null) colors[type].color = typed;
+            }
             paint(type);
             syncCard(type);
             ui.cards[type].ovr.style.display = v.overridden ? '' : 'none';

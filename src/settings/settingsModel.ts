@@ -81,7 +81,7 @@ export function optionSettingId(key: string): string {
 
 /** A palette value `#RRGGBB|weight=bold|style=italic|…`, split into what the page edits and the rest. */
 export interface PaletteValue {
-    /** The colour as `#RRGGBB`, or null when the value's colour part is not a hex colour. */
+    /** The colour as `#RRGGBB` or `#RRGGBBAA`, or null when the colour part is neither (nor `#RGB`). */
     color: string | null;
     /** The colour part as written; kept so an unreadable colour survives a B / I toggle. */
     text: string;
@@ -93,7 +93,7 @@ export interface PaletteValue {
 
 export function parsePaletteValue(value: string): PaletteValue {
     const [head, ...parts] = value.split('|');
-    const result: PaletteValue = { color: /^#/.test(head) ? normalizeHex(head) : null, text: head, bold: false, italic: false, rest: [] };
+    const result: PaletteValue = { color: readColor(head), text: head, bold: false, italic: false, rest: [] };
     for (const part of parts) {
         const [setting, setValue] = part.split('=', 2);
         if (setting === 'weight') {
@@ -109,9 +109,23 @@ export function parsePaletteValue(value: string): PaletteValue {
     return result;
 }
 
-/** The colour written is `text` (as found) unless the page set `color` to something else. */
+/**
+ * `#RRGGBB` (any `#RGB` expanded) or `#RRGGBBAA` -- the forms the editor's palette rules read
+ * (paletteRules.parsePaletteColor); anything else null.
+ */
+function readColor(head: string): string | null {
+    if (!head.startsWith('#')) {
+        return null;
+    }
+    return /^#[0-9a-fA-F]{8}$/.test(head) ? head.toUpperCase() : normalizeHex(head);
+}
+
+/**
+ * A readable colour is written in the editor's form, so a `#RGB` comes back as `#RRGGBB`; an
+ * unreadable one is kept as written, so a B / I toggle does not destroy what the user typed.
+ */
 export function formatPaletteValue(v: PaletteValue): string {
-    const head = v.color !== null && normalizeHex(v.text) !== v.color ? v.color : v.text;
+    const head = v.color ?? v.text;
     return [head, ...(v.bold ? ['weight=bold'] : []), ...(v.italic ? ['style=italic'] : []), ...v.rest].join('|');
 }
 

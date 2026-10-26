@@ -65,9 +65,17 @@ describe('palette values', () => {
         expect(formatPaletteValue({ ...v, bold: true })).toBe('#FFFFFF|weight=bold|background=#440000');
     });
     it('round-trips a value unchanged', () => {
-        for (const value of ['#DD99FF|style=italic', '#FFF|weight=bold|background=#123456', '#AAAAAA']) {
+        for (const value of ['#DD99FF|style=italic', '#FFFFFF|weight=bold|background=#123456', '#AAAAAA', '#DD99FF80']) {
             expect(formatPaletteValue(parsePaletteValue(value))).toBe(value);
         }
+    });
+    // Final review, Important 2: the editor's palette rules read only #RRGGBB / #RRGGBBAA
+    // (paletteRules.parsePaletteColor), so a #RGB the page wrote back would be silently ignored.
+    it('writes a 3-digit colour back as #RRGGBB, which the editor reads', () => {
+        expect(formatPaletteValue({ ...parsePaletteValue('#FFF|background=#123456'), bold: true })).toBe('#FFFFFF|weight=bold|background=#123456');
+    });
+    it('reads #RRGGBBAA, which the editor also accepts', () => {
+        expect(parsePaletteValue('#DD99FF80').color).toBe('#DD99FF80');
     });
     it('a colour it cannot read is null, and an empty value does not crash', () => {
         expect(parsePaletteValue('blue').color).toBeNull();
