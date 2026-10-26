@@ -5,6 +5,8 @@
 // FEATURE-IDEAS.md idea 6. The checker already reports these; this only offers the edit their
 // messages already describe. No new analysis, and nothing fires where the checker is silent.
 
+import { DISABLED_SOURCES_HINT, UNKNOWN_NAME_CODES } from './server/metaDocs/metaSources';
+
 /**
  * One edit to offer: put `insert` at `character` on the diagnostic's line, replacing the `replace`
  * characters already there.
@@ -205,4 +207,13 @@ export function planFixes(code: string, text: string, context?: FixContext): Fix
         plans.push({ title: "Add '- ' to the start of the line", character: indent, insert: '- ', replace: 0 });
     }
     return plans;
+}
+
+/**
+ * Whether a diagnostic gets "Open meta sources": an unknown name whose message carries the
+ * switched-off-sources hint the server adds (R7). Keyed on the hint as well as the code, so the
+ * action disappears with the hint once every source is on.
+ */
+export function wantsSourcesFix(code: string | null, message: string): boolean {
+    return code !== null && UNKNOWN_NAME_CODES.has(code) && message.includes(DISABLED_SOURCES_HINT);
 }

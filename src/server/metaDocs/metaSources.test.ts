@@ -103,7 +103,7 @@ describe('sourceFromInput', () => {
 describe('disabledSourcesHint', () => {
     it('names the switched-off add-ons on a fresh install', () => {
         expect(disabledSourcesHint(readSourceSettings(undefined, undefined, undefined))).toBe(
-            `${DISABLED_SOURCES_HINT}: DenizenM, DenizenM-Core, denizen-utilities and 1 more. Enable it in Denizen: Settings → Meta sources.`);
+            `${DISABLED_SOURCES_HINT}: DenizenM, DenizenM-Core, denizen-utilities, denizen-reflect. Enable it in Denizen: Settings → Meta sources.`);
     });
     it('gives nothing when every source is on', () => {
         const all = ADDON_SOURCES.map(a => a.id);
@@ -114,9 +114,11 @@ describe('disabledSourcesHint', () => {
         const s = readSourceSettings([{ name: 'MyFork', url: 'https://a/f.zip', enabled: false }, 'https://a/on.zip'], all, false);
         expect(disabledSourcesHint(s)).toBe(`${DISABLED_SOURCES_HINT}: MyFork. Enable it in Denizen: Settings → Meta sources.`);
     });
-    it('lists up to three names', () => {
-        const s = readSourceSettings([], ['denizenm'], false);
-        expect(disabledSourcesHint(s)).toContain(': DenizenM-Core, denizen-utilities, denizen-reflect.');
+    // Five, so the four built-in add-ons are always named: on a fresh install "and 1 more" hid
+    // denizen-reflect, the one that has `invoke` (seen in the Extension Host check).
+    it('lists up to five names', () => {
+        const own = ['a', 'b'].map(n => ({ name: n, url: `https://x/${n}.zip`, enabled: false }));
+        expect(disabledSourcesHint(readSourceSettings(own, [], false))).toContain(': DenizenM, DenizenM-Core, denizen-utilities, denizen-reflect, a and 1 more.');
     });
 });
 

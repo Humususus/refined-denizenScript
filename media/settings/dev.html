@@ -23,6 +23,8 @@
     setState: () => {},
     postMessage: m => {
       if (m.kind === 'ready') {
+        // ?section=sources: the host asks for a section before the first state (the R7 quick fix).
+        if (q.get('section')) window.postMessage({ kind: 'showSection', id: q.get('section') }, '*');
         setTimeout(() => window.postMessage(window.DEV_STATE, '*'), 0);
       } else if (m.kind === 'sources') {
         window.DEV_WRITES.push(m);

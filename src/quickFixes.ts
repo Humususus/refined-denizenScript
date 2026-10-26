@@ -8,7 +8,7 @@
 // makes them work under `denizenscript.server.engine: csharp` too, without touching the C# server.
 
 import * as vscode from 'vscode';
-import { planFixes } from './quickFixPlans';
+import { planFixes, wantsSourcesFix } from './quickFixPlans';
 
 /**
  * The `code` of a diagnostic as a plain string, whatever shape it arrived in.
@@ -40,6 +40,13 @@ export class MissingPunctuationFixes implements vscode.CodeActionProvider {
             const code = diagnosticCode(diagnostic);
             if (code === null) {
                 continue;
+            }
+            // R7: an unknown name that a switched-off meta source might explain.
+            if (wantsSourcesFix(code, diagnostic.message)) {
+                const action = new vscode.CodeAction('Open meta sources (Denizen: Settings)', vscode.CodeActionKind.QuickFix);
+                action.command = { command: 'refinedDenizenscript.openSettings', title: 'Open meta sources', arguments: ['sources'] };
+                action.diagnostics = [diagnostic];
+                actions.push(action);
             }
             const lineNumber = diagnostic.range.start.line;
             // A diagnostic can outlive the edit that shortened the file, so this is a real guard

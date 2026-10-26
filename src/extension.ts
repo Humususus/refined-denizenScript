@@ -2025,7 +2025,7 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.show(true);
     }));
     context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.resetPerformanceStats", () => perf.reset()));
-    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", () => SettingsPanel.show(context, { highlightOptions, getMetaStatus, onMetaStatus })));
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", (section?: unknown) => SettingsPanel.show(context, { highlightOptions, getMetaStatus, onMetaStatus }, typeof section === "string" ? section : undefined)));
     vscode.window.onDidChangeVisibleTextEditors(editors => {
         for (const editor of editors) {
             const uri = editor.document.uri.toString();

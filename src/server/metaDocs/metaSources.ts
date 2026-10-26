@@ -179,6 +179,6 @@ export function disabledSourcesHint(s: SourceSettings): string | null {
     if (off.length === 0) {
         return null;
     }
-    const names = off.length > 3 ? `${off.slice(0, 3).join(', ')} and ${off.length - 3} more` : off.join(', ');
+    const names = off.length > 5 ? `${off.slice(0, 5).join(', ')} and ${off.length - 5} more` : off.join(', ');
     return `${DISABLED_SOURCES_HINT}: ${names}. Enable it in Denizen: Settings → Meta sources.`;
 }

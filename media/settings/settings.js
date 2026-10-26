@@ -606,6 +606,15 @@
         renderSources();
     }
 
+    // The R7 quick fix opens the page on Meta sources. The request can arrive before the first
+    // state has built the page, so it is remembered as the section to build with.
+    window.addEventListener('message', event => {
+        const message = event.data;
+        if (!message || message.kind !== 'showSection' || !SECTIONS.some(s => s.id === message.id)) return;
+        if (built) showSection(message.id);
+        else saved.section = message.id;
+    });
+
     window.addEventListener('message', event => {
         const message = event.data;
         if (!message || message.kind !== 'state') return;

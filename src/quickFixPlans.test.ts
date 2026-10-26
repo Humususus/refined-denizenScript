@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planFixes, ACTIONABLE_CODES, FixPlan, deprecationReplacement } from './quickFixPlans';
+import { planFixes, ACTIONABLE_CODES, FixPlan, deprecationReplacement, wantsSourcesFix } from './quickFixPlans';
+import { DISABLED_SOURCES_HINT } from './server/metaDocs/metaSources';
 
 /**
  * FEATURE-IDEAS.md idea 6: Quick Fixes for the two diagnostics whose own messages name the edit.
@@ -247,5 +248,19 @@ describe('planFixes for deprecated_tag_part', () => {
         // A diagnostic can outlive the edit that shortened the line.
         expect(planFixes('deprecated_tag_part', LINE, { message: MSG, startCharacter: START, endCharacter: 9999 })).toEqual([]);
         expect(planFixes('deprecated_tag_part', LINE, { message: MSG, startCharacter: 5, endCharacter: 5 })).toEqual([]);
+    });
+});
+
+// R7: the hint about switched-off meta sources comes with a quick fix that opens them.
+describe('wantsSourcesFix', () => {
+    const hinted = `Unknown command 'invoke'.${DISABLED_SOURCES_HINT}: denizen-reflect. Enable it in Denizen: Settings → Meta sources.`;
+    it('offers it on an unknown-name diagnostic that carries the hint', () => {
+        expect(wantsSourcesFix('unknown_command', hinted)).toBe(true);
+        expect(wantsSourcesFix('event_missing', hinted)).toBe(true);
+    });
+    it('not without the hint, and not for other codes', () => {
+        expect(wantsSourcesFix('unknown_command', "Unknown command 'invoke'.")).toBe(false);
+        expect(wantsSourcesFix('missing_quotes', hinted)).toBe(false);
+        expect(wantsSourcesFix(null, hinted)).toBe(false);
     });
 });
