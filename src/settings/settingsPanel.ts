@@ -42,8 +42,9 @@ export class SettingsPanel {
      */
     static show(context: vscode.ExtensionContext, deps: SettingsPanelDeps, section?: string): Promise<boolean> {
         if (SettingsPanel.current) {
+            const wasVisible = SettingsPanel.current.panel.visible;
             SettingsPanel.current.panel.reveal();
-            SettingsPanel.current.showSection(section);
+            SettingsPanel.current.showSection(section, wasVisible);
             return SettingsPanel.current.ready;
         }
         const media = vscode.Uri.joinPath(context.extensionUri, 'media', 'settings');
@@ -53,7 +54,7 @@ export class SettingsPanel {
         });
         panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'icons', 'dsc.svg');
         SettingsPanel.current = new SettingsPanel(panel, media, deps);
-        SettingsPanel.current.showSection(section);
+        SettingsPanel.current.showSection(section, true);
         return SettingsPanel.current.ready;
     }
 
@@ -87,16 +88,33 @@ export class SettingsPanel {
         }, null, this.disposables);
     }
 
-    /** Opens the page on a section (`sources` from the R7 quick fix) once its script is running. */
-    private showSection(section: string | undefined): void {
-        if (section !== undefined) {
+    /** A section to open once the page's script (re)starts. */
+    private pendingSection: string | undefined;
+
+    /**
+     * Opens the page on a section (`sources` from the R7 quick fix). A page in a hidden tab reloads
+     * when revealed -- there is no retainContextWhenHidden -- and a message posted meanwhile is
+     * lost, so for a hidden page the section waits for the reloaded script's `ready` (final review).
+     */
+    private showSection(section: string | undefined, visible: boolean): void {
+        if (section === undefined) {
+            return;
+        }
+        if (visible) {
             void this.ready.then(ready => ready ? this.panel.webview.postMessage({ kind: 'showSection', id: section }) : undefined);
+        }
+        else {
+            this.pendingSection = section;
         }
     }
 
     private receive(message: { kind?: unknown; key?: unknown; value?: unknown; input?: unknown }): void {
         if (message.kind === 'ready') {
             this.markReady(true);
+            if (this.pendingSection !== undefined) {
+                void this.panel.webview.postMessage({ kind: 'showSection', id: this.pendingSection });
+                this.pendingSection = undefined;
+            }
             this.postState();
         }
         else if (message.kind === 'set' && typeof message.key === 'string' && isWritableSetting(message.key)) {

@@ -14,7 +14,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { loadMetaDocs } from './metaDocs/metaDocsManager';
-import { UNKNOWN_NAME_CODES, disabledSourcesHint, effectiveSources, metaCacheDir, readSourceSettings } from './metaDocs/metaSources';
+import { disabledSourcesHint, isUnknownName, effectiveSources, metaCacheDir, readSourceSettings } from './metaDocs/metaSources';
 import { MetaDocs } from './metaDocs/metaTypes';
 import { linkEventMatchers } from './metaDocs/metaLinker';
 import { WorkspaceTracker } from './workspaceTracker';
@@ -194,7 +194,7 @@ export function addSourceHint(diagnostics: Diagnostic[], hint: string | null): D
     if (hint === null) {
         return diagnostics;
     }
-    return diagnostics.map(d => typeof d.code === 'string' && UNKNOWN_NAME_CODES.has(d.code) ? { ...d, message: d.message + hint } : d);
+    return diagnostics.map(d => typeof d.code === 'string' && typeof d.message === 'string' && isUnknownName(d.code, d.message) ? { ...d, message: d.message + hint } : d);
 }
 
 /**

@@ -5,7 +5,7 @@
 // FEATURE-IDEAS.md idea 6. The checker already reports these; this only offers the edit their
 // messages already describe. No new analysis, and nothing fires where the checker is silent.
 
-import { DISABLED_SOURCES_HINT, UNKNOWN_NAME_CODES } from './server/metaDocs/metaSources';
+import { DISABLED_SOURCES_HINT, isUnknownName } from './server/metaDocs/metaSources';
 
 /**
  * One edit to offer: put `insert` at `character` on the diagnostic's line, replacing the `replace`
@@ -215,5 +215,5 @@ export function planFixes(code: string, text: string, context?: FixContext): Fix
  * action disappears with the hint once every source is on.
  */
 export function wantsSourcesFix(code: string | null, message: string): boolean {
-    return code !== null && UNKNOWN_NAME_CODES.has(code) && message.includes(DISABLED_SOURCES_HINT);
+    return code !== null && isUnknownName(code, message) && message.includes(DISABLED_SOURCES_HINT);
 }

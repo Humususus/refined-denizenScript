@@ -54,13 +54,25 @@ describe('addSourceHint', () => {
         message: `msg ${code}`
     });
     it('appends the hint to the unknown-name codes only', () => {
-        const out = addSourceHint(['unknown_command', 'bad_tag_base', 'tag_trace_failure', 'bad_adjust_unknown_mech', 'event_missing', 'missing_quotes'].map(diag), ' HINT.');
+        const out = addSourceHint(['unknown_command', 'bad_tag_base', 'bad_adjust_unknown_mech', 'event_missing', 'missing_quotes'].map(diag), ' HINT.');
         expect(out.map(d => d.message)).toEqual([
-            'msg unknown_command HINT.', 'msg bad_tag_base HINT.', 'msg tag_trace_failure HINT.',
+            'msg unknown_command HINT.', 'msg bad_tag_base HINT.',
             'msg bad_adjust_unknown_mech HINT.', 'msg event_missing HINT.', 'msg missing_quotes'
         ]);
         expect(out[0].code).toBe('unknown_command');
         expect(out[0].range).toEqual(diag('x').range);
+    });
+    // Final review, R7: the tracer reports more than unknown names under one code, and an unknown
+    // base is reported twice (bad_tag_base and the tracer) -- once is enough.
+    it('on a tag trace, only an unknown tag part gets the hint', () => {
+        const trace = (message: string): Diagnostic => ({ ...diag('tag_trace_failure'), message });
+        const out = addSourceHint([
+            trace("Tag tracer: Tag part 'reflect' does not exist for object type PlayerTag"),
+            trace("Tag tracer: Tag base 'nope' does not exist."),
+            trace("Tag tracer: Tag part 'has_flag' requires an input [tag parameter] value."),
+            trace("Tag tracer: Tag base 'player' cannot have a [tag parameter]."),
+        ], ' HINT.');
+        expect(out.map(d => d.message.endsWith(' HINT.'))).toEqual([true, false, false, false]);
     });
     it('changes nothing without a hint', () => {
         const input = [diag('unknown_command')];

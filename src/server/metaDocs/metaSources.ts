@@ -182,3 +182,16 @@ export function disabledSourcesHint(s: SourceSettings): string | null {
     const names = off.length > 5 ? `${off.slice(0, 5).join(', ')} and ${off.length - 5} more` : off.join(', ');
     return `${DISABLED_SOURCES_HINT}: ${names}. Enable it in Denizen: Settings → Meta sources.`;
 }
+
+/**
+ * Whether a diagnostic is about a name the meta does not know. `tag_trace_failure` also covers a
+ * missing or forbidden [parameter], deprecated bases and more, so only "Tag part '…' does not
+ * exist" counts; an unknown tag BASE is left to `bad_tag_base`, which the checker raises on the same
+ * range -- one hint per tag, not two (final review, R7).
+ */
+export function isUnknownName(code: string, message: string): boolean {
+    if (code === 'tag_trace_failure') {
+        return /Tag part '[^']*' does not exist/.test(message);
+    }
+    return UNKNOWN_NAME_CODES.has(code);
+}
