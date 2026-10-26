@@ -209,11 +209,7 @@ function main() {
 // failure `linkMatchersWhenReady` exists to prevent in the server, and this script has to do the
 // same thing rather than measure a configuration nothing ever runs in.
 Promise.all([
-    loadMetaDocs({
-        cacheFile: path.join(os.tmpdir(), 'denizen-phase2c5-verify-cache.json'),
-        ttlMs: 12 * 60 * 60 * 1000,
-        sources: DEFAULT_META_SOURCES
-    }),
+    loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs),
     loadExtraData({ cacheFile: path.join(os.tmpdir(), 'denizen-extradata-verify-cache.json'), ttlMs: 12 * 60 * 60 * 1000 })
 ]).then(([docs, extra]) => {
     linkEventMatchers(docs, extra);

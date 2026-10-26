@@ -1,70 +1,45 @@
 import { describe, it, expect } from 'vitest';
 import { DiagnosticSeverity } from 'vscode-languageserver';
-import { combineSources, buildCapabilities, buildDiagnostics, linkMatchersWhenReady } from './server';
+import { sourcesFromConfig, buildCapabilities, buildDiagnostics, linkMatchersWhenReady } from './server';
+import { DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
 import { MetaDocs, MetaEvent, createEmptyMetaDocs } from './metaDocs/metaTypes';
 import { createEmptyExtraData } from './metaDocs/extraData';
 import { ScriptChecker } from './checker/scriptChecker';
 
-describe('combineSources', () => {
-    it('returns just the defaults when extra is undefined, null, or empty', () => {
-        const defaults = ['https://example.com/a.zip', 'https://example.com/b.zip'];
-        expect(combineSources(defaults, undefined)).toEqual(defaults);
-        expect(combineSources(defaults, null)).toEqual(defaults);
-        expect(combineSources(defaults, [])).toEqual(defaults);
+// The server reads its sources through metaSources.ts, the same reader the settings page uses
+// (R6). The invariants the old `combineSources` tests pinned are kept here.
+describe('sourcesFromConfig', () => {
+    it('loads only the official meta when nothing is configured', () => {
+        expect(sourcesFromConfig(undefined, undefined, undefined)).toEqual(DEFAULT_META_SOURCES);
+        expect(sourcesFromConfig(null, null, null)).toEqual(DEFAULT_META_SOURCES);
+        expect(sourcesFromConfig([], [], false)).toEqual(DEFAULT_META_SOURCES);
     });
 
-    it('appends extra sources after the defaults', () => {
-        const defaults = ['https://example.com/a.zip'];
-        const extra = ['https://example.com/custom1.zip', 'https://example.com/custom2.zip'];
-        expect(combineSources(defaults, extra)).toEqual([
-            'https://example.com/a.zip',
-            'https://example.com/custom1.zip',
-            'https://example.com/custom2.zip'
+    it('appends own sources after the defaults, trimmed, blanks dropped', () => {
+        expect(sourcesFromConfig(['  https://example.com/custom.zip  ', '', '   '], [], false))
+            .toEqual([...DEFAULT_META_SOURCES, 'https://example.com/custom.zip']);
+    });
+
+    it('adds a switched-on add-on between the official meta and own sources', () => {
+        expect(sourcesFromConfig(['https://example.com/fork.zip'], ['denizen-reflect'], false)).toEqual([
+            ...DEFAULT_META_SOURCES,
+            'https://github.com/isnsest/denizen-reflect/archive/refs/heads/main.zip',
+            'https://example.com/fork.zip'
         ]);
     });
 
-    it('trims whitespace and drops blank entries', () => {
-        const defaults = ['https://example.com/a.zip'];
-        const extra = ['  https://example.com/custom.zip  ', '', '   '];
-        expect(combineSources(defaults, extra)).toEqual([
-            'https://example.com/a.zip',
-            'https://example.com/custom.zip'
-        ]);
-    });
-
-    describe('replaceDefaults (user ruling 2026-09-01, for Denizen forks)', () => {
-        it('uses the extra sources ALONE when asked to', () => {
-            // Why this exists: loading a fork additively can only ADD. Measured against the user's
-            // own DenizenM forks -- they drop three mechanisms that the merged docs then keep, so
-            // the checker accepts three mechanisms their server rejects.
-            // MUTANT CAUGHT: ignoring the flag and always concatenating.
-            const defaults = ['https://example.com/a.zip', 'https://example.com/b.zip'];
-            const extra = ['https://example.com/fork.zip'];
-            expect(combineSources(defaults, extra, true)).toEqual(['https://example.com/fork.zip']);
-        });
-
-        it('still appends when the flag is false or omitted', () => {
-            const defaults = ['https://example.com/a.zip'];
-            const extra = ['https://example.com/fork.zip'];
-            expect(combineSources(defaults, extra, false)).toEqual([...defaults, ...extra]);
-            expect(combineSources(defaults, extra)).toEqual([...defaults, ...extra]);
+    describe('replace_default_sources (user ruling 2026-09-01, for Denizen forks)', () => {
+        it('uses the enabled sources ALONE when asked to', () => {
+            // Loading a fork additively can only ADD: the user's DenizenM forks drop three
+            // mechanisms that merged docs would keep.
+            expect(sourcesFromConfig(['https://example.com/fork.zip'], [], true)).toEqual(['https://example.com/fork.zip']);
         });
 
         it('REFUSES to leave the server with no sources at all', () => {
-            // An empty or blank-only extra list cannot mean "use nothing": that is an editor with
-            // no commands and no tags, which is the exact failure this codebase spent 2026-08-28
-            // fixing. The defaults win regardless of the flag.
-            // MUTANT CAUGHT: returning the cleaned (empty) list when replaceDefaults is set.
-            const defaults = ['https://example.com/a.zip'];
-            expect(combineSources(defaults, [], true)).toEqual(defaults);
-            expect(combineSources(defaults, ['', '   '], true)).toEqual(defaults);
-            expect(combineSources(defaults, undefined, true)).toEqual(defaults);
-            expect(combineSources(defaults, null, true)).toEqual(defaults);
-        });
-
-        it('trims the replacement list too', () => {
-            expect(combineSources(['https://example.com/a.zip'], ['  https://example.com/fork.zip  ', ''], true))
-                .toEqual(['https://example.com/fork.zip']);
+            // An empty list cannot mean "use nothing" -- the 2026-08-28 failure mode.
+            expect(sourcesFromConfig([], [], true)).toEqual(DEFAULT_META_SOURCES);
+            expect(sourcesFromConfig(['', '   '], [], true)).toEqual(DEFAULT_META_SOURCES);
+            expect(sourcesFromConfig([{ url: 'https://example.com/fork.zip', enabled: false }], [], true)).toEqual(DEFAULT_META_SOURCES);
         });
     });
 });

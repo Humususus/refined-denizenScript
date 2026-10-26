@@ -49,7 +49,7 @@ function tally(checkers) {
 async function main() {
     let failures = 0;
     const [docs, extra] = await Promise.all([
-        loadMetaDocs({ cacheFile: path.join(os.tmpdir(), 'denizen-phase2d-verify-cache.json'), ttlMs: 12 * 36e5, sources: DEFAULT_META_SOURCES }),
+        loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs),
         loadExtraData({ cacheFile: path.join(os.tmpdir(), 'denizen-phase2d-extra-cache.json'), ttlMs: 12 * 36e5 })
     ]);
     linkEventMatchers(docs, extra);

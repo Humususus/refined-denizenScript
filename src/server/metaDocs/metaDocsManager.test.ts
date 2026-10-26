@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import AdmZip from 'adm-zip';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { buildMetaDocs, applyExtensions, loadMetaDocs, DEFAULT_META_SOURCES } from './metaDocsManager';
+import { buildMetaDocs, applyExtensions, loadMetaDocs, cacheFileFor, DEFAULT_META_SOURCES, FetchResult } from './metaDocsManager';
 import type { MetaBlock } from './metaLoader';
 
 describe('DEFAULT_META_SOURCES', () => {
@@ -16,9 +17,9 @@ describe('DEFAULT_META_SOURCES', () => {
 /**
  * Extra sources OVERRIDING the official meta, reported 2026-09-03.
  *
- * `combineSources` puts the user's `extra_sources` after the defaults precisely so a fork can
+ * `effectiveSources` puts the add-ons and the user's own sources after the official ones precisely so a fork can
  * redefine a command or tag. That rests on two things: registration being last-wins, and the block
- * order being the SOURCE order. The second was not true -- see the note on `downloadAllBlocks`.
+ * order being the SOURCE order. The second was not true -- see the note on `loadMetaDocs`.
  */
 describe('later sources override earlier ones', () => {
     it('registers the LAST block of a duplicated name, for commands and tags alike', () => {
@@ -93,303 +94,178 @@ describe('applyExtensions', () => {
     });
 });
 
-describe('loadMetaDocs caching', () => {
-    let tmpDir: string;
-    let cacheFile: string;
+/**
+ * The per-source cache (2.8.0). Each source has its own file, revalidated on every load with the
+ * archive's ETag: a 304 keeps the cached blocks, a 200 replaces them, a network failure keeps them.
+ *
+ * WHY: the 2.7.0 cache was one file for the whole source list, reused for 12 hours. An add-on its
+ * author updated within that window was not fetched again when VS Code restarted -- the user's
+ * report "add-ons don't update after a restart" (spec 5b). The invariants the old tests pinned are
+ * ported below, each where it still applies.
+ */
+describe('loadMetaDocs per-source cache', () => {
+    let cacheDir: string;
+    const A = 'https://example.com/a.zip';
+    const B = 'https://example.com/b.zip';
+
+    /** A real zip holding one .java file that documents the given commands. */
+    function archive(...commands: string[]): Buffer {
+        const zip = new AdmZip();
+        const java = commands.map(c => `// <--[command]\n// @Name ${c}\n// @Short s\n// -->\n`).join('');
+        zip.addFile('src/Meta.java', Buffer.from(java, 'utf-8'));
+        return zip.toBuffer();
+    }
+    const ok = (data: Buffer, etag: string | null = '"e1"'): FetchResult => ({ status: 'ok', data, etag });
+    const writeCache = (url: string, blocks: MetaBlock[], extra: Record<string, unknown> = {}) => {
+        fs.mkdirSync(cacheDir, { recursive: true });
+        fs.writeFileSync(cacheFileFor(cacheDir, url), JSON.stringify({ version: 3, url, etag: '"e0"', blocks, ...extra }));
+    };
+    const cmd = (name: string): MetaBlock => ({ objectType: 'command', url: `s#${name}`, data: [`@Name ${name}`, '@end_meta'] });
 
     beforeEach(() => {
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'denizen-meta-cache-'));
-        cacheFile = path.join(tmpDir, 'meta-blocks-cache.json');
+        cacheDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'denizen-meta-cache-')), 'meta-sources');
     });
-
     afterEach(() => {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(path.dirname(cacheDir), { recursive: true, force: true });
         vi.restoreAllMocks();
     });
 
-    it('downloads and writes the cache file when none exists', async () => {
-        const fakeBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks: fakeBlocks, loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('foo')).toBeDefined();
-        expect(fs.existsSync(cacheFile)).toBe(true);
+    it('downloads every source and writes one cache file per source', async () => {
+        const fetchFn = vi.fn(async (url: string) => ok(archive(url === A ? 'alpha' : 'beta')));
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A, B], fetchFn });
+        expect(docs.commands.get('alpha')).toBeDefined();
+        expect(docs.commands.get('beta')).toBeDefined();
+        expect(status.map(s => s.state)).toEqual(['downloaded', 'downloaded']);
+        expect(fs.existsSync(cacheFileFor(cacheDir, A))).toBe(true);
+        expect(fs.existsSync(cacheFileFor(cacheDir, B))).toBe(true);
     });
 
-    it('discards a cache written by an older version of this code', async () => {
-        // Cache files written before 2026-09-03 hold the archives in DOWNLOAD order, because they
-        // were appended as they arrived. Since registration is last-wins, that decides which source
-        // overrides which -- so those blocks are wrong, not merely old, and reusing them would make
-        // the ordering fix appear not to work for up to a full TTL after the update.
-        // MUTANT CAUGHT: dropping the version check, or writing a cache without the field.
-        const stale: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name old', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ sources: ['https://example.com/x.zip'], blocks: stale }));
-        const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name new', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks: fresh, loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('new')).toBeDefined();
-        expect(docs.commands.get('old')).toBeUndefined();
+    it('stamps version, URL and ETag into the file it writes', async () => {
+        await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(archive('alpha'), '"tag-7"') });
+        const written = JSON.parse(fs.readFileSync(cacheFileFor(cacheDir, A), 'utf-8'));
+        expect(written).toMatchObject({ version: 3, url: A, etag: '"tag-7"' });
+        expect(written.blocks.length).toBe(1);
     });
 
-    it('stamps the version into every cache it writes', async () => {
-        const blocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        await loadMetaDocs({
-            cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'],
-            downloadFn: async () => ({ blocks, loadErrors: [] as string[] })
-        });
-        expect(JSON.parse(fs.readFileSync(cacheFile, 'utf-8')).version).toBe(2);
+    // The fix for "add-ons don't update after a restart": every load asks the server.
+    it('revalidates a cached source with its ETag and keeps the blocks on a 304', async () => {
+        writeCache(A, [cmd('cached')]);
+        const before = fs.statSync(cacheFileFor(cacheDir, A)).mtimeMs;
+        const fetchFn = vi.fn(async (): Promise<FetchResult> => ({ status: 'not-modified' }));
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn });
+        expect(fetchFn).toHaveBeenCalledWith(A, '"e0"');
+        expect(docs.commands.get('cached')).toBeDefined();
+        expect(status[0].state).toBe('unchanged');
+        expect(fs.statSync(cacheFileFor(cacheDir, A)).mtimeMs).toBe(before);
     });
 
-    it('does NOT cache a download in which a source failed to fetch', async () => {
-        // THE BUG THIS GATE DIED OF, hit while running the verify scripts on 2026-08-28. Sources
-        // are fetched in parallel, so one failing still leaves the others' blocks -- and the old
-        // `blocks.length > 0` gate happily wrote that fraction to disk, where the TTL then served
-        // it for twelve hours. The caches written during that wobble held 536 tags instead of
-        // 2493: completion went near-empty and the checker called 87% of real command lines
-        // unknown commands.
-        // MUTANT CAUGHT: dropping the failedSources half of the condition.
-        const partial: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({
-            blocks: partial,
-            loadErrors: ['Source download error for https://example.com/b.zip: socket hang up'],
-            failedSources: ['https://example.com/b.zip']
-        }));
-        const docs = await loadMetaDocs({
-            cacheFile, ttlMs: 1000 * 60,
-            sources: ['https://example.com/a.zip', 'https://example.com/b.zip'],
-            downloadFn: downloadSpy
-        });
-        // The half that arrived is still SERVED -- degrading to nothing would be worse than
-        // degrading to less -- it is only the persisting that is refused.
-        expect(docs.commands.get('foo')).toBeDefined();
-        expect(fs.existsSync(cacheFile)).toBe(false);
-    });
-
-    it('caches a download whose sources all fetched but one had a PARSE complaint', async () => {
-        // `loadErrors` mixes fetch failures with parse complaints from sources that downloaded
-        // perfectly well. Gating on it would mean never caching at all the moment upstream meta
-        // contains one malformed block, turning every editor start into a full re-download.
-        // MUTANT CAUGHT: gating on `loadErrors.length === 0` instead of `failedSources`.
-        const blocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({
-            blocks,
-            loadErrors: ['While processing s#L2 found unknown meta type "nonsense".'],
-            failedSources: [] as string[]
-        }));
-        await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/a.zip'], downloadFn: downloadSpy });
-        expect(fs.existsSync(cacheFile)).toBe(true);
-    });
-
-    it('treats a stub that omits failedSources as "everything fetched"', async () => {
-        // The field is optional so an injected fake need not simulate the network, and every other
-        // caching test in this file relies on that reading -- an absent field must mean "no
-        // failures", not "unknown, so refuse to cache".
-        // MUTANT CAUGHT: `result.failedSources.length === 0` without the `?? []`, which throws; or
-        // treating undefined as a failure, which would silently stop the cache ever being written.
-        const blocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks, loadErrors: [] as string[] }));
-        await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/a.zip'], downloadFn: downloadSpy });
-        expect(fs.existsSync(cacheFile)).toBe(true);
-    });
-
-    it('falls back to an EXPIRED cache when the download fails', async () => {
-        // WHAT THE USER HIT ON 2026-08-28, reported as "everything is broken": the TTL lapsed, the
-        // meta CDN was dropping TLS connections, and the server ended up with no commands at all --
-        // so every line in every script was an unknown command and completion offered nothing.
-        // The TTL lapsing does not make cached meta WRONG, only old, and old-but-complete beats a
-        // fraction of the meta or none of it.
-        // MUTANT CAUGHT: dropping the staleBlocks fallback.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
-        // Age it past the TTL.
-        const old = Date.now() - 1000 * 60 * 60 * 24;
-        fs.utimesSync(cacheFile, new Date(old), new Date(old));
-        const downloadSpy = vi.fn(async () => ({
-            blocks: [] as MetaBlock[],
-            loadErrors: ['Source download error for https://example.com/x.zip: socket hang up'],
-            failedSources: ['https://example.com/x.zip']
-        }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('foo')).toBeDefined();
-        // And it SAYS so, rather than pretending the meta is current.
-        expect(docs.loadErrors.some(e => e.includes('cached meta from an earlier download'))).toBe(true);
-    });
-
-    it('does not fall back to a CORRUPT cache, and does not throw on one', async () => {
-        // A half-written cache file -- a crash or a full disk mid-write -- must read as "no cache"
-        // rather than taking down the whole load. This also pins the `catch`, whose two variable
-        // resets a mutation audit measured as dead (nothing above it can throw after either is
-        // assigned) and which were removed on that evidence.
-        // MUTANT CAUGHT: letting the parse failure propagate, or resurrecting stale blocks from a
-        // file that never parsed.
-        fs.writeFileSync(cacheFile, '{"sources":["https://example.com/x.zip"],"blocks":[{"objec');
-        const old = Date.now() - 1000 * 60 * 60 * 24;
-        fs.utimesSync(cacheFile, new Date(old), new Date(old));
-        const downloadSpy = vi.fn(async () => ({
-            blocks: [] as MetaBlock[],
-            loadErrors: ['Source download error for https://example.com/x.zip: socket hang up'],
-            failedSources: ['https://example.com/x.zip']
-        }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.size).toBe(0);
-        expect(docs.loadErrors.some(e => e.includes('cached meta from an earlier download'))).toBe(false);
-    });
-
-    it('does not re-stamp the cache when falling back to it', async () => {
-        // The mtime is what makes the NEXT start try the network again. Touching it here would
-        // hide the staleness for another full TTL and turn one outage into a day of stale meta.
-        // MUTANT CAUGHT: writing the cache file on the fallback path.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
-        const old = Date.now() - 1000 * 60 * 60 * 24;
-        fs.utimesSync(cacheFile, new Date(old), new Date(old));
-        const before = fs.statSync(cacheFile).mtimeMs;
-        await loadMetaDocs({
-            cacheFile, ttlMs: 1000, sources: ['https://example.com/x.zip'],
-            downloadFn: async () => ({ blocks: [] as MetaBlock[], loadErrors: [], failedSources: ['https://example.com/x.zip'] })
-        });
-        expect(fs.statSync(cacheFile).mtimeMs).toBe(before);
-    });
-
-    it('prefers a SUCCESSFUL download over the expired cache', async () => {
-        // The fallback must not shadow a working network -- an expired cache is the last resort,
-        // not the first choice.
-        // MUTANT CAUGHT: checking staleBlocks before the download result.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name stale', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
-        const old = Date.now() - 1000 * 60 * 60 * 24;
-        fs.utimesSync(cacheFile, new Date(old), new Date(old));
-        const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name fresh', '@end_meta'] }];
-        const docs = await loadMetaDocs({
-            cacheFile, ttlMs: 1000, sources: ['https://example.com/x.zip'],
-            downloadFn: async () => ({ blocks: fresh, loadErrors: [], failedSources: [] })
-        });
+    it('replaces the cached blocks when the archive changed', async () => {
+        writeCache(A, [cmd('stale')]);
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(archive('fresh'), '"e2"') });
         expect(docs.commands.get('fresh')).toBeDefined();
         expect(docs.commands.get('stale')).toBeUndefined();
+        expect(status[0].state).toBe('downloaded');
+        expect(JSON.parse(fs.readFileSync(cacheFileFor(cacheDir, A), 'utf-8')).etag).toBe('"e2"');
     });
 
-    it('does not fall back to a cache built from DIFFERENT sources', async () => {
-        // A cache for another source list is not stale, it is wrong -- it would silently serve the
-        // add-ons the user just removed, or omit the ones they just added.
-        // MUTANT CAUGHT: capturing staleBlocks before the sameSources check.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/OTHER.zip'], blocks: cachedBlocks }));
-        const old = Date.now() - 1000 * 60 * 60 * 24;
-        fs.utimesSync(cacheFile, new Date(old), new Date(old));
-        const docs = await loadMetaDocs({
-            cacheFile, ttlMs: 1000, sources: ['https://example.com/x.zip'],
-            downloadFn: async () => ({ blocks: [] as MetaBlock[], loadErrors: [], failedSources: ['https://example.com/x.zip'] })
-        });
-        expect(docs.commands.get('foo')).toBeUndefined();
+    // Ported from 2026-08-28 ("everything is broken" while the CDN dropped TLS): old-but-complete
+    // meta beats none.
+    it('serves the cached blocks when the network fails, and says so', async () => {
+        writeCache(A, [cmd('cached')]);
+        const before = fs.statSync(cacheFileFor(cacheDir, A)).mtimeMs;
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => { throw new Error('socket hang up'); } });
+        expect(docs.commands.get('cached')).toBeDefined();
+        expect(status[0].state).toBe('cached-offline');
+        expect(docs.loadErrors.some(e => e.startsWith(`Using cached meta for ${A}`) && e.includes('socket hang up'))).toBe(true);
+        // Not re-stamped: the next load must still try the network.
+        expect(fs.statSync(cacheFileFor(cacheDir, A)).mtimeMs).toBe(before);
     });
 
-    it('reuses the cache file within the TTL window instead of downloading again', async () => {
-        // The cache records the source list it was built from, so the fixture has to as well.
-        const fakeBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: fakeBlocks }));
-        const downloadSpy = vi.fn(async () => ({ blocks: [] as MetaBlock[], loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).not.toHaveBeenCalled();
-        expect(docs.commands.get('foo')).toBeDefined();
+    // Ported from 2026-08-28: a partial download must not become a cache. Per source, a failed
+    // source writes nothing while the others are cached and served.
+    it('a source that fails with no cache is reported, contributes nothing, and writes nothing', async () => {
+        const fetchFn = async (url: string) => { if (url === B) { throw new Error('network down'); } return ok(archive('alpha')); };
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A, B], fetchFn });
+        expect(docs.commands.get('alpha')).toBeDefined();
+        expect(status.map(s => s.state)).toEqual(['downloaded', 'failed']);
+        expect(fs.existsSync(cacheFileFor(cacheDir, B))).toBe(false);
+        expect(docs.loadErrors.some(e => e.startsWith(`Source download error for ${B}`) && e.includes('network down'))).toBe(true);
     });
 
-    it('re-downloads when an extra source was ADDED, even inside the TTL', async () => {
-        // THE BUG THIS SETTING DIED OF, reported by the user 2026-08-27 as
-        // "extra_source doesn't work". The cache used to be identified by file path and age
-        // alone, so adding a URL to `denizenscript.server.extra_sources` changed nothing at all
-        // until the 12-hour TTL happened to lapse.
-        // MUTANT: drop the sameSources check, or make it always return true.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name stale', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip'], blocks: cachedBlocks }));
-        const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name from_extra', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks: fresh, loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({
-            cacheFile, ttlMs: 1000 * 60 * 60,
-            sources: ['https://example.com/x.zip', 'https://example.com/denizenm.zip'],
-            downloadFn: downloadSpy
-        });
-        expect(downloadSpy).toHaveBeenCalledWith(['https://example.com/x.zip', 'https://example.com/denizenm.zip']);
-        expect(docs.commands.get('from_extra')).toBeDefined();
-        expect(docs.commands.get('stale')).toBeUndefined();
+    it('caches a source that downloaded but had a parse complaint', async () => {
+        const zip = new AdmZip();
+        zip.addFile('src/Meta.java', Buffer.from('// <--[command]\n// @Name alpha\n// -->\n// <--[nonsense]\n// @Name x\n// -->\n', 'utf-8'));
+        const { docs } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(zip.toBuffer()) });
+        expect(docs.loadErrors.length).toBeGreaterThan(0);
+        expect(fs.existsSync(cacheFileFor(cacheDir, A))).toBe(true);
     });
 
-    it('re-downloads when an extra source was REMOVED, even inside the TTL', async () => {
-        // The other direction, and the one a length-only check would miss in reverse: a stale
-        // cache must not keep serving a source the user just deleted.
-        // MUTANT: compare only `cached.sources.length`.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name from_extra', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/x.zip', 'https://example.com/extra.zip'], blocks: cachedBlocks }));
-        const fresh: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name official_only', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks: fresh, loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('official_only')).toBeDefined();
+    // Spec anti-goal: a disabled source is still downloaded.
+    it('never fetches a source that is not in the list, even with its cache file present', async () => {
+        writeCache(B, [cmd('disabled')]);
+        const fetchFn = vi.fn(async () => ok(archive('alpha')));
+        const { docs } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn });
+        expect(fetchFn.mock.calls.map(c => c[0])).toEqual([A]);
+        expect(docs.commands.get('disabled')).toBeUndefined();
     });
 
-    it('re-downloads when the same sources are listed in a different order', async () => {
-        // MUTANT: compare the two lists as sets. Order IS significant -- downloadAllBlocks merges
-        // archives in the order given and later blocks can override earlier ones, so the same
-        // URLs in a different order are a different result, not the same one.
-        const cachedBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name cached_order', '@end_meta'] }];
-        fs.writeFileSync(cacheFile, JSON.stringify({ version: 2, sources: ['https://example.com/a.zip', 'https://example.com/b.zip'], blocks: cachedBlocks }));
-        const downloadSpy = vi.fn(async () => ({ blocks: [{ objectType: 'command', url: 's#L1', data: ['@Name new_order', '@end_meta'] }] as MetaBlock[], loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/b.zip', 'https://example.com/a.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('new_order')).toBeDefined();
-    });
-
-    it('treats a pre-2026-08-27 bare-array cache file as a miss', async () => {
-        // The old format carries no source list, so it cannot be shown to match. One extra
-        // download on first upgrade is the correct price; silently trusting it is not.
-        // MUTANT: accept an array-shaped cache as matching.
-        fs.writeFileSync(cacheFile, JSON.stringify([{ objectType: 'command', url: 's#L1', data: ['@Name old_format', '@end_meta'] }]));
-        const downloadSpy = vi.fn(async () => ({ blocks: [{ objectType: 'command', url: 's#L1', data: ['@Name refreshed', '@end_meta'] }] as MetaBlock[], loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('refreshed')).toBeDefined();
-    });
-
-    it('writes the source list into the cache it creates', async () => {
-        // MUTANT: keep writing a bare array. Then every run after the first is a cache miss and
-        // the extension re-downloads all meta on every window reload.
-        const downloadSpy = vi.fn(async () => ({ blocks: [{ objectType: 'command', url: 's#L1', data: ['@Name foo', '@end_meta'] }] as MetaBlock[], loadErrors: [] as string[] }));
-        await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(JSON.parse(fs.readFileSync(cacheFile, 'utf-8')).sources).toEqual(['https://example.com/x.zip']);
-        // And the file it just wrote must be accepted on the next load, or the cache is useless.
-        const second = vi.fn(async () => ({ blocks: [] as MetaBlock[], loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, sources: ['https://example.com/x.zip'], downloadFn: second });
-        expect(second).not.toHaveBeenCalled();
-        expect(docs.commands.get('foo')).toBeDefined();
-    });
-
-    it('re-downloads when the cache file is older than the TTL', async () => {
-        fs.writeFileSync(cacheFile, JSON.stringify([]));
-        const oldTime = new Date(Date.now() - 1000 * 60 * 60 * 24);
-        fs.utimesSync(cacheFile, oldTime, oldTime);
-        const fakeBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name fresh', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks: fakeBlocks, loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(docs.commands.get('fresh')).toBeDefined();
-    });
-
-    it('re-downloads when forceRefresh is true even if the cache is fresh', async () => {
-        fs.writeFileSync(cacheFile, JSON.stringify([]));
-        const fakeBlocks: MetaBlock[] = [{ objectType: 'command', url: 's#L1', data: ['@Name forced', '@end_meta'] }];
-        const downloadSpy = vi.fn(async () => ({ blocks: fakeBlocks, loadErrors: [] as string[] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60 * 60, forceRefresh: true, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
+    it('fetches without an ETag when forced', async () => {
+        writeCache(A, [cmd('cached')]);
+        const fetchFn = vi.fn(async () => ok(archive('forced')));
+        const { docs } = await loadMetaDocs({ cacheDir, sources: [A], forceRefresh: true, fetchFn });
+        expect(fetchFn).toHaveBeenCalledWith(A, null);
         expect(docs.commands.get('forced')).toBeDefined();
     });
 
-    it('does not write a cache file when every download source fails (empty blocks)', async () => {
-        const downloadSpy = vi.fn(async () => ({ blocks: [] as MetaBlock[], loadErrors: ['Source download error for https://example.com/x.zip: network down'] }));
-        const docs = await loadMetaDocs({ cacheFile, ttlMs: 1000 * 60, sources: ['https://example.com/x.zip'], downloadFn: downloadSpy });
-        expect(downloadSpy).toHaveBeenCalledTimes(1);
-        expect(fs.existsSync(cacheFile)).toBe(false);
-        expect(docs.loadErrors.some(e => e.includes('network down'))).toBe(true);
+    // Ported from the version-2 bump: a file this code did not write in this format is not used.
+    it('treats another version, another URL or a corrupt file as no cache, without throwing', async () => {
+        const fail = async (): Promise<FetchResult> => { throw new Error('offline'); };
+        writeCache(A, [cmd('v2')], { version: 2 });
+        expect((await loadMetaDocs({ cacheDir, sources: [A], fetchFn: fail })).status[0].state).toBe('failed');
+        writeCache(A, [cmd('other')], { url: 'https://example.com/OTHER.zip' });
+        expect((await loadMetaDocs({ cacheDir, sources: [A], fetchFn: fail })).docs.commands.get('other')).toBeUndefined();
+        fs.writeFileSync(cacheFileFor(cacheDir, A), '{"version":3,"blocks":[{"objec');
+        const corrupt = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: fail });
+        expect(corrupt.status[0].state).toBe('failed');
+        expect(corrupt.docs.commands.size).toBe(0);
+    });
+
+    it('asks without an ETag when the cache has none, and treats a 304 without a cache as a failure', async () => {
+        writeCache(A, [cmd('cached')], { etag: null });
+        const fetchFn = vi.fn(async () => ok(archive('alpha')));
+        await loadMetaDocs({ cacheDir, sources: [A], fetchFn });
+        expect(fetchFn).toHaveBeenCalledWith(A, null);
+        const { status } = await loadMetaDocs({ cacheDir, sources: [B], fetchFn: async () => ({ status: 'not-modified' }) });
+        expect(status[0].state).toBe('failed');
+    });
+
+    // Ported from downloadOrder.test.ts (2026-09-03): registration is last-wins, so the blocks must
+    // come back in SOURCE order, whichever download finishes first.
+    it('returns blocks in source order even when the last source downloads first', async () => {
+        const fetchFn = async (url: string) => {
+            if (url === A) {
+                await new Promise(r => setTimeout(r, 30));
+                return ok(archive('narrate'));
+            }
+            const zip = new AdmZip();
+            zip.addFile('src/Fork.java', Buffer.from('// <--[command]\n// @Name narrate\n// @Short forked\n// -->\n', 'utf-8'));
+            return ok(zip.toBuffer());
+        };
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A, B], fetchFn });
+        expect(docs.commands.get('narrate')!.short).toBe('forked');
+        expect(status.map(s => s.url)).toEqual([A, B]);
+    });
+
+    it('leaves the 2.7.0 single-file cache alone', async () => {
+        const old = path.join(path.dirname(cacheDir), 'meta-blocks-cache.json');
+        fs.writeFileSync(old, JSON.stringify({ version: 2, sources: [A], blocks: [cmd('legacy')] }));
+        const { docs } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(archive('alpha')) });
+        expect(docs.commands.get('legacy')).toBeUndefined();
+        expect(fs.existsSync(old)).toBe(true);
+    });
+
+    it('counts each source\'s blocks in its status', async () => {
+        const { status } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(archive('one', 'two')) });
+        expect(status[0]).toEqual({ url: A, state: 'downloaded', blocks: 2 });
     });
 });

@@ -54,7 +54,7 @@ function walk(dir, acc) {
     return acc;
 }
 
-loadMetaDocs({ cacheFile: path.join(os.tmpdir(), 'denizen-phase2c5-verify-cache.json'), ttlMs: 12 * 60 * 60 * 1000, sources: DEFAULT_META_SOURCES }).then(docs => {
+loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs).then(docs => {
     META = docs;
     console.log(`Loaded ${docs.commands.size} commands, ${docs.mechanisms.size} mechanisms, ${docs.rawAdjustables.size} raw adjustables, ${docs.loadErrors.length} meta error(s).`);
     let failures = 0;

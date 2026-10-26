@@ -29,7 +29,7 @@ function parametersOf(command) {
 }
 
 (async () => {
-    const meta = await loadMetaDocs({ cacheFile: CACHE, ttlMs: 1000 * 60 * 60 * 12, sources: DEFAULT_META_SOURCES });
+    const meta = await loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs);
     // A PARTIAL DOWNLOAD IS NOT A FAILURE OF THIS CODE, and must not be reported as one. The four
     // meta archives are fetched from github.com in parallel and that connection drops
     // intermittently; a run that gets only Denizen-Core sees 39 commands rather than ~180, and

@@ -6,6 +6,17 @@
 // string form or `{ name, url, enabled }`. Nothing rewrites the settings on upgrade -- a legacy
 // string reads as enabled, and one that names an add-on's archive reads as that add-on switched on.
 
+import * as path from 'path';
+
+/**
+ * The per-source meta cache directory. The language server writes it and the Reinstall command
+ * deletes it, both through this function, so the two cannot point at different places.
+ */
+export function metaCacheDir(env: { LOCALAPPDATA?: string }, homedir: string): string {
+    const base = env.LOCALAPPDATA ?? path.join(homedir, 'AppData', 'Local');
+    return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-sources');
+}
+
 export interface SourceInfo {
     name: string;
     url: string;

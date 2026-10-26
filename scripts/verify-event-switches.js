@@ -9,12 +9,23 @@
 const fs = require('fs');
 const path = require('path');
 
-const CACHE = path.join(process.env.LOCALAPPDATA, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
-if (!fs.existsSync(CACHE)) {
+// The editor's own per-source meta cache (2.8.0): one file per source, all of them read here.
+const os = require('os');
+const { metaCacheDir } = require('../out/server/metaDocs/metaSources');
+const CACHE = metaCacheDir(process.env, os.homedir());
+const files = fs.existsSync(CACHE) ? fs.readdirSync(CACHE).filter(f => f.endsWith('.json')) : [];
+if (files.length === 0) {
     console.error('SKIP: no meta cache at ' + CACHE);
     process.exit(0);
 }
-const blocks = JSON.parse(fs.readFileSync(CACHE, 'utf8')).blocks ?? [];
+const blocks = files.flatMap(f => {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(CACHE, f), 'utf8')).blocks ?? [];
+    }
+    catch {
+        return [];
+    }
+});
 
 function languageText(name) {
     for (const b of blocks) {

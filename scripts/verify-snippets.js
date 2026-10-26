@@ -32,7 +32,7 @@ function resolve(text) {
 }
 
 (async () => {
-    const meta = await loadMetaDocs({ cacheFile: CACHE, ttlMs: 1000 * 60 * 60 * 12, sources: DEFAULT_META_SOURCES });
+    const meta = await loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs);
     const extra = await loadExtraData({ cacheFile: EXTRA_CACHE, ttlMs: 1000 * 60 * 60 * 24 * 15 });
     linkEventMatchers(meta, extra);
     check('meta loaded', meta.commands.size > 100, `${meta.commands.size} commands, ${meta.loadErrors.length} load error(s)`);

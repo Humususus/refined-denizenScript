@@ -13,7 +13,8 @@ import {
     Diagnostic, DiagnosticSeverity
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { loadMetaDocs, DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
+import { loadMetaDocs } from './metaDocs/metaDocsManager';
+import { effectiveSources, metaCacheDir, readSourceSettings } from './metaDocs/metaSources';
 import { MetaDocs } from './metaDocs/metaTypes';
 import { linkEventMatchers } from './metaDocs/metaLinker';
 import { WorkspaceTracker } from './workspaceTracker';
@@ -24,8 +25,6 @@ import { provideSignatureHelp } from './providers/signatureHelpProvider';
 import { parseTextColorMap, setCustomColorNames } from './providers/tagParamCompleters';
 import { ScriptChecker } from './checker/scriptChecker';
 import { ScriptWarning } from './checker/scriptWarnings';
-
-const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * How long a document must sit still before it is re-checked.
@@ -66,10 +65,6 @@ let loadedExtra: ExtraData = createEmptyExtraData();
  */
 let tagTracingEnabled = true;
 
-function getMetaCacheFile(): string {
-    const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
-}
 
 function getExtraDataCacheFile(): string {
     const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
@@ -77,29 +72,18 @@ function getExtraDataCacheFile(): string {
 }
 
 /**
- * Merges the default meta sources with any user-configured extra sources, filtering out blank
- * entries. Extracted as its own function so it's independently unit-testable without a live LSP
- * connection.
+ * The meta sources to load, from the three settings (R6): the official sources, the switched-on
+ * built-in add-ons, then the user's own enabled sources -- or, with `replace_default_sources`, the
+ * enabled ones instead of the official ones. Read through metaSources.ts, the same reader the
+ * settings page uses, so the page never shows a source as on that the server does not load.
  *
- * `replaceDefaults` makes the extra sources the ONLY sources. It exists because the additive
- * behaviour cannot express a fork that REMOVES something, and that is a real case rather than a
- * hypothetical: measured 2026-09-01 against the user's own DenizenM forks, which add an `async`
- * command and two properties but drop the `add_tab_completions`, `flying_fall_damage` and
- * `remove_tab_completions` mechanisms. Loaded additively, those three stay in the merged docs, so
- * the checker accepts and completion offers three mechanisms the user's server would reject.
- *
- * It is off by default, and deliberately so: turning it on means a typo in the setting leaves the
- * editor with no meta at all rather than with the official meta plus a warning.
+ * `replace_default_sources` exists because additive loading cannot express a fork that REMOVES
+ * something (measured 2026-09-01 against the user's DenizenM forks, which drop three mechanisms the
+ * merged docs would keep). With nothing enabled the official sources are used regardless: an empty
+ * list must never mean an editor with no meta at all.
  */
-export function combineSources(defaults: string[], extra: string[] | undefined | null, replaceDefaults: boolean = false): string[] {
-    const cleaned = (extra ?? []).map(s => s.trim()).filter(s => s.length > 0);
-    if (cleaned.length === 0) {
-        // An empty or blank-only list can never mean "use nothing" -- that would be an editor with
-        // no commands and no tags, which is indistinguishable from the failure mode this codebase
-        // spent 2026-08-28 fixing. The defaults win regardless of the flag.
-        return defaults;
-    }
-    return replaceDefaults ? cleaned : [...defaults, ...cleaned];
+export function sourcesFromConfig(extraSources: unknown, enabledAddons: unknown, replaceDefaults: unknown): string[] {
+    return effectiveSources(readSourceSettings(extraSources, enabledAddons, replaceDefaults));
 }
 
 /** The capabilities this server advertises. Extracted so it is testable without a live connection. */
@@ -182,7 +166,7 @@ function toDiagnostic(warning: ScriptWarning, severity: DiagnosticSeverity): Dia
  * per-script statistics in the Problems panel would be noise.
  *
  * Extracted from the connection wiring below so it is unit-testable without a live
- * connection, for the same reason `combineSources` and `buildCapabilities` are.
+ * connection, for the same reason `sourcesFromConfig` and `buildCapabilities` are.
  */
 export function buildDiagnostics(checker: ScriptChecker): Diagnostic[] {
     return [
@@ -292,15 +276,26 @@ export function createServer(): Connection {
 
         Promise.all([
             connection.workspace.getConfiguration('denizenscript.server.extra_sources'),
+            connection.workspace.getConfiguration('denizenscript.server.enabled_addons'),
             connection.workspace.getConfiguration('denizenscript.server.replace_default_sources')
         ])
-            .then(([extraSources, replace]: [string[] | undefined, boolean | undefined]) => {
-                const sources = combineSources(DEFAULT_META_SOURCES, extraSources, replace === true);
+            .then(([extraSources, enabledAddons, replace]: unknown[]) => {
+                const sources = sourcesFromConfig(extraSources, enabledAddons, replace);
                 connection.console.log(`Meta sources (${replace === true ? 'REPLACING' : 'alongside'} the defaults): ${sources.length} -- ${sources.join(', ')}`);
-                return loadMetaDocs({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources });
+                return loadMetaDocs({ cacheDir: metaCacheDir(process.env, os.homedir()), sources });
             })
-            .then(docs => {
+            .then(({ docs, status }) => {
                 loadedDocs = docs;
+                connection.console.log(`Meta sources loaded: ${status.map(s => `${s.state} ${s.url} (${s.blocks} blocks)`).join('; ')}`);
+                // For the settings page's status line (R6). A client that does not listen ignores it.
+                void connection.sendNotification('denizen/metaStatus', {
+                    loadedAt: Date.now(),
+                    sources: status,
+                    commands: docs.commands.size,
+                    tags: docs.tags.size,
+                    events: docs.events.size,
+                    mechanisms: docs.mechanisms.size
+                });
                 connection.console.log(
                     `Denizen meta loaded: ${docs.commands.size} commands, ${docs.tags.size} tags, ` +
                     `${docs.events.size} events, ${docs.mechanisms.size} mechanisms, ${docs.properties.size} properties, ` +

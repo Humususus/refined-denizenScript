@@ -10,14 +10,12 @@ const { createEmptyExtraData } = require('../out/server/metaDocs/extraData');
 const { provideCompletions } = require('../out/server/providers/completionProvider');
 const { provideHover } = require('../out/server/providers/hoverProvider');
 
-const cacheFile = path.join(os.tmpdir(), 'denizen-phase2a-verify-cache.json');
-
 function check(label, condition, detail) {
     console.log(`${condition ? 'PASS' : 'FAIL'}  ${label}${detail ? ` -- ${detail}` : ''}`);
     return condition ? 0 : 1;
 }
 
-loadMetaDocs({ cacheFile, ttlMs: 12 * 60 * 60 * 1000, sources: DEFAULT_META_SOURCES }).then(docs => {
+loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs).then(docs => {
     console.log(`Loaded ${docs.commands.size} commands, ${docs.languages.size} languages, ${docs.loadErrors.length} load error(s).`);
     let failures = 0;
 

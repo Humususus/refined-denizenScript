@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import * as path from 'path';
 import {
-    ADDON_SOURCES, OFFICIAL_SOURCES, effectiveSources, readSourceSettings, sourceFromInput, sourceName,
+    ADDON_SOURCES, OFFICIAL_SOURCES, effectiveSources, metaCacheDir, readSourceSettings, sourceFromInput, sourceName,
     writeSourceSettings
 } from './metaSources';
 import { DEFAULT_META_SOURCES } from './metaDocsManager';
@@ -94,6 +95,16 @@ describe('sourceFromInput', () => {
             expect(sourceFromInput(bad, none), bad).toBeNull();
         }
         expect(sourceFromInput('https://a/x.zip', readSourceSettings(['https://a/x.zip'], [], false))).toBeNull();
+    });
+});
+
+// The server writes this directory and the Reinstall command deletes it: one function, so the
+// two cannot drift apart.
+describe('metaCacheDir', () => {
+    it('lives under LOCALAPPDATA, else under the home directory', () => {
+        expect(metaCacheDir({ LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, 'C:\\Users\\u'))
+            .toBe(path.join('C:\\Users\\u\\AppData\\Local', 'DenizenVSCodeExtension', 'cache', 'meta-sources'));
+        expect(metaCacheDir({}, '/home/u')).toBe(path.join('/home/u', 'AppData', 'Local', 'DenizenVSCodeExtension', 'cache', 'meta-sources'));
     });
 });
 

@@ -25,7 +25,7 @@ function check(label, condition, detail) {
 }
 
 Promise.all([
-    loadMetaDocs({ cacheFile: path.join(os.tmpdir(), 'denizen-phase2b6-verify-cache.json'), ttlMs: 12 * 60 * 60 * 1000, sources: DEFAULT_META_SOURCES }),
+    loadMetaDocs({ cacheDir: require('path').join(require('os').tmpdir(), 'denizen-verify-meta-sources'), sources: DEFAULT_META_SOURCES }).then(r => r.docs),
     loadExtraData({ cacheFile: path.join(os.tmpdir(), 'denizen-phase2b6-verify.fds'), ttlMs: 15 * 24 * 60 * 60 * 1000 })
 ]).then(([docs, extra]) => {
     console.log(`Loaded ${docs.commands.size} commands, ${docs.tags.size} tags, ${docs.mechanisms.size} mechanisms, ${docs.loadErrors.length} meta error(s).`);

@@ -30,6 +30,47 @@ export function downloadBinary(url: string): Promise<Buffer> {
     });
 }
 
+export type FetchResult = { status: 'ok'; data: Buffer; etag: string | null } | { status: 'not-modified' };
+
+/**
+ * Downloads an archive, asking with `If-None-Match` when the cached copy's ETag is known: GitHub's
+ * archive host answers an unchanged archive with a 304 and no body (checked 2026-10-27), so
+ * revalidating every source on every start costs a round trip each. Redirects are followed like
+ * `downloadBinary`; a network error or any status but 200 / 304 rejects.
+ */
+export function fetchArchive(url: string, etag: string | null): Promise<FetchResult> {
+    return new Promise((resolve, reject) => {
+        const headers: Record<string, string> = { 'User-Agent': 'DenizenMetaScanner/1.0' };
+        if (etag !== null) {
+            headers['If-None-Match'] = etag;
+        }
+        https.get(url, { headers }, response => {
+            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.statusCode !== 304 && response.headers.location) {
+                response.resume();
+                fetchArchive(response.headers.location, etag).then(resolve, reject);
+                return;
+            }
+            if (response.statusCode === 304) {
+                response.resume();
+                resolve({ status: 'not-modified' });
+                return;
+            }
+            if (response.statusCode !== 200) {
+                reject(new Error(`Source download returned HTTP ${response.statusCode} for ${url}`));
+                response.resume();
+                return;
+            }
+            const chunks: Buffer[] = [];
+            response.on('data', chunk => chunks.push(chunk));
+            response.on('end', () => {
+                const tag = response.headers.etag;
+                resolve({ status: 'ok', data: Buffer.concat(chunks), etag: typeof tag === 'string' ? tag : null });
+            });
+            response.on('error', reject);
+        }).on('error', reject);
+    });
+}
+
 /** Extracts trimmed `//`-prefixed comment lines from every `.java` file entry in a zip archive. Returns tuples of (1-based line number, entry path, comment text with the `//` and one following space stripped). */
 export function extractJavaCommentLines(zipBuffer: Buffer): Array<[number, string, string]> {
     const zip = new AdmZip(zipBuffer);
