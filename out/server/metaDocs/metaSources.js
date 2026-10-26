@@ -30,7 +30,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sourceFromInput = exports.writeSourceSettings = exports.effectiveSources = exports.readSourceSettings = exports.sourceName = exports.ADDON_SOURCES = exports.OFFICIAL_SOURCES = exports.metaCacheDir = void 0;
+exports.isUnknownName = exports.disabledSourcesHint = exports.DISABLED_SOURCES_HINT = exports.UNKNOWN_NAME_CODES = exports.sourceFromInput = exports.writeSourceSettings = exports.effectiveSources = exports.readSourceSettings = exports.sourceName = exports.ADDON_SOURCES = exports.OFFICIAL_SOURCES = exports.metaCacheDir = void 0;
 const path = __importStar(require("path"));
 /**
  * The per-source meta cache directory. The language server writes it and the Reinstall command
@@ -152,4 +152,39 @@ function sourceFromInput(input, existing) {
     return listed ? null : { name: sourceName(url), url, enabled: true };
 }
 exports.sourceFromInput = sourceFromInput;
+/**
+ * The checker's codes for a name the meta does not know -- the ones a switched-off source could
+ * explain (R7, spec 6). Shared by the server, which adds the hint, and the client, whose quick fix
+ * opens Meta sources.
+ */
+exports.UNKNOWN_NAME_CODES = new Set(['unknown_command', 'bad_tag_base', 'tag_trace_failure', 'bad_adjust_unknown_mech', 'event_missing']);
+/** How the hint starts, so the client can tell a diagnostic carries it. */
+exports.DISABLED_SOURCES_HINT = ' — may come from a meta source that is switched off';
+/**
+ * The sentence appended to an unknown-name diagnostic, or null when every source is on. Nothing is
+ * downloaded to check (user ruling), so it names what is off and leaves the choice to the user. The
+ * official sources do not count when replaced: that is the user's own setting, not a missing add-on.
+ */
+function disabledSourcesHint(s) {
+    const off = [...s.addons.filter(a => !a.enabled), ...s.custom.filter(c => !c.enabled)].map(x => x.name);
+    if (off.length === 0) {
+        return null;
+    }
+    const names = off.length > 5 ? `${off.slice(0, 5).join(', ')} and ${off.length - 5} more` : off.join(', ');
+    return `${exports.DISABLED_SOURCES_HINT}: ${names}. Enable it in Denizen: Settings → Meta sources.`;
+}
+exports.disabledSourcesHint = disabledSourcesHint;
+/**
+ * Whether a diagnostic is about a name the meta does not know. `tag_trace_failure` also covers a
+ * missing or forbidden [parameter], deprecated bases and more, so only "Tag part '…' does not
+ * exist" counts; an unknown tag BASE is left to `bad_tag_base`, which the checker raises on the same
+ * range -- one hint per tag, not two (final review, R7).
+ */
+function isUnknownName(code, message) {
+    if (code === 'tag_trace_failure') {
+        return /Tag part '[^']*' does not exist/.test(message);
+    }
+    return exports.UNKNOWN_NAME_CODES.has(code);
+}
+exports.isUnknownName = isUnknownName;
 //# sourceMappingURL=metaSources.js.map

@@ -27,7 +27,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = exports.uriToPath = exports.linkMatchersWhenReady = exports.buildDiagnostics = exports.buildCapabilities = exports.sourcesFromConfig = void 0;
+exports.createServer = exports.uriToPath = exports.linkMatchersWhenReady = exports.addSourceHint = exports.buildDiagnostics = exports.buildCapabilities = exports.sourcesFromConfig = void 0;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const url = __importStar(require("url"));
@@ -76,6 +76,11 @@ let loadedExtra = (0, extraData_1.createEmptyExtraData)();
  * `!== false` read below treats as the default rather than as "off").
  */
 let tagTracingEnabled = true;
+/**
+ * The sentence added to unknown-name diagnostics while some meta source is switched off, or null
+ * (R7). Read with the sources at start; the client restarts the server when they change.
+ */
+let sourcesHint = null;
 function getExtraDataCacheFile() {
     var _a;
     const base = (_a = process.env.LOCALAPPDATA) !== null && _a !== void 0 ? _a : path.join(os.homedir(), 'AppData', 'Local');
@@ -189,6 +194,18 @@ function buildDiagnostics(checker) {
 }
 exports.buildDiagnostics = buildDiagnostics;
 /**
+ * Appends `hint` (see metaSources.disabledSourcesHint) to the diagnostics for names the meta does
+ * not know. Only the message changes: the code and the range are what `##ignorewarning` and muting
+ * key on, so a muted warning stays muted (R7).
+ */
+function addSourceHint(diagnostics, hint) {
+    if (hint === null) {
+        return diagnostics;
+    }
+    return diagnostics.map(d => typeof d.code === 'string' && typeof d.message === 'string' && (0, metaSources_1.isUnknownName)(d.code, d.message) ? Object.assign(Object.assign({}, d), { message: d.message + hint }) : d);
+}
+exports.addSourceHint = addSourceHint;
+/**
  * Compiles the event could-matchers once BOTH loads have landed, and reports what it built.
  *
  * The meta and the Minecraft enum data are two independent promises and either may finish first,
@@ -265,7 +282,7 @@ function createServer() {
         for (const [filePath, checker] of results) {
             // Publish for every file, not only open ones -- that is what makes a fresh window show
             // problems in files the user has not touched (WorkspaceTracker.cs:131).
-            connection.sendDiagnostics({ uri: url.pathToFileURL(filePath).toString(), diagnostics: buildDiagnostics(checker) });
+            connection.sendDiagnostics({ uri: url.pathToFileURL(filePath).toString(), diagnostics: addSourceHint(buildDiagnostics(checker), sourcesHint) });
         }
         const scripts = tracker.workspaceData === null ? 0 : tracker.workspaceData.scripts.size;
         connection.console.log(`Workspace scanned: ${results.size} file(s), ${scripts} script container(s), in ${Date.now() - started}ms.`);
@@ -288,6 +305,7 @@ function createServer() {
         ])
             .then(([extraSources, enabledAddons, replace]) => {
             const sources = sourcesFromConfig(extraSources, enabledAddons, replace);
+            sourcesHint = (0, metaSources_1.disabledSourcesHint)((0, metaSources_1.readSourceSettings)(extraSources, enabledAddons, replace));
             connection.console.log(`Meta sources (${replace === true ? 'REPLACING' : 'alongside'} the defaults): ${sources.length} -- ${sources.join(', ')}`);
             return (0, metaDocsManager_1.loadMetaDocs)({ cacheDir: (0, metaSources_1.metaCacheDir)(process.env, os.homedir()), sources });
         })
@@ -455,7 +473,7 @@ function createServer() {
             // "no cross-file knowledge", never as "nothing exists".
             checker.surroundingWorkspace = tracker.dataFor();
             checker.run();
-            connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(checker) });
+            connection.sendDiagnostics({ uri, diagnostics: addSourceHint(buildDiagnostics(checker), sourcesHint) });
             // Feed this file's own containers back in, so the NEXT file checked sees the edit.
             // The C# does the same at DiagnosticProvider.cs:134.
             const filePath = uriToPath(uri);

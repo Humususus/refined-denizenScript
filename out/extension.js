@@ -1936,7 +1936,7 @@ function activate(context) {
             outputChannel.show(true);
         }));
         context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.resetPerformanceStats", () => perfStats_1.perf.reset()));
-        context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", () => settingsPanel_1.SettingsPanel.show(context, { highlightOptions, getMetaStatus, onMetaStatus: exports.onMetaStatus })));
+        context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", (section) => settingsPanel_1.SettingsPanel.show(context, { highlightOptions, getMetaStatus, onMetaStatus: exports.onMetaStatus }, typeof section === "string" ? section : undefined)));
         vscode.window.onDidChangeVisibleTextEditors(editors => {
             for (const editor of editors) {
                 const uri = editor.document.uri.toString();

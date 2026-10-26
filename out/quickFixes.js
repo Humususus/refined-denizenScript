@@ -63,6 +63,13 @@ class MissingPunctuationFixes {
             if (code === null) {
                 continue;
             }
+            // R7: an unknown name that a switched-off meta source might explain.
+            if ((0, quickFixPlans_1.wantsSourcesFix)(code, diagnostic.message)) {
+                const action = new vscode.CodeAction('Open meta sources (Denizen: Settings)', vscode.CodeActionKind.QuickFix);
+                action.command = { command: 'refinedDenizenscript.openSettings', title: 'Open meta sources', arguments: ['sources'] };
+                action.diagnostics = [diagnostic];
+                actions.push(action);
+            }
             const lineNumber = diagnostic.range.start.line;
             // A diagnostic can outlive the edit that shortened the file, so this is a real guard
             // rather than a defensive one: `lineAt` past the end throws.

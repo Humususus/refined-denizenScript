@@ -6,7 +6,8 @@
 // FEATURE-IDEAS.md idea 6. The checker already reports these; this only offers the edit their
 // messages already describe. No new analysis, and nothing fires where the checker is silent.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.planFixes = exports.ACTIONABLE_CODES = exports.deprecationReplacement = void 0;
+exports.wantsSourcesFix = exports.planFixes = exports.ACTIONABLE_CODES = exports.deprecationReplacement = void 0;
+const metaSources_1 = require("./server/metaDocs/metaSources");
 /**
  * The replacement a deprecation message names, or null when it does not name one unambiguously.
  *
@@ -166,4 +167,13 @@ function planFixes(code, text, context) {
     return plans;
 }
 exports.planFixes = planFixes;
+/**
+ * Whether a diagnostic gets "Open meta sources": an unknown name whose message carries the
+ * switched-off-sources hint the server adds (R7). Keyed on the hint as well as the code, so the
+ * action disappears with the hint once every source is on.
+ */
+function wantsSourcesFix(code, message) {
+    return code !== null && (0, metaSources_1.isUnknownName)(code, message) && message.includes(metaSources_1.DISABLED_SOURCES_HINT);
+}
+exports.wantsSourcesFix = wantsSourcesFix;
 //# sourceMappingURL=quickFixPlans.js.map
