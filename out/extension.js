@@ -255,22 +255,27 @@ let semanticProvider = undefined;
  * of one shared setting, and far rarer than having two windows open.
  */
 function syncPaletteRules() {
-    var _a;
     const config = vscode.workspace.getConfiguration();
-    let rules = null;
+    let palette = null;
     if ((0, paletteRules_1.userLevel)(config.inspect("denizenscript.behaviors.use_custom_syntax_colors")) === true) {
-        const palette = {};
+        palette = {};
         for (const type of denizenHighlighter_1.COLOR_TYPES) {
             const value = (0, paletteRules_1.userLevel)(config.inspect("denizenscript.theme_colors." + type));
             if (value !== undefined) {
                 palette[type] = value;
             }
         }
-        rules = (0, paletteRules_1.paletteRules)(palette);
     }
-    const key = "editor.semanticTokenColorCustomizations";
-    const current = (_a = config.inspect(key)) === null || _a === void 0 ? void 0 : _a.globalValue;
-    const merged = (0, paletteRules_1.mergeRules)(current, rules);
+    // Semantic tokens for the full detail; the same colours on the grammar's scopes so that text
+    // being typed is in the palette at once, not only when VS Code next asks for tokens (2.6.0).
+    writeUserSetting("editor.semanticTokenColorCustomizations", current => (0, paletteRules_1.mergeRules)(current, palette === null ? null : (0, paletteRules_1.paletteRules)(palette)));
+    writeUserSetting("editor.tokenColorCustomizations", current => (0, paletteRules_1.mergeTextMateRules)(current, palette === null ? null : (0, paletteRules_1.textMateRules)(palette)));
+}
+/** Writes a user setting through `merge`, but only when `merge` returns a different object. */
+function writeUserSetting(key, merge) {
+    var _a;
+    const current = (_a = vscode.workspace.getConfiguration().inspect(key)) === null || _a === void 0 ? void 0 : _a.globalValue;
+    const merged = merge(current);
     if (merged === current) {
         return;
     }
