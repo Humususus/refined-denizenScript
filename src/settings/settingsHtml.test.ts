@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { baseTagSpecialColors, HighlightOptions } from '../highlight/denizenHighlighter';
 import { settingsHtml } from './settingsHtml';
-import { COLOR_CARDS, OPTION_CARDS, PREVIEW_SCRIPT, cardSpans, isWritableSetting, metaStatusLine, optionSettingId, previewState, sourcesState } from './settingsModel';
+import { COLOR_CARDS, OPTION_CARDS, PREVIEW_SCRIPT, cardSpans, isWritableSetting, metaStatusLine, optionSettingId, previewState, sourcesState, sourceWrites } from './settingsModel';
+import { readSourceSettings } from '../server/metaDocs/metaSources';
 
 const opts: HighlightOptions = { headerSymbols: '|+=_@/', doInlineColors: true, displayDarkColors: false, tagSpecialColors: baseTagSpecialColors, colorRef: {} };
 
@@ -62,6 +63,33 @@ describe('meta sources on the page', () => {
         expect(state.custom).toEqual([{ name: 'x', url: 'https://my.fork/x.zip', enabled: true }]);
         expect(state.replaceDefaults).toBe(false);
     });
+    // Final review C1: the writes were diffed derived-against-derived, so a legacy add-on string in
+    // extra_sources made the switch impossible to turn off, and editing an own source turned it off.
+    describe('sourceWrites (diffed against what is stored)', () => {
+        const DM = 'https://github.com/Energobro/DenizenM-Tjtoxshpilivili1/archive/refs/heads/master.zip';
+        const stored = { extra: [DM, 'https://x/fork.zip'], addons: [] as string[], replace: false };
+        const read = () => readSourceSettings(stored.extra, stored.addons, stored.replace);
+        it('editing an own source keeps the legacy add-on switched on', () => {
+            const next = read();
+            next.custom[0].enabled = false;
+            const writes = Object.fromEntries(sourceWrites(stored.extra, stored.addons, stored.replace, next).map(w => [w.key, w.value]));
+            const after = readSourceSettings(writes['denizenscript.server.extra_sources'] ?? stored.extra, writes['denizenscript.server.enabled_addons'] ?? stored.addons, false);
+            expect(after.addons.find(a => a.id === 'denizenm')!.enabled).toBe(true);
+            expect(after.custom).toEqual([{ name: 'fork', url: 'https://x/fork.zip', enabled: false }]);
+        });
+        it('a legacy add-on can be switched off', () => {
+            const next = read();
+            next.addons.find(a => a.id === 'denizenm')!.enabled = false;
+            const writes = Object.fromEntries(sourceWrites(stored.extra, stored.addons, stored.replace, next).map(w => [w.key, w.value]));
+            const after = readSourceSettings(writes['denizenscript.server.extra_sources'] ?? stored.extra, writes['denizenscript.server.enabled_addons'] ?? stored.addons, false);
+            expect(after.addons.find(a => a.id === 'denizenm')!.enabled).toBe(false);
+            expect(after.custom.map(c => c.url)).toEqual(['https://x/fork.zip']);
+        });
+        it('writes nothing when nothing changed in the new form', () => {
+            const next = readSourceSettings([{ name: 'fork', url: 'https://x/fork.zip', enabled: true }], ['denizenm'], false);
+            expect(sourceWrites([{ name: 'fork', url: 'https://x/fork.zip', enabled: true }], ['denizenm'], false, next)).toEqual([]);
+        });
+    });
     it('says when and what the meta loaded', () => {
         const now = 1_800_000_000_000;
         const status = {
@@ -75,6 +103,8 @@ describe('meta sources on the page', () => {
         expect(metaStatusLine({ ...status, loadedAt: now - 30 * 1000 }, now)).toBe('Meta loaded just now · 6 sources · 1,214 commands, tags and events');
         expect(metaStatusLine({ ...status, loadedAt: now - 5 * 60 * 1000 }, now)).toBe('Meta loaded 5 min ago · 6 sources · 1,214 commands, tags and events');
         expect(metaStatusLine(null, now)).toBe('Meta not loaded yet');
+        // The server's report of a load that threw has no sources.
+        expect(metaStatusLine({ ...status, sources: [], commands: 0, tags: 0, events: 0 }, now)).toBe('Meta failed to load 2 h ago — see the Denizen language server output');
     });
 });
 

@@ -313,6 +313,8 @@ export function createServer(): Connection {
             })
             .catch(err => {
                 connection.console.error(`Denizen meta load failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+                // Reported too, so the settings page says so instead of waiting for a load that ended.
+                void connection.sendNotification('denizen/metaStatus', { loadedAt: Date.now(), sources: [], commands: 0, tags: 0, events: 0, mechanisms: 0 });
             });
 
         connection.workspace.getConfiguration('denizenscript.server.tagTracing')

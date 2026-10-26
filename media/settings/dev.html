@@ -42,6 +42,12 @@
         setTimeout(() => window.postMessage({ kind: 'addResult', ok }, '*'), 10);
       } else if (m.kind === 'reinstall') {
         window.DEV_WRITES.push(m);
+        // ?nostatus=1: the server never reports (it failed); the host's command times out.
+        if (q.get('nostatus')) {
+          setTimeout(() => window.postMessage({ kind: 'reinstallDone', ok: false }, '*'), 300);
+          return;
+        }
+        setTimeout(() => window.postMessage({ kind: 'reinstallDone', ok: true }, '*'), 850);
         setTimeout(() => {
           window.DEV_STATE.metaLoadedAt = Date.now();
           window.DEV_STATE.metaStatusLine = 'Meta loaded just now · 6 sources · 1,214 commands, tags and events';

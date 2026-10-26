@@ -4,7 +4,7 @@ import * as languageClientNode from "vscode-languageclient/node";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { RestartScheduler } from "./metaClient";
+import { RestartScheduler, restartSequence, waitForStatus } from "./metaClient";
 import { MetaStatus, metaCacheDir } from "./server/metaDocs/metaSources";
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 import { findSaveEntries, entryTagsFor } from "./entryTags";
@@ -136,19 +136,14 @@ async function restartLanguageServer(serverModule: string, clearCache: boolean):
     tsClient = undefined;
     if (old) {
         unregisterDiagnosticClient(old);
-        try {
-            await old.stop();
-        }
-        catch (err) {
-            // A server that never finished starting cannot be stopped cleanly; start the new one anyway.
-            outputChannel.appendLine("Stopping the Denizen language server failed: " + err);
-        }
-    }
-    if (clearCache) {
-        fs.rmSync(metaCacheDir(process.env, os.homedir()), { recursive: true, force: true });
     }
     outputChannel.appendLine(`Restarting the Denizen language server${clearCache ? " with a cleared meta cache" : ""}.`);
-    tsClient = startTsClient(serverModule);
+    await restartSequence({
+        stop: async () => { if (old) { await old.stop(); } },
+        clearCache: () => fs.rmSync(metaCacheDir(process.env, os.homedir()), { recursive: true, force: true }),
+        start: () => { tsClient = startTsClient(serverModule); },
+        log: message => outputChannel.appendLine(message),
+    }, clearCache);
 }
 
 const META_SOURCE_SETTINGS = ["denizenscript.server.extra_sources", "denizenscript.server.enabled_addons", "denizenscript.server.replace_default_sources"];
@@ -168,10 +163,18 @@ function activateTsLanguageServer(context: vscode.ExtensionContext) {
             scheduler.request();
         }
     }, null, context.subscriptions);
-    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.reinstallMeta", () => {
+    // Resolves true once the reinstalled server reports its load, false if it does not within three
+    // minutes. Waits for its OWN restart first: a restart already running for a switch reports a
+    // status of its own, which must not end the spinner early.
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.reinstallMeta", async () => {
         const message = vscode.window.setStatusBarMessage("$(sync~spin) Denizen meta: re-downloading…");
-        const done = onMetaStatus(() => { message.dispose(); done.dispose(); });
-        return scheduler.now(true);
+        try {
+            await scheduler.now(true);
+            return await waitForStatus(listener => onMetaStatus(listener), 3 * 60 * 1000);
+        }
+        finally {
+            message.dispose();
+        }
     }));
 }
 

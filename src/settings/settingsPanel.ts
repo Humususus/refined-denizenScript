@@ -11,10 +11,10 @@ import * as vscode from 'vscode';
 import { HighlightOptions } from '../highlight/denizenHighlighter';
 import { userLevel } from '../highlight/paletteRules';
 import { settingsHtml } from './settingsHtml';
-import { MetaStatus, readSourceSettings, sourceFromInput, writeSourceSettings } from '../server/metaDocs/metaSources';
+import { MetaStatus, readSourceSettings, sourceFromInput } from '../server/metaDocs/metaSources';
 import {
     COLOR_CARDS, OPTION_CARDS, PaletteValue, cardSpans, isWritableSetting, metaStatusLine, optionSettingId,
-    parseColorMap, parsePaletteValue, previewState, sourcesState
+    parseColorMap, parsePaletteValue, previewState, sourcesState, sourceWrites
 } from './settingsModel';
 
 /** What the page needs from the extension besides the settings themselves. */
@@ -96,19 +96,34 @@ export class SettingsPanel {
         else if (message.kind === 'sources' && message.value !== null && typeof message.value === 'object') {
             const v = message.value as { custom?: unknown; addons?: unknown; replaceDefaults?: unknown };
             const enabled = Array.isArray(v.addons) ? v.addons.filter(a => a && (a as { enabled?: unknown }).enabled === true).map(a => (a as { id?: unknown }).id) : [];
-            void this.writeSources(readSourceSettings(v.custom, enabled, v.replaceDefaults));
+            const next = readSourceSettings(v.custom, enabled, v.replaceDefaults);
+            this.queueWrite(() => this.writeSources(next));
         }
         else if (message.kind === 'addSource' && typeof message.input === 'string') {
-            const current = this.currentSources();
-            const added = sourceFromInput(message.input, current);
-            if (added !== null) {
-                void this.writeSources({ ...current, custom: [...current.custom, added] });
-            }
-            void this.panel.webview.postMessage({ kind: 'addResult', ok: added !== null });
+            const input = message.input;
+            // Read inside the queue, so a switch still being written is part of what this adds to.
+            this.queueWrite(async () => {
+                const current = this.currentSources();
+                const added = sourceFromInput(input, current);
+                if (added !== null) {
+                    await this.writeSources({ ...current, custom: [...current.custom, added] });
+                }
+                void this.panel.webview.postMessage({ kind: 'addResult', ok: added !== null });
+            });
         }
         else if (message.kind === 'reinstall') {
-            void vscode.commands.executeCommand('refinedDenizenscript.reinstallMeta');
+            void Promise.resolve(vscode.commands.executeCommand<boolean>('refinedDenizenscript.reinstallMeta'))
+                .then(ok => ok === true, () => false)
+                .then(ok => this.panel.webview.postMessage({ kind: 'reinstallDone', ok }));
         }
+    }
+
+    /** Source writes run one at a time: each reads what the previous one stored. */
+    private writeQueue: Promise<void> = Promise.resolve();
+    private queueWrite(write: () => Promise<void>): void {
+        this.writeQueue = this.writeQueue.then(write).catch(err => {
+            void vscode.window.showErrorMessage(`Saving the meta sources failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
     }
 
     private currentSources() {
@@ -119,20 +134,19 @@ export class SettingsPanel {
             userLevel(config.inspect('denizenscript.server.replace_default_sources')));
     }
 
-    /** Writes only what changed; the language server restarts once for the lot (RestartScheduler). */
+    /**
+     * Writes what differs from what is STORED (sourceWrites); the language server restarts once for
+     * the lot (RestartScheduler).
+     */
     private async writeSources(next: ReturnType<typeof readSourceSettings>): Promise<void> {
         const config = vscode.workspace.getConfiguration();
-        const current = this.currentSources();
-        const was = writeSourceSettings(current);
-        const now = writeSourceSettings(next);
-        if (JSON.stringify(was.extra_sources) !== JSON.stringify(now.extra_sources)) {
-            await config.update('denizenscript.server.extra_sources', now.extra_sources, vscode.ConfigurationTarget.Global);
-        }
-        if (JSON.stringify(was.enabled_addons) !== JSON.stringify(now.enabled_addons)) {
-            await config.update('denizenscript.server.enabled_addons', now.enabled_addons, vscode.ConfigurationTarget.Global);
-        }
-        if (current.replaceDefaults !== next.replaceDefaults) {
-            await config.update('denizenscript.server.replace_default_sources', next.replaceDefaults, vscode.ConfigurationTarget.Global);
+        const writes = sourceWrites(
+            userLevel(config.inspect('denizenscript.server.extra_sources')),
+            userLevel(config.inspect('denizenscript.server.enabled_addons')),
+            userLevel(config.inspect('denizenscript.server.replace_default_sources')),
+            next);
+        for (const write of writes) {
+            await config.update(write.key, write.value, vscode.ConfigurationTarget.Global);
         }
     }
 

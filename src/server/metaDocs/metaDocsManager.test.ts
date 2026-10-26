@@ -264,6 +264,16 @@ describe('loadMetaDocs per-source cache', () => {
         expect(fs.existsSync(old)).toBe(true);
     });
 
+    // Final review I3: a read-only LOCALAPPDATA or a full disk made every source "failed" and left
+    // the editor with no meta, though every download had succeeded.
+    it('serves a download even when its cache file cannot be written', async () => {
+        fs.writeFileSync(cacheDir, 'a file where the cache directory should be');
+        const { docs, status } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(archive('alpha')) });
+        expect(docs.commands.get('alpha')).toBeDefined();
+        expect(status[0].state).toBe('downloaded');
+        expect(docs.loadErrors.some(e => e.startsWith(`Could not cache meta for ${A}`))).toBe(true);
+    });
+
     it('counts each source\'s blocks in its status', async () => {
         const { status } = await loadMetaDocs({ cacheDir, sources: [A], fetchFn: async () => ok(archive('one', 'two')) });
         expect(status[0]).toEqual({ url: A, state: 'downloaded', blocks: 2 });

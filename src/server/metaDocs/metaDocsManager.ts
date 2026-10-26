@@ -157,8 +157,15 @@ async function loadSource(url: string, options: LoadMetaDocsOptions, fetchFn: No
         const blocks = extractMetaBlocks(url, extractJavaCommentLines(result.data), errors);
         // A parse complaint does not stop the source being cached: it downloaded completely, and
         // refusing would re-download it on every start for as long as upstream has one bad block.
-        fs.mkdirSync(options.cacheDir, { recursive: true });
-        fs.writeFileSync(file, JSON.stringify({ version: CACHE_VERSION, url, etag: result.etag, blocks }));
+        // Best-effort: a cache that cannot be written (read-only LOCALAPPDATA, a full disk) costs a
+        // download next time, not the meta now -- final review, R6.
+        try {
+            fs.mkdirSync(options.cacheDir, { recursive: true });
+            fs.writeFileSync(file, JSON.stringify({ version: CACHE_VERSION, url, etag: result.etag, blocks }));
+        }
+        catch (ex) {
+            errors.push(`Could not cache meta for ${url}: ${ex instanceof Error ? ex.message : String(ex)}`);
+        }
         return { blocks, errors, status: { url, state: 'downloaded', blocks: blocks.length } };
     }
     catch (ex) {

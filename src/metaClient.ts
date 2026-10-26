@@ -5,6 +5,55 @@
 // settings page used to need a window reload; now the client restarts the server, which revalidates
 // every cached source (a 304 each) and downloads only what is new.
 
+/**
+ * One restart: stop the old server, optionally clear the meta cache, start a new one. The new server
+ * is started whatever happens before it -- a stop that throws, or a cache folder Windows will not
+ * delete (EBUSY from an antivirus) -- because the alternative is a window with no language server
+ * until it is reloaded (final review, R6).
+ */
+export async function restartSequence(steps: { stop: () => Promise<void>; clearCache: () => void; start: () => void; log: (message: string) => void }, clearCache: boolean): Promise<void> {
+    try {
+        await steps.stop();
+    }
+    catch (err) {
+        steps.log(`Stopping the Denizen language server failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (clearCache) {
+        try {
+            steps.clearCache();
+        }
+        catch (err) {
+            steps.log(`Clearing the meta cache failed, so cached sources are revalidated instead of re-downloaded: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+    steps.start();
+}
+
+/**
+ * Resolves true on the next status, false after `timeoutMs` -- so a load that never reports (the
+ * server failed to start, or its load threw) cannot leave a spinner or a disabled button forever.
+ */
+export function waitForStatus(subscribe: (listener: () => void) => { dispose(): void }, timeoutMs: number, timers: Timers = realTimers): Promise<boolean> {
+    return new Promise(resolve => {
+        let settled = false;
+        let subscription: { dispose(): void } | null = null;
+        const finish = (ok: boolean) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            timers.clear(timer);
+            subscription?.dispose();
+            resolve(ok);
+        };
+        const timer = timers.set(() => finish(false), timeoutMs);
+        subscription = subscribe(() => finish(true));
+        if (settled) {
+            subscription.dispose();
+        }
+    });
+}
+
 type Timers = { set: (fn: () => void, ms: number) => unknown; clear: (handle: unknown) => void };
 
 const realTimers: Timers = {

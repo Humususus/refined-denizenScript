@@ -1,5 +1,46 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { RestartScheduler } from './metaClient';
+import { RestartScheduler, restartSequence, waitForStatus } from './metaClient';
+
+// Final review I2: an exception clearing the cache (EBUSY from an antivirus on Windows) used to
+// leave the window with no language server at all until a reload.
+describe('restartSequence', () => {
+    it('starts the new server even when stopping and clearing fail', async () => {
+        const order: string[] = [];
+        await restartSequence({
+            stop: async () => { order.push('stop'); throw new Error('stuck'); },
+            clearCache: () => { order.push('clear'); throw new Error('EBUSY'); },
+            start: () => { order.push('start'); },
+            log: m => order.push('log ' + m),
+        }, true);
+        expect(order[0]).toBe('stop');
+        expect(order).toContain('clear');
+        expect(order[order.length - 1]).toBe('start');
+        expect(order.filter(o => o.startsWith('log ')).length).toBe(2);
+    });
+    it('clears the cache only when asked', async () => {
+        const clearCache = vi.fn();
+        await restartSequence({ stop: async () => undefined, clearCache, start: () => undefined, log: () => undefined }, false);
+        expect(clearCache).not.toHaveBeenCalled();
+    });
+});
+
+// Final review I4: the Reinstall spinner and button waited for a status that a failed load never sent.
+describe('waitForStatus', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+    it('resolves true on the next status and false after the timeout', async () => {
+        let fire: () => void = () => undefined;
+        const dispose = vi.fn();
+        const subscribe = (cb: () => void) => { fire = cb; return { dispose }; };
+        const first = waitForStatus(subscribe, 1000);
+        fire();
+        expect(await first).toBe(true);
+        expect(dispose).toHaveBeenCalled();
+        const second = waitForStatus(subscribe, 1000);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(await second).toBe(false);
+    });
+});
 
 /** A restart that stays "running" until the test resolves it. */
 function controllableRestart() {

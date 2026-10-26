@@ -7,7 +7,7 @@
 import { COLOR_TYPES, HighlightOptions, HighlightToken, highlightLines } from '../highlight/denizenHighlighter';
 import { criticalLines } from '../highlight/commentDecorations';
 import { FlatToken, flattenTokens } from '../highlight/semanticEncoding';
-import { MetaStatus, OFFICIAL_SOURCES, SourceInfo, SourceSettings, readSourceSettings } from '../server/metaDocs/metaSources';
+import { MetaStatus, OFFICIAL_SOURCES, SourceInfo, SourceSettings, readSourceSettings, writeSourceSettings } from '../server/metaDocs/metaSources';
 
 export type ColorSection = 'Comments' | 'Keys and events' | 'Commands' | 'Tags' | 'Strings';
 
@@ -280,8 +280,33 @@ export function metaStatusLine(status: MetaStatus | null, now: number): string {
     }
     const minutes = Math.floor((now - status.loadedAt) / 60000);
     const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 48 * 60 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} days ago`;
+    if (status.sources.length === 0) {
+        return `Meta failed to load ${age} — see the Denizen language server output`;
+    }
     const loaded = status.sources.filter(s => s.state !== 'failed').length;
     const failed = status.sources.length - loaded;
     const objects = (status.commands + status.tags + status.events).toLocaleString('en-US');
     return `Meta loaded ${age} · ${loaded} sources · ${objects} commands, tags and events${failed > 0 ? ` · ${failed} failed` : ''}`;
+}
+
+/**
+ * The settings writes that turn what is stored into `next`, diffed against the STORED values, not
+ * against `readSourceSettings` of them. A legacy `extra_sources` string naming an add-on reads as
+ * that add-on switched on; diffing derived against derived (final review, R6) left the string in
+ * place when the switch was turned off, and dropped it unreplaced when an own source was edited.
+ * Writing whatever differs from storage moves the add-on into `enabled_addons` in the same edit.
+ */
+export function sourceWrites(storedExtra: unknown, storedAddons: unknown, storedReplace: unknown, next: SourceSettings): { key: string; value: unknown }[] {
+    const now = writeSourceSettings(next);
+    const writes: { key: string; value: unknown }[] = [];
+    if (JSON.stringify(storedExtra ?? []) !== JSON.stringify(now.extra_sources)) {
+        writes.push({ key: 'denizenscript.server.extra_sources', value: now.extra_sources });
+    }
+    if (JSON.stringify(storedAddons ?? []) !== JSON.stringify(now.enabled_addons)) {
+        writes.push({ key: 'denizenscript.server.enabled_addons', value: now.enabled_addons });
+    }
+    if ((storedReplace === true) !== next.replaceDefaults) {
+        writes.push({ key: 'denizenscript.server.replace_default_sources', value: next.replaceDefaults });
+    }
+    return writes;
 }

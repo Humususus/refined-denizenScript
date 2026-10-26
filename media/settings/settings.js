@@ -334,10 +334,29 @@
         return sw;
     }
 
-    /** A copy of the sources with one change applied, posted as the new list. */
+    /**
+     * The list the page last posted, until a state shows it stored. Clicks build on it, not on the
+     * last state: a second switch clicked before the first one's write came back would otherwise
+     * post a list without the first (final review, R6). Expires, so a write that never lands
+     * cannot hide the stored list for good.
+     */
+    let pendingSources = null;
+
+    function sourcesKey(s) {
+        return JSON.stringify([s.addons.filter(a => a.enabled).map(a => a.id), s.custom, s.replaceDefaults]);
+    }
+
+    function shownSources() {
+        return pendingSources ? pendingSources.value : state.sources;
+    }
+
+    /** A copy of the shown sources with one change applied: shown at once, posted as the new list. */
     function postSources(change) {
-        const next = JSON.parse(JSON.stringify(state.sources));
+        const next = JSON.parse(JSON.stringify(shownSources()));
         change(next);
+        if (pendingSources) clearTimeout(pendingSources.timer);
+        pendingSources = { value: next, timer: setTimeout(() => { pendingSources = null; if (state) renderSources(); }, 3000) };
+        renderSources();
         vscode.postMessage({ kind: 'sources', value: next });
     }
 
@@ -385,7 +404,7 @@
         const reinstallRow = el('div', 'reinstall');
         ui.reinstall = el('button', 'btn', '⟳ Reinstall instances');
         ui.reinstall.addEventListener('click', () => {
-            ui.reinstallFrom = state.metaLoadedAt;
+            ui.reinstalling = true;
             renderReinstall();
             vscode.postMessage({ kind: 'reinstall' });
         });
@@ -395,15 +414,19 @@
     }
 
     function renderReinstall() {
-        // Busy from the click until the server reports a load newer than the one before it.
-        const busy = ui.reinstallFrom !== undefined && state.metaLoadedAt === ui.reinstallFrom;
-        if (!busy) ui.reinstallFrom = undefined;
+        // Busy from the click until the host says the reinstall ended -- its own load reported, or
+        // the command gave up waiting -- so a load that never reports cannot leave it stuck.
+        const busy = ui.reinstalling === true;
         ui.reinstall.disabled = busy;
         ui.reinstall.textContent = busy ? 'Reinstalling…' : '⟳ Reinstall instances';
     }
 
     function renderSources() {
-        const s = state.sources;
+        if (pendingSources && sourcesKey(state.sources) === sourcesKey(pendingSources.value)) {
+            clearTimeout(pendingSources.timer);
+            pendingSources = null;
+        }
+        const s = shownSources();
         const anyEnabled = s.addons.some(a => a.enabled) || s.custom.some(c => c.enabled);
         const replaced = s.replaceDefaults && anyEnabled;
 
@@ -439,9 +462,15 @@
 
     window.addEventListener('message', event => {
         const message = event.data;
-        if (!message || message.kind !== 'addResult' || !ui.addInput) return;
-        if (message.ok) ui.addInput.value = '';
-        else ui.addInput.classList.add('bad');
+        if (!message || !ui.addInput) return;
+        if (message.kind === 'addResult') {
+            if (message.ok) ui.addInput.value = '';
+            else ui.addInput.classList.add('bad');
+        }
+        else if (message.kind === 'reinstallDone') {
+            ui.reinstalling = false;
+            renderReinstall();
+        }
     });
 
     function buildText() {
