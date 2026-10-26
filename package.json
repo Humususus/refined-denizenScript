@@ -476,15 +476,60 @@
                 "denizenscript.server.extra_sources": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "description": "A direct .zip archive URL (the older form; read as enabled)."
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "url": {
+                                        "type": "string",
+                                        "description": "A direct .zip archive URL."
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "default": true
+                                    }
+                                },
+                                "required": [
+                                    "url"
+                                ]
+                            }
+                        ]
                     },
                     "default": [],
-                    "markdownDescription": "Extra meta documentation sources (direct .zip archive URLs) to load alongside the official Denizen sources.\n\nThey are loaded **after** the official ones, so a command or tag defined in both is taken from yours — that is how a fork overrides the upstream definition. Anything your fork *removes* is a different matter: loading is additive, so the upstream entry survives. Use `#denizenscript.server.replace_default_sources#` for that."
+                    "markdownDescription": "Your own meta documentation sources (direct .zip archive URLs), loaded after the official sources and the enabled add-ons. Easiest to edit on the settings page (**Refined DenizenScript: Settings** → Meta sources), which also accepts a plain GitHub repository link. A disabled source is not downloaded.\n\nA command or tag defined in both is taken from yours — that is how a fork overrides the upstream definition. Anything your fork *removes* survives additive loading; use `#denizenscript.server.replace_default_sources#` for that."
+                },
+                "denizenscript.server.enabled_addons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "denizenm",
+                            "denizenm-core",
+                            "denizen-utilities",
+                            "denizen-reflect"
+                        ],
+                        "enumDescriptions": [
+                            "DenizenM by EnergoBro",
+                            "DenizenM-Core by EnergoBro",
+                            "denizen-utilities by isnsest",
+                            "denizen-reflect by isnsest"
+                        ]
+                    },
+                    "uniqueItems": true,
+                    "default": [],
+                    "markdownDescription": "Built-in add-on meta sources to load. All are off by default, and a disabled add-on is not downloaded. Easiest to switch on the settings page (**Refined DenizenScript: Settings** → Meta sources)."
                 },
                 "denizenscript.server.replace_default_sources": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Use denizenscript.server.extra_sources INSTEAD of the official Denizen sources rather than alongside them. For a Denizen fork: loading a fork additively can only ever ADD to the official meta, so anything the fork REMOVED is still offered by completion and still accepted by the checker. Ignored when extra_sources is empty. Read once when the server starts, so changing it requires a window reload."
+                    "description": "Load the enabled add-ons and your own sources INSTEAD of the official Denizen sources rather than alongside them. For a Denizen fork: loading a fork additively can only ever ADD to the official meta, so anything the fork REMOVED is still offered by completion and still accepted by the checker. Ignored when no add-on or own source is enabled."
                 },
                 "denizenscript.server.tagTracing": {
                     "type": "boolean",

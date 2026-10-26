@@ -13,13 +13,9 @@ import { downloadBinary, extractJavaCommentLines, extractMetaBlocks, MetaBlock }
 import { linkTypeGraph } from './metaLinker';
 import { loadInObject } from './metaObjectFactory';
 import { MetaDocs, createEmptyMetaDocs } from './metaTypes';
+import { OFFICIAL_SOURCES } from './metaSources';
 
-export const DEFAULT_META_SOURCES: string[] = [
-    'https://github.com/DenizenScript/Denizen/archive/dev.zip',
-    'https://github.com/DenizenScript/Denizen-Core/archive/master.zip',
-    'https://github.com/DenizenScript/Depenizen/archive/master.zip',
-    'https://github.com/DenizenScript/dDiscordBot/archive/master.zip'
-];
+export const DEFAULT_META_SOURCES: string[] = OFFICIAL_SOURCES.map(s => s.url);
 
 /**
  * Downloads every source in parallel and extracts their raw meta blocks. A failure downloading one

@@ -77,6 +77,16 @@ describe('package.json — removed features stay removed', () => {
         const gear = (pkg.contributes.menus['editor/title'] ?? []).find((m: { command: string }) => m.command === 'refinedDenizenscript.openSettings');
         expect(gear.when).toContain('resourceExtname == .dsc');
     });
+    // R6: built-in add-ons are switched by id; own sources may be legacy strings or objects.
+    it('declares the add-on switches and both forms of an own source', () => {
+        const addons = props['denizenscript.server.enabled_addons'] as { type: string; default: unknown; items: { enum: string[] } };
+        expect(addons.type).toBe('array');
+        expect(addons.default).toEqual([]);
+        expect(addons.items.enum).toEqual(['denizenm', 'denizenm-core', 'denizen-utilities', 'denizen-reflect']);
+        const items = (props['denizenscript.server.extra_sources'] as { items: { anyOf: { type: string; required?: string[] }[] } }).items;
+        expect(items.anyOf.map(i => i.type)).toEqual(['string', 'object']);
+        expect(items.anyOf[1].required).toEqual(['url']);
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);
