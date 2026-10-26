@@ -22,10 +22,15 @@ function overridden<T>(inspected: Inspected<T>): boolean {
 export class SettingsPanel {
     private static current: SettingsPanel | undefined;
 
-    static show(context: vscode.ExtensionContext, highlightOptions: () => HighlightOptions): void {
+    /**
+     * Opens the page, or reveals the open one. Resolves true once the page's script has started and
+     * asked for its state, false if it has not within 10 s -- a blocked script (CSP, a wrong resource
+     * URI) leaves a blank page with no error anywhere but the webview's own console.
+     */
+    static show(context: vscode.ExtensionContext, highlightOptions: () => HighlightOptions): Promise<boolean> {
         if (SettingsPanel.current) {
             SettingsPanel.current.panel.reveal();
-            return;
+            return SettingsPanel.current.ready;
         }
         const media = vscode.Uri.joinPath(context.extensionUri, 'media', 'settings');
         const panel = vscode.window.createWebviewPanel('denizenSettings', 'Denizen: Settings', vscode.ViewColumn.Active, {
@@ -34,9 +39,15 @@ export class SettingsPanel {
         });
         panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'icons', 'dsc.svg');
         SettingsPanel.current = new SettingsPanel(panel, media, highlightOptions);
+        return SettingsPanel.current.ready;
     }
 
     private readonly disposables: vscode.Disposable[] = [];
+    private markReady: (ready: boolean) => void = () => undefined;
+    private readonly ready = new Promise<boolean>(resolve => {
+        this.markReady = resolve;
+        setTimeout(() => resolve(false), 10000);
+    });
 
     private constructor(private readonly panel: vscode.WebviewPanel, media: vscode.Uri, private readonly highlightOptions: () => HighlightOptions) {
         const webview = panel.webview;
@@ -62,6 +73,7 @@ export class SettingsPanel {
 
     private receive(message: { kind?: unknown; key?: unknown; value?: unknown }): void {
         if (message.kind === 'ready') {
+            this.markReady(true);
             this.postState();
         }
         else if (message.kind === 'set' && typeof message.key === 'string' && isWritableSetting(message.key)) {
