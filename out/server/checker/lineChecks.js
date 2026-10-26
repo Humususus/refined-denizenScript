@@ -113,19 +113,11 @@ function basicLineFormatCheck(checker) {
         // `checkForColorCodes`.
         const line = lines[i];
         if (line.endsWith(' ')) {
-            // ScriptChecker.cs:318-330. NOTE the range: the warning STARTS at the last
-            // non-space character, not at the first stray space.
-            let endChar;
-            // ScriptChecker.cs:321-327
-            for (endChar = line.length - 1; endChar >= 0; endChar--) {
-                if (line[endChar] !== ' ') {
-                    break;
-                }
-            }
-            // ScriptChecker.cs:328: an all-space line runs the scan off the front to -1; clamp
-            // it so the range never starts before the line does.
-            endChar = Math.max(0, endChar);
-            checker.warn(checker.minorWarnings, i, 'stray_space_eol', 'Stray space after end of line (possible copy/paste mixup. Enable View->Render Whitespace in VS Code).', endChar, Math.max(endChar, line.length - 1));
+            // ScriptChecker.cs:318-330 raises `stray_space_eol` here. DELIBERATE DEVIATION, user
+            // ruling 2026-10-26: not raised. Trailing whitespace is harmless in Denizen, and the
+            // squiggle -- on every blank line holding spaces, too -- read as an error that does
+            // not exist. The branch itself stays: like the C#, a line ending in a space is NOT
+            // taken as a command whose indented continuation lines get consumed below.
         }
         else if (cleanedLines[i].startsWith('- ') && !cleanedLines[i].endsWith(':')) {
             // ScriptChecker.cs:331-351: a command line. Everything indented further than it,
