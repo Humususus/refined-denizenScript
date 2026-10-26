@@ -32,11 +32,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deactivate = exports.activate = void 0;
+exports.deactivate = exports.activate = exports.getMetaStatus = exports.onMetaStatus = void 0;
 const vscode = __importStar(require("vscode"));
 const languageClientNode = __importStar(require("vscode-languageclient/node"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
+const metaClient_1 = require("./metaClient");
+const metaSources_1 = require("./server/metaDocs/metaSources");
 const mutedDiagnostics_1 = require("./mutedDiagnostics");
 const entryTags_1 = require("./entryTags");
 const mapTagPeek_1 = require("./mapTagPeek");
@@ -117,12 +120,16 @@ function buildSharedMiddleware() {
         }
     };
 }
-function activateTsLanguageServer(context) {
-    let serverModule = context.asAbsolutePath(path.join("out", "server", "server.js"));
-    if (!fs.existsSync(serverModule)) {
-        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
-        return;
-    }
+let tsClient;
+let metaStatus;
+const metaStatusEmitter = new vscode.EventEmitter();
+/** The last meta load the server reported, and an event for each new one (the settings page's status line). */
+exports.onMetaStatus = metaStatusEmitter.event;
+function getMetaStatus() {
+    return metaStatus;
+}
+exports.getMetaStatus = getMetaStatus;
+function startTsClient(serverModule) {
     let serverOptions = {
         run: { module: serverModule, transport: languageClientNode.TransportKind.ipc },
         debug: { module: serverModule, transport: languageClientNode.TransportKind.ipc, options: { execArgv: ["--nolazy", "--inspect=6019"] } }
@@ -135,9 +142,68 @@ function activateTsLanguageServer(context) {
         middleware: buildSharedMiddleware()
     };
     let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
-    let disposable = client.start();
-    context.subscriptions.push(disposable);
+    client.start();
     registerDiagnosticClient(client);
+    client.onReady().then(() => {
+        client.onNotification("denizen/metaStatus", (status) => {
+            metaStatus = status;
+            metaStatusEmitter.fire(status);
+        });
+    }, err => outputChannel.appendLine("Denizen language server did not start: " + err));
+    return client;
+}
+/**
+ * Stops the server and starts a fresh one, which re-reads the meta source settings (it reads them
+ * once, at start) and revalidates every cached source. `clearCache` is the Reinstall button: the
+ * per-source cache is deleted first, so every enabled source is downloaded again.
+ */
+function restartLanguageServer(serverModule, clearCache) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const old = tsClient;
+        tsClient = undefined;
+        if (old) {
+            unregisterDiagnosticClient(old);
+        }
+        outputChannel.appendLine(`Restarting the Denizen language server${clearCache ? " with a cleared meta cache" : ""}.`);
+        yield (0, metaClient_1.restartSequence)({
+            stop: () => __awaiter(this, void 0, void 0, function* () { if (old) {
+                yield old.stop();
+            } }),
+            clearCache: () => fs.rmSync((0, metaSources_1.metaCacheDir)(process.env, os.homedir()), { recursive: true, force: true }),
+            start: () => { tsClient = startTsClient(serverModule); },
+            log: message => outputChannel.appendLine(message),
+        }, clearCache);
+    });
+}
+const META_SOURCE_SETTINGS = ["denizenscript.server.extra_sources", "denizenscript.server.enabled_addons", "denizenscript.server.replace_default_sources"];
+function activateTsLanguageServer(context) {
+    let serverModule = context.asAbsolutePath(path.join("out", "server", "server.js"));
+    if (!fs.existsSync(serverModule)) {
+        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
+        return;
+    }
+    tsClient = startTsClient(serverModule);
+    context.subscriptions.push({ dispose: () => tsClient === null || tsClient === void 0 ? void 0 : tsClient.stop() });
+    // Several switches clicked on the settings page within the delay are one restart.
+    const scheduler = new metaClient_1.RestartScheduler(clearCache => restartLanguageServer(serverModule, clearCache), 1500);
+    vscode.workspace.onDidChangeConfiguration(event => {
+        if (META_SOURCE_SETTINGS.some(key => event.affectsConfiguration(key))) {
+            scheduler.request();
+        }
+    }, null, context.subscriptions);
+    // Resolves true once the reinstalled server reports its load, false if it does not within three
+    // minutes. Waits for its OWN restart first: a restart already running for a switch reports a
+    // status of its own, which must not end the spinner early.
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.reinstallMeta", () => __awaiter(this, void 0, void 0, function* () {
+        const message = vscode.window.setStatusBarMessage("$(sync~spin) Denizen meta: re-downloading…");
+        try {
+            yield scheduler.now(true);
+            return yield (0, metaClient_1.waitForStatus)(listener => (0, exports.onMetaStatus)(listener), 3 * 60 * 1000);
+        }
+        finally {
+            message.dispose();
+        }
+    })));
 }
 const highlightDecors = {};
 const highlightColorRef = {};
@@ -337,6 +403,12 @@ const rawDiagnostics = new Map();
 const diagnosticClients = [];
 function registerDiagnosticClient(client) {
     diagnosticClients.push(client);
+}
+function unregisterDiagnosticClient(client) {
+    const index = diagnosticClients.indexOf(client);
+    if (index >= 0) {
+        diagnosticClients.splice(index, 1);
+    }
 }
 /** Adapter: the muted-region store keeps its own plain shapes so it can be unit-tested without vscode. */
 function toMuteRange(range) {
@@ -1862,7 +1934,7 @@ function activate(context) {
             outputChannel.show(true);
         }));
         context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.resetPerformanceStats", () => perfStats_1.perf.reset()));
-        context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", () => settingsPanel_1.SettingsPanel.show(context, highlightOptions)));
+        context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", () => settingsPanel_1.SettingsPanel.show(context, { highlightOptions, getMetaStatus, onMetaStatus: exports.onMetaStatus })));
         vscode.window.onDidChangeVisibleTextEditors(editors => {
             for (const editor of editors) {
                 const uri = editor.document.uri.toString();
@@ -1901,6 +1973,8 @@ function activate(context) {
         }));
         scheduleRefresh();
         outputChannel.appendLine('Denizen extension has been activated');
+        // The extension's API: what the server last loaded. Used by the Extension Host checks.
+        return { getMetaStatus, onMetaStatus: exports.onMetaStatus };
     });
 }
 exports.activate = activate;

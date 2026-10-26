@@ -5,10 +5,11 @@
 // The page never colours text itself: the host runs the real tokenizer over every sample and the
 // preview, and `lineSpans` turns the result into typed runs the webview paints by CSS variable.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cardSpans = exports.previewState = exports.documentSpans = exports.PREVIEW_SCRIPT = exports.isWritableSetting = exports.lineSpans = exports.formatColorMap = exports.parseColorMap = exports.normalizeHex = exports.formatPaletteValue = exports.parsePaletteValue = exports.optionSettingId = exports.OPTION_CARDS = exports.COLOR_CARDS = void 0;
+exports.sourceWrites = exports.metaStatusLine = exports.sourcesState = exports.cardSpans = exports.previewState = exports.documentSpans = exports.PREVIEW_SCRIPT = exports.isWritableSetting = exports.lineSpans = exports.formatColorMap = exports.parseColorMap = exports.normalizeHex = exports.formatPaletteValue = exports.parsePaletteValue = exports.optionSettingId = exports.OPTION_CARDS = exports.COLOR_CARDS = void 0;
 const denizenHighlighter_1 = require("../highlight/denizenHighlighter");
 const commentDecorations_1 = require("../highlight/commentDecorations");
 const semanticEncoding_1 = require("../highlight/semanticEncoding");
+const metaSources_1 = require("../server/metaDocs/metaSources");
 const EVENT = 'after player breaks diamond_ore with:*_pickaxe:';
 const IF = '- if <[count]> >= 10:';
 // Not the mockup's flag[rewards]: a flag name inside a tag is coloured as a definition name.
@@ -217,4 +218,47 @@ function cardSpans(opts) {
     return out;
 }
 exports.cardSpans = cardSpans;
+/** The Meta sources section's data: the official sources (always loaded), the add-ons and the user's own. */
+function sourcesState(extraSources, enabledAddons, replaceDefaults) {
+    return Object.assign({ official: [...metaSources_1.OFFICIAL_SOURCES] }, (0, metaSources_1.readSourceSettings)(extraSources, enabledAddons, replaceDefaults));
+}
+exports.sourcesState = sourcesState;
+/** `Meta loaded 2 h ago · 6 sources · 1,214 commands, tags and events`, from the server's last report. */
+function metaStatusLine(status, now) {
+    if (status === null) {
+        return 'Meta not loaded yet';
+    }
+    const minutes = Math.floor((now - status.loadedAt) / 60000);
+    const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 48 * 60 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} days ago`;
+    if (status.sources.length === 0) {
+        return `Meta failed to load ${age} — see the Denizen language server output`;
+    }
+    const loaded = status.sources.filter(s => s.state !== 'failed').length;
+    const failed = status.sources.length - loaded;
+    const objects = (status.commands + status.tags + status.events).toLocaleString('en-US');
+    return `Meta loaded ${age} · ${loaded} sources · ${objects} commands, tags and events${failed > 0 ? ` · ${failed} failed` : ''}`;
+}
+exports.metaStatusLine = metaStatusLine;
+/**
+ * The settings writes that turn what is stored into `next`, diffed against the STORED values, not
+ * against `readSourceSettings` of them. A legacy `extra_sources` string naming an add-on reads as
+ * that add-on switched on; diffing derived against derived (final review, R6) left the string in
+ * place when the switch was turned off, and dropped it unreplaced when an own source was edited.
+ * Writing whatever differs from storage moves the add-on into `enabled_addons` in the same edit.
+ */
+function sourceWrites(storedExtra, storedAddons, storedReplace, next) {
+    const now = (0, metaSources_1.writeSourceSettings)(next);
+    const writes = [];
+    if (JSON.stringify(storedExtra !== null && storedExtra !== void 0 ? storedExtra : []) !== JSON.stringify(now.extra_sources)) {
+        writes.push({ key: 'denizenscript.server.extra_sources', value: now.extra_sources });
+    }
+    if (JSON.stringify(storedAddons !== null && storedAddons !== void 0 ? storedAddons : []) !== JSON.stringify(now.enabled_addons)) {
+        writes.push({ key: 'denizenscript.server.enabled_addons', value: now.enabled_addons });
+    }
+    if ((storedReplace === true) !== next.replaceDefaults) {
+        writes.push({ key: 'denizenscript.server.replace_default_sources', value: next.replaceDefaults });
+    }
+    return writes;
+}
+exports.sourceWrites = sourceWrites;
 //# sourceMappingURL=settingsModel.js.map

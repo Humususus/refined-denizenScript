@@ -27,13 +27,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = exports.uriToPath = exports.linkMatchersWhenReady = exports.buildDiagnostics = exports.buildCapabilities = exports.combineSources = void 0;
+exports.createServer = exports.uriToPath = exports.linkMatchersWhenReady = exports.buildDiagnostics = exports.buildCapabilities = exports.sourcesFromConfig = void 0;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const url = __importStar(require("url"));
 const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
 const metaDocsManager_1 = require("./metaDocs/metaDocsManager");
+const metaSources_1 = require("./metaDocs/metaSources");
 const metaLinker_1 = require("./metaDocs/metaLinker");
 const workspaceTracker_1 = require("./workspaceTracker");
 const extraData_1 = require("./metaDocs/extraData");
@@ -42,7 +43,6 @@ const hoverProvider_1 = require("./providers/hoverProvider");
 const signatureHelpProvider_1 = require("./providers/signatureHelpProvider");
 const tagParamCompleters_1 = require("./providers/tagParamCompleters");
 const scriptChecker_1 = require("./checker/scriptChecker");
-const META_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 /**
  * How long a document must sit still before it is re-checked.
  *
@@ -76,42 +76,26 @@ let loadedExtra = (0, extraData_1.createEmptyExtraData)();
  * `!== false` read below treats as the default rather than as "off").
  */
 let tagTracingEnabled = true;
-function getMetaCacheFile() {
-    var _a;
-    const base = (_a = process.env.LOCALAPPDATA) !== null && _a !== void 0 ? _a : path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-blocks-cache.json');
-}
 function getExtraDataCacheFile() {
     var _a;
     const base = (_a = process.env.LOCALAPPDATA) !== null && _a !== void 0 ? _a : path.join(os.homedir(), 'AppData', 'Local');
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'minecraft.fds');
 }
 /**
- * Merges the default meta sources with any user-configured extra sources, filtering out blank
- * entries. Extracted as its own function so it's independently unit-testable without a live LSP
- * connection.
+ * The meta sources to load, from the three settings (R6): the official sources, the switched-on
+ * built-in add-ons, then the user's own enabled sources -- or, with `replace_default_sources`, the
+ * enabled ones instead of the official ones. Read through metaSources.ts, the same reader the
+ * settings page uses, so the page never shows a source as on that the server does not load.
  *
- * `replaceDefaults` makes the extra sources the ONLY sources. It exists because the additive
- * behaviour cannot express a fork that REMOVES something, and that is a real case rather than a
- * hypothetical: measured 2026-09-01 against the user's own DenizenM forks, which add an `async`
- * command and two properties but drop the `add_tab_completions`, `flying_fall_damage` and
- * `remove_tab_completions` mechanisms. Loaded additively, those three stay in the merged docs, so
- * the checker accepts and completion offers three mechanisms the user's server would reject.
- *
- * It is off by default, and deliberately so: turning it on means a typo in the setting leaves the
- * editor with no meta at all rather than with the official meta plus a warning.
+ * `replace_default_sources` exists because additive loading cannot express a fork that REMOVES
+ * something (measured 2026-09-01 against the user's DenizenM forks, which drop three mechanisms the
+ * merged docs would keep). With nothing enabled the official sources are used regardless: an empty
+ * list must never mean an editor with no meta at all.
  */
-function combineSources(defaults, extra, replaceDefaults = false) {
-    const cleaned = (extra !== null && extra !== void 0 ? extra : []).map(s => s.trim()).filter(s => s.length > 0);
-    if (cleaned.length === 0) {
-        // An empty or blank-only list can never mean "use nothing" -- that would be an editor with
-        // no commands and no tags, which is indistinguishable from the failure mode this codebase
-        // spent 2026-08-28 fixing. The defaults win regardless of the flag.
-        return defaults;
-    }
-    return replaceDefaults ? cleaned : [...defaults, ...cleaned];
+function sourcesFromConfig(extraSources, enabledAddons, replaceDefaults) {
+    return (0, metaSources_1.effectiveSources)((0, metaSources_1.readSourceSettings)(extraSources, enabledAddons, replaceDefaults));
 }
-exports.combineSources = combineSources;
+exports.sourcesFromConfig = sourcesFromConfig;
 /** The capabilities this server advertises. Extracted so it is testable without a live connection. */
 function buildCapabilities() {
     return {
@@ -191,7 +175,7 @@ function toDiagnostic(warning, severity) {
  * per-script statistics in the Problems panel would be noise.
  *
  * Extracted from the connection wiring below so it is unit-testable without a live
- * connection, for the same reason `combineSources` and `buildCapabilities` are.
+ * connection, for the same reason `sourcesFromConfig` and `buildCapabilities` are.
  */
 function buildDiagnostics(checker) {
     return [
@@ -299,15 +283,26 @@ function createServer() {
         });
         Promise.all([
             connection.workspace.getConfiguration('denizenscript.server.extra_sources'),
+            connection.workspace.getConfiguration('denizenscript.server.enabled_addons'),
             connection.workspace.getConfiguration('denizenscript.server.replace_default_sources')
         ])
-            .then(([extraSources, replace]) => {
-            const sources = combineSources(metaDocsManager_1.DEFAULT_META_SOURCES, extraSources, replace === true);
+            .then(([extraSources, enabledAddons, replace]) => {
+            const sources = sourcesFromConfig(extraSources, enabledAddons, replace);
             connection.console.log(`Meta sources (${replace === true ? 'REPLACING' : 'alongside'} the defaults): ${sources.length} -- ${sources.join(', ')}`);
-            return (0, metaDocsManager_1.loadMetaDocs)({ cacheFile: getMetaCacheFile(), ttlMs: META_CACHE_TTL_MS, sources });
+            return (0, metaDocsManager_1.loadMetaDocs)({ cacheDir: (0, metaSources_1.metaCacheDir)(process.env, os.homedir()), sources });
         })
-            .then(docs => {
+            .then(({ docs, status }) => {
             loadedDocs = docs;
+            connection.console.log(`Meta sources loaded: ${status.map(s => `${s.state} ${s.url} (${s.blocks} blocks)`).join('; ')}`);
+            // For the settings page's status line (R6). A client that does not listen ignores it.
+            void connection.sendNotification('denizen/metaStatus', {
+                loadedAt: Date.now(),
+                sources: status,
+                commands: docs.commands.size,
+                tags: docs.tags.size,
+                events: docs.events.size,
+                mechanisms: docs.mechanisms.size
+            });
             connection.console.log(`Denizen meta loaded: ${docs.commands.size} commands, ${docs.tags.size} tags, ` +
                 `${docs.events.size} events, ${docs.mechanisms.size} mechanisms, ${docs.properties.size} properties, ` +
                 `${docs.actions.size} actions, ${docs.languages.size} languages, ${docs.objectTypes.size} object types. ` +
@@ -324,6 +319,8 @@ function createServer() {
             .catch(err => {
             var _a;
             connection.console.error(`Denizen meta load failed: ${err instanceof Error ? (_a = err.stack) !== null && _a !== void 0 ? _a : err.message : String(err)}`);
+            // Reported too, so the settings page says so instead of waiting for a load that ended.
+            void connection.sendNotification('denizen/metaStatus', { loadedAt: Date.now(), sources: [], commands: 0, tags: 0, events: 0, mechanisms: 0 });
         });
         connection.workspace.getConfiguration('denizenscript.server.tagTracing')
             .then((tagTracing) => {
