@@ -158,3 +158,27 @@ export function sourceFromInput(input: string, existing: SourceSettings): Custom
     const listed = [...OFFICIAL_SOURCES, ...existing.addons, ...existing.custom].some(s => s.url === url);
     return listed ? null : { name: sourceName(url), url, enabled: true };
 }
+
+/**
+ * The checker's codes for a name the meta does not know -- the ones a switched-off source could
+ * explain (R7, spec 6). Shared by the server, which adds the hint, and the client, whose quick fix
+ * opens Meta sources.
+ */
+export const UNKNOWN_NAME_CODES: ReadonlySet<string> = new Set(['unknown_command', 'bad_tag_base', 'tag_trace_failure', 'bad_adjust_unknown_mech', 'event_missing']);
+
+/** How the hint starts, so the client can tell a diagnostic carries it. */
+export const DISABLED_SOURCES_HINT = ' — may come from a meta source that is switched off';
+
+/**
+ * The sentence appended to an unknown-name diagnostic, or null when every source is on. Nothing is
+ * downloaded to check (user ruling), so it names what is off and leaves the choice to the user. The
+ * official sources do not count when replaced: that is the user's own setting, not a missing add-on.
+ */
+export function disabledSourcesHint(s: SourceSettings): string | null {
+    const off = [...s.addons.filter(a => !a.enabled), ...s.custom.filter(c => !c.enabled)].map(x => x.name);
+    if (off.length === 0) {
+        return null;
+    }
+    const names = off.length > 3 ? `${off.slice(0, 3).join(', ')} and ${off.length - 3} more` : off.join(', ');
+    return `${DISABLED_SOURCES_HINT}: ${names}. Enable it in Denizen: Settings → Meta sources.`;
+}

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
-    ADDON_SOURCES, OFFICIAL_SOURCES, effectiveSources, metaCacheDir, readSourceSettings, sourceFromInput, sourceName,
+    ADDON_SOURCES, DISABLED_SOURCES_HINT, OFFICIAL_SOURCES, disabledSourcesHint, effectiveSources, metaCacheDir, readSourceSettings,
+    sourceFromInput, sourceName,
     writeSourceSettings
 } from './metaSources';
 import { DEFAULT_META_SOURCES } from './metaDocsManager';
@@ -95,6 +96,27 @@ describe('sourceFromInput', () => {
             expect(sourceFromInput(bad, none), bad).toBeNull();
         }
         expect(sourceFromInput('https://a/x.zip', readSourceSettings(['https://a/x.zip'], [], false))).toBeNull();
+    });
+});
+
+// R7, spec 6: an unknown name may live in a source that is switched off; nothing is downloaded to check.
+describe('disabledSourcesHint', () => {
+    it('names the switched-off add-ons on a fresh install', () => {
+        expect(disabledSourcesHint(readSourceSettings(undefined, undefined, undefined))).toBe(
+            `${DISABLED_SOURCES_HINT}: DenizenM, DenizenM-Core, denizen-utilities and 1 more. Enable it in Denizen: Settings → Meta sources.`);
+    });
+    it('gives nothing when every source is on', () => {
+        const all = ADDON_SOURCES.map(a => a.id);
+        expect(disabledSourcesHint(readSourceSettings(['https://a/on.zip'], all, false))).toBeNull();
+    });
+    it('counts an own source that is off, not one that is on', () => {
+        const all = ADDON_SOURCES.map(a => a.id);
+        const s = readSourceSettings([{ name: 'MyFork', url: 'https://a/f.zip', enabled: false }, 'https://a/on.zip'], all, false);
+        expect(disabledSourcesHint(s)).toBe(`${DISABLED_SOURCES_HINT}: MyFork. Enable it in Denizen: Settings → Meta sources.`);
+    });
+    it('lists up to three names', () => {
+        const s = readSourceSettings([], ['denizenm'], false);
+        expect(disabledSourcesHint(s)).toContain(': DenizenM-Core, denizen-utilities, denizen-reflect.');
     });
 });
 

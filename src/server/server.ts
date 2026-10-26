@@ -14,7 +14,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { loadMetaDocs } from './metaDocs/metaDocsManager';
-import { effectiveSources, metaCacheDir, readSourceSettings } from './metaDocs/metaSources';
+import { UNKNOWN_NAME_CODES, disabledSourcesHint, effectiveSources, metaCacheDir, readSourceSettings } from './metaDocs/metaSources';
 import { MetaDocs } from './metaDocs/metaTypes';
 import { linkEventMatchers } from './metaDocs/metaLinker';
 import { WorkspaceTracker } from './workspaceTracker';
@@ -64,6 +64,12 @@ let loadedExtra: ExtraData = createEmptyExtraData();
  * `!== false` read below treats as the default rather than as "off").
  */
 let tagTracingEnabled = true;
+
+/**
+ * The sentence added to unknown-name diagnostics while some meta source is switched off, or null
+ * (R7). Read with the sources at start; the client restarts the server when they change.
+ */
+let sourcesHint: string | null = null;
 
 
 function getExtraDataCacheFile(): string {
@@ -180,6 +186,18 @@ export function buildDiagnostics(checker: ScriptChecker): Diagnostic[] {
 }
 
 /**
+ * Appends `hint` (see metaSources.disabledSourcesHint) to the diagnostics for names the meta does
+ * not know. Only the message changes: the code and the range are what `##ignorewarning` and muting
+ * key on, so a muted warning stays muted (R7).
+ */
+export function addSourceHint(diagnostics: Diagnostic[], hint: string | null): Diagnostic[] {
+    if (hint === null) {
+        return diagnostics;
+    }
+    return diagnostics.map(d => typeof d.code === 'string' && UNKNOWN_NAME_CODES.has(d.code) ? { ...d, message: d.message + hint } : d);
+}
+
+/**
  * Compiles the event could-matchers once BOTH loads have landed, and reports what it built.
  *
  * The meta and the Minecraft enum data are two independent promises and either may finish first,
@@ -257,7 +275,7 @@ export function createServer(): Connection {
         for (const [filePath, checker] of results) {
             // Publish for every file, not only open ones -- that is what makes a fresh window show
             // problems in files the user has not touched (WorkspaceTracker.cs:131).
-            connection.sendDiagnostics({ uri: url.pathToFileURL(filePath).toString(), diagnostics: buildDiagnostics(checker) });
+            connection.sendDiagnostics({ uri: url.pathToFileURL(filePath).toString(), diagnostics: addSourceHint(buildDiagnostics(checker), sourcesHint) });
         }
         const scripts = tracker.workspaceData === null ? 0 : tracker.workspaceData.scripts.size;
         connection.console.log(`Workspace scanned: ${results.size} file(s), ${scripts} script container(s), in ${Date.now() - started}ms.`);
@@ -281,6 +299,7 @@ export function createServer(): Connection {
         ])
             .then(([extraSources, enabledAddons, replace]: unknown[]) => {
                 const sources = sourcesFromConfig(extraSources, enabledAddons, replace);
+                sourcesHint = disabledSourcesHint(readSourceSettings(extraSources, enabledAddons, replace));
                 connection.console.log(`Meta sources (${replace === true ? 'REPLACING' : 'alongside'} the defaults): ${sources.length} -- ${sources.join(', ')}`);
                 return loadMetaDocs({ cacheDir: metaCacheDir(process.env, os.homedir()), sources });
             })
@@ -451,7 +470,7 @@ export function createServer(): Connection {
             // "no cross-file knowledge", never as "nothing exists".
             checker.surroundingWorkspace = tracker.dataFor();
             checker.run();
-            connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(checker) });
+            connection.sendDiagnostics({ uri, diagnostics: addSourceHint(buildDiagnostics(checker), sourcesHint) });
             // Feed this file's own containers back in, so the NEXT file checked sees the edit.
             // The C# does the same at DiagnosticProvider.cs:134.
             const filePath = uriToPath(uri);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DiagnosticSeverity } from 'vscode-languageserver';
-import { sourcesFromConfig, buildCapabilities, buildDiagnostics, linkMatchersWhenReady } from './server';
+import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
+import { addSourceHint, sourcesFromConfig, buildCapabilities, buildDiagnostics, linkMatchersWhenReady } from './server';
 import { DEFAULT_META_SOURCES } from './metaDocs/metaDocsManager';
 import { MetaDocs, MetaEvent, createEmptyMetaDocs } from './metaDocs/metaTypes';
 import { createEmptyExtraData } from './metaDocs/extraData';
@@ -41,6 +41,30 @@ describe('sourcesFromConfig', () => {
             expect(sourcesFromConfig(['', '   '], [], true)).toEqual(DEFAULT_META_SOURCES);
             expect(sourcesFromConfig([{ url: 'https://example.com/fork.zip', enabled: false }], [], true)).toEqual(DEFAULT_META_SOURCES);
         });
+    });
+});
+
+// R7, spec 6. Only the message changes: the code is what `##ignorewarning` and muting key on.
+describe('addSourceHint', () => {
+    const diag = (code: string): Diagnostic => ({
+        severity: DiagnosticSeverity.Error,
+        range: { start: { line: 3, character: 2 }, end: { line: 3, character: 8 } },
+        source: 'Denizen Script Checker',
+        code,
+        message: `msg ${code}`
+    });
+    it('appends the hint to the unknown-name codes only', () => {
+        const out = addSourceHint(['unknown_command', 'bad_tag_base', 'tag_trace_failure', 'bad_adjust_unknown_mech', 'event_missing', 'missing_quotes'].map(diag), ' HINT.');
+        expect(out.map(d => d.message)).toEqual([
+            'msg unknown_command HINT.', 'msg bad_tag_base HINT.', 'msg tag_trace_failure HINT.',
+            'msg bad_adjust_unknown_mech HINT.', 'msg event_missing HINT.', 'msg missing_quotes'
+        ]);
+        expect(out[0].code).toBe('unknown_command');
+        expect(out[0].range).toEqual(diag('x').range);
+    });
+    it('changes nothing without a hint', () => {
+        const input = [diag('unknown_command')];
+        expect(addSourceHint(input, null)).toEqual(input);
     });
 });
 
