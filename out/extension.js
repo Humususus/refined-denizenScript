@@ -55,6 +55,7 @@ const perfStats_1 = require("./perfStats");
 const denizenHighlighter_1 = require("./highlight/denizenHighlighter");
 const semanticProvider_1 = require("./highlight/semanticProvider");
 const paletteRules_1 = require("./highlight/paletteRules");
+const settingsPanel_1 = require("./settings/settingsPanel");
 const commentFolds_1 = require("./highlight/commentFolds");
 const commentDecorations_1 = require("./highlight/commentDecorations");
 let configuration = vscode.workspace.getConfiguration();
@@ -1861,6 +1862,7 @@ function activate(context) {
             outputChannel.show(true);
         }));
         context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.resetPerformanceStats", () => perfStats_1.perf.reset()));
+        context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.openSettings", () => settingsPanel_1.SettingsPanel.show(context, highlightOptions)));
         vscode.window.onDidChangeVisibleTextEditors(editors => {
             for (const editor of editors) {
                 const uri = editor.document.uri.toString();
