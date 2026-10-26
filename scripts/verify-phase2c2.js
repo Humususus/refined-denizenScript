@@ -322,11 +322,11 @@ Promise.all([
     failures += check('[regression 2c1] two <def[...]> lines yield EXACTLY ONE old_defs, severity Warning (2)',
         defsDiags.length === 1 && defsDiags[0].severity === DiagnosticSeverity.Warning,
         `${defsDiags.length} diagnostic(s)${defsDiags.length === 1 ? `, severity=${defsDiags[0].severity}` : ''}`);
-    const spaceResult = diagnose('- narrate "hi" ');
-    const spaceDiags = spaceResult.diagnostics.filter(d => d.code === 'stray_space_eol');
-    failures += check('[regression 2c1] a trailing space yields stray_space_eol at severity Information (3), NOT Warning',
-        spaceDiags.length === 1 && spaceDiags[0].severity === DiagnosticSeverity.Information,
-        `${spaceDiags.length} diagnostic(s)${spaceDiags.length === 1 ? `, severity=${spaceDiags[0].severity}` : ''}`);
+    // Was stray_space_eol until that warning was removed (user ruling 2026-10-26).
+    const minorDiags = diagnose('- narrate §xhi').diagnostics.filter(d => d.code === 'color_code_misformat');
+    failures += check('[regression 2c1] a minor warning (color_code_misformat) is severity Information (3), NOT Warning',
+        minorDiags.length === 1 && minorDiags[0].severity === DiagnosticSeverity.Information,
+        `${minorDiags.length} diagnostic(s)${minorDiags.length === 1 ? `, severity=${minorDiags[0].severity}` : ''}`);
 
     // 12. The ##ignorewarning directive, and the two lineChecks deviations (the '§' hoist and the
     // corrected useless_invalid_line range the user reported on manual acceptance of 2C-1).

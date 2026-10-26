@@ -203,44 +203,31 @@ describe('checkForOldDefs (ScriptChecker.cs:403-419)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// BasicLineFormatCheck -- stray_space_eol (ScriptChecker.cs:318-330)
+// BasicLineFormatCheck -- trailing spaces (ScriptChecker.cs:318-330)
 // ---------------------------------------------------------------------------
-describe('basicLineFormatCheck: stray_space_eol (ScriptChecker.cs:318-330)', () => {
-    it('starts at the LAST NON-SPACE character, not at the first trailing space', () => {
-        // "- foo  " has length 7: indices 0'-' 1' ' 2'f' 3'o' 4'o' 5' ' 6' '.
-        // :321-327 walks down from 6 and breaks at 4 ('o'). endChar = Max(0, 4) = 4.
-        // end = Max(4, 7 - 1) = 6.
+// DELIBERATE DEVIATION, user ruling 2026-10-26: the C# raises `stray_space_eol` ("Stray space after
+// end of line") here. Trailing whitespace is harmless in Denizen, and the squiggle -- on every
+// blank line holding spaces, too -- read as an error that does not exist, so it is not raised.
+// The BRANCH is kept: it still decides that such a line is not a command with continuations.
+describe('basicLineFormatCheck: trailing spaces (ScriptChecker.cs:318-330)', () => {
+    it('raises nothing for trailing spaces', () => {
         const checker = new ScriptChecker('- foo  ');
         basicLineFormatCheck(checker);
-        // Mutant caught: starting the range at the first trailing space (would be 5), which is
-        // the intuitive-but-wrong reading of "stray space after end of line".
-        expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 0, key: 'stray_space_eol', start: 4, end: 6 }
-        ]);
-        // Mutant caught: routing to warnings instead of minorWarnings.
+        expect(checker.minorWarnings).toEqual([]);
         expect(checker.warnings).toEqual([]);
         expect(checker.errors).toEqual([]);
     });
 
-    it('clamps the start to 0 on an all-space line', () => {
-        // "   " length 3: the scan runs off the front to -1, then Max(0, -1) = 0 (:328).
-        // end = Max(0, 3 - 1) = 2.
+    it('raises nothing for an all-space line', () => {
         const checker = new ScriptChecker('   ');
         basicLineFormatCheck(checker);
-        // Mutant caught: dropping the Math.Max(0, endChar) clamp -- start would be -1, which
-        // would later produce an invalid LSP Position.
-        expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 0, key: 'stray_space_eol', start: 0, end: 2 }
-        ]);
+        expect(checker.minorWarnings).toEqual([]);
     });
 
-    it('is reported per line, unlike the three break-after-first checks', () => {
+    it('raises nothing on any of several lines', () => {
         const checker = new ScriptChecker('a \nb \nc ');
         basicLineFormatCheck(checker);
-        // Mutant caught: adding a `break` here by analogy with CheckForTabs/Braces/OldDefs.
-        // BasicLineFormatCheck has no break -- it walks the whole document.
-        expect(checker.minorWarnings.length).toBe(3);
-        expect(checker.minorWarnings.map((w) => w.line)).toEqual([0, 1, 2]);
+        expect(checker.minorWarnings).toEqual([]);
     });
 
     it('pre-empts the dash-continuation branch, so the continuation line is NOT skipped', () => {
@@ -254,9 +241,7 @@ describe('basicLineFormatCheck: stray_space_eol (ScriptChecker.cs:318-330)', () 
         // Mutant caught: turning the if/else-if chain at :318/:331/:352 into independent ifs.
         // Under that mutant line 0 would ALSO take the continuation branch and swallow line 1,
         // dropping the useless_invalid_line.
-        expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 0, key: 'stray_space_eol', start: 4, end: 6 }
-        ]);
+        expect(checker.minorWarnings).toEqual([]);
         expect(shapes(checker.warnings)).toEqual([
             { line: 1, key: 'useless_invalid_line', start: 4, end: 7 }
         ]);
@@ -366,17 +351,12 @@ describe('checkForColorCodes (deviation from ScriptChecker.cs:356-360)', () => {
         expect(checker.warnings).toEqual([]);
     });
 
-    it('fires alongside stray_space_eol on one line, in that order, via run()', () => {
-        // "§x " length 3: basicLineFormatCheck sees it end with ' ' -> stray_space_eol, scan
-        //   from 2(' ') to 1('x'): start = 1, end = Max(1, 2) = 2.
-        // checkForColorCodes then adds the symbol warning: start = 0, end = 2.
+    it('still fires on a line that ends in a space, via run()', () => {
+        // "§x " length 3: the trailing space no longer raises anything (user ruling 2026-10-26),
+        // but the colour-code check still sees the line: start = 0, end = 2.
         const checker = new ScriptChecker('§x ');
         checker.run();
-        // Mutant caught: ordering checkForColorCodes BEFORE basicLineFormatCheck in run(), which
-        // would swap these two entries. Both land on minorWarnings at the same line with
-        // different keys, so insertion order is the only thing that distinguishes them.
         expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 0, key: 'stray_space_eol', start: 1, end: 2 },
             { line: 0, key: 'color_code_misformat', start: 0, end: 2 }
         ]);
     });
@@ -596,7 +576,7 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
 
     it('runs all five checks, in the C# order', () => {
         // lines[0] = "- narrate <def[a]> "  (19 chars, trailing space)
-        //   :318 stray_space_eol -> scan from 18(' ') breaks at 17('>'); start 17, end Max(17,18)=18.
+        //   (its trailing space raises nothing -- stray_space_eol was removed, user ruling 2026-10-26)
         //   "<def[" first/last occurrence both at 10.
         // lines[1] = "on foo: {"  -> 0'o'1'n'2' '3'f'4'o'5'o'6':'7' '8'{'; brace start/end = 8.
         // lines[2] = "\tbar" -> cleaned "bar", no ':' -> useless_invalid_line,
@@ -653,9 +633,8 @@ describe('ScriptChecker.run() wiring (ScriptChecker.cs:2021-2036)', () => {
             { line: 1, key: 'brace_syntax', start: 8, end: 8 },
             { line: 1, key: 'invalid_container', start: 0, end: 9 }
         ]);
-        expect(shapes(checker.minorWarnings)).toEqual([
-            { line: 0, key: 'stray_space_eol', start: 17, end: 18 }
-        ]);
+        // Line 0's trailing space no longer raises stray_space_eol (user ruling 2026-10-26).
+        expect(checker.minorWarnings).toEqual([]);
     });
 
     it('clears comments before checkForBraces, so a comment ending in "{" is not an error', () => {

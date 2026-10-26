@@ -88,17 +88,17 @@ Promise.all([
         defsDiags.length === 1 && defsDiags[0].severity === DiagnosticSeverity.Warning,
         defsDiags.length === 1 ? `severity=${defsDiags[0].severity}` : '(missing)');
 
-    // 4. TRAILING SPACE -- stray_space_eol, Information. This is the check most likely to be
-    // MISREAD backwards ("a minor warning is still a warning"): minorWarnings maps to
-    // Information (3), not Warning (2).
-    const spaceScript = '- narrate "hi" ';
-    const spaceResult = diagnose(spaceScript);
-    const spaceDiags = spaceResult.diagnostics.filter(d => d.code === 'stray_space_eol');
-    failures += check('a trailing space yields a stray_space_eol diagnostic',
-        spaceDiags.length === 1, `${spaceDiags.length} diagnostic(s)`);
-    failures += check('that stray_space_eol diagnostic is severity Information (3), NOT Warning',
-        spaceDiags.length === 1 && spaceDiags[0].severity === DiagnosticSeverity.Information,
-        spaceDiags.length === 1 ? `severity=${spaceDiags[0].severity}` : '(missing)');
+    // 4. A MINOR WARNING IS Information. This is the check most likely to be MISREAD backwards
+    // ("a minor warning is still a warning"): minorWarnings maps to Information (3), not
+    // Warning (2). It used a trailing space (stray_space_eol) until that warning was removed by
+    // user ruling 2026-10-26; color_code_misformat lands on the same list.
+    const spaceDiags = diagnose('- narrate "hi" ').diagnostics.filter(d => d.code === 'stray_space_eol');
+    failures += check('a trailing space yields NO diagnostic (stray_space_eol removed 2026-10-26)',
+        spaceDiags.length === 0, `${spaceDiags.length} diagnostic(s)`);
+    const minorDiags = diagnose('- narrate §xhi').diagnostics.filter(d => d.code === 'color_code_misformat');
+    failures += check('a minor warning (color_code_misformat) is severity Information (3), NOT Warning',
+        minorDiags.length === 1 && minorDiags[0].severity === DiagnosticSeverity.Information,
+        minorDiags.length === 1 ? `severity=${minorDiags[0].severity}` : '(missing)');
 
     // 5. IGNORE DIRECTIVE -- ##ignorewarning raw_tab_symbol suppresses check 1 ENTIRELY. Uses
     // the SAME two-tab-line shape as check 1, so if this regresses to "fewer" rather than

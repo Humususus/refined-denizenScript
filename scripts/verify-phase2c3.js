@@ -299,10 +299,11 @@ Promise.all([
         braceDiags.length === 1 && braceDiags[0].severity === DiagnosticSeverity.Error,
         `${braceDiags.length} diagnostic(s)`);
 
-    const spaceDiags = diagnose('- narrate "hi" ').diagnostics.filter(d => d.code === 'stray_space_eol');
-    failures += check('[regression 2c1] a trailing space is Information (3), NOT Warning',
-        spaceDiags.length === 1 && spaceDiags[0].severity === DiagnosticSeverity.Information,
-        `${spaceDiags.length} diagnostic(s)`);
+    // Was stray_space_eol until that warning was removed (user ruling 2026-10-26).
+    const minorDiags = diagnose('- narrate §xhi').diagnostics.filter(d => d.code === 'color_code_misformat');
+    failures += check('[regression 2c1] a minor warning (color_code_misformat) is Information (3), NOT Warning',
+        minorDiags.length === 1 && minorDiags[0].severity === DiagnosticSeverity.Information,
+        `${minorDiags.length} diagnostic(s)`);
 
     const uselessA = diagnose('    Narrate <[x]>').diagnostics.filter(d => d.code === 'useless_invalid_line');
     failures += check('[regression 2c1] "    Narrate <[x]>": useless_invalid_line spans the TEXT (4-17), not the indent',

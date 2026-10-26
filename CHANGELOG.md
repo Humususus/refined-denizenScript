@@ -29,6 +29,11 @@
   so the block appeared in the next line's indentation where nothing was wrong. Trailing whitespace
   is harmless in Denizen; the mark is gone. Real mistakes keep theirs: `-narrate` with no space
   after the dash, and a line that cannot be read as a key or a command.
+- **No more "Stray space after end of line" warning** (`stray_space_eol`). For the same reason: a
+  space at the end of a line breaks nothing, and the squiggle — on every blank line holding a
+  few spaces, too — read as an error that does not exist. A `##ignorewarning stray_space_eol` line
+  left in a script does no harm. To have trailing spaces removed for you, turn on VS Code's
+  `files.trimTrailingWhitespace`.
 
 ### Changed
 
