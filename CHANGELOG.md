@@ -23,6 +23,12 @@
   download. Measured with the official sources plus denizen-reflect: 2.5 s for the first load,
   0.4 s for the next, with every source checked. Offline, the cached meta is used as before.
   Turning one add-on on downloads only that add-on, not everything again.
+- **A comment block folds as a whole.** A banner such as `# ====` lines around notes and
+  `#   - run …` examples folded only in fragments, and not at all from its first line: 2.6.0
+  folded runs of one comment kind only, and this block mixes four. Every run of comment lines at
+  one indentation now folds from its first line; runs of one kind inside it keep their own folds.
+  A comment line ending in `:` (`# Flags:`, `# Usage:`) no longer opens a code fold that ran to
+  the end of the script.
 
 ### Upgrading
 

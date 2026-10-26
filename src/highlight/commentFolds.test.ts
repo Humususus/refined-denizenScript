@@ -10,8 +10,33 @@ describe('commentFoldRanges', () => {
         expect(folds('## a', '## b', '## c')).toEqual([{ start: 0, end: 2 }]);
     });
 
-    it('a change of level starts a new run', () => {
-        expect(folds('# a', '# b', '## c', '## d')).toEqual([{ start: 0, end: 1 }, { start: 2, end: 3 }]);
+    // Reported 2026-10-27: a banner block -- `# ====` lines around plain notes and `#   - run …`
+    // examples -- folded only in fragments, and not at all from its first line, because runs were
+    // split wherever the comment kind changed. The whole block folds from its first line now.
+    it('folds a block of mixed comments from its first line to its last', () => {
+        const block = folds(
+            '# ==========================',
+            '# Twitch core for Denizen',
+            '#',
+            '# Public tasks:',
+            '#   - run tw_link_user def.__player:<player>',
+            '#       Link Twitch.',
+            '#   - run tw_unbind_task def.__player:<player>',
+            '#       Unlink Twitch.',
+            '# ==========================',
+            'tw_link_user:');
+        expect(block[0]).toEqual({ start: 0, end: 8 });
+        // Same-kind runs inside keep their own smaller folds, but never on the block's first line.
+        expect(block.filter(r => r.start === 0)).toHaveLength(1);
+        expect(block).toContainEqual({ start: 1, end: 3 });
+    });
+
+    it('a change of level folds as one block, with each level as its own fold inside', () => {
+        expect(folds('# a', '# b', '## c', '## d')).toEqual([{ start: 0, end: 3 }, { start: 2, end: 3 }]);
+    });
+
+    it('a block of one kind is a single fold', () => {
+        expect(folds('# a', '# b', '# c')).toEqual([{ start: 0, end: 2 }]);
     });
 
     it('a single comment line has nothing to fold', () => {

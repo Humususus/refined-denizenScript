@@ -137,7 +137,7 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 | `### do not touch` | a critical block (red, with a light red band across the line) |
 | `# TODO …` / `# - narrate …` | a TODO / commented-out code, each in its own palette colour |
 
-- Several comment lines of the same level in a row fold into one.
+- A block of comment lines folds as a whole from its first line — a `# ====` banner with notes and examples collapses to one line — and runs of one level inside it fold on their own.
 - `##ignorewarning …` and other `##word` directives stay plain comments — they are instructions to the checker, not emphasis.
 - In theme-colour mode `##` and `###` use the `markup.changed` / `markup.deleted` scopes, which most themes colour yellow and red.
 
