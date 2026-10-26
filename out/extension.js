@@ -1073,11 +1073,9 @@ function activateWorkspaceCompletions(context) {
             denizenTreeProvider.refresh();
         }
     }, null, context.subscriptions);
+    // No tree refresh on change: groups come from the file name, which an edit does not touch.
     watcher.onDidChange(uri => {
         workspaceIndex.updateUri(uri);
-        if (denizenTreeProvider) {
-            denizenTreeProvider.refresh();
-        }
     }, null, context.subscriptions);
     watcher.onDidDelete(uri => {
         workspaceIndex.deleteUri(uri);
@@ -1189,6 +1187,10 @@ function getIconPath(context, kind) {
         icon = "command_d_icon.svg";
         lightIcon = "command_d_icon_light.svg";
     }
+    else if (kind == "world") {
+        icon = "worlds_d_icon.svg";
+        lightIcon = "worlds_d_icon_light.svg";
+    }
     return {
         light: context.asAbsolutePath(path.join("icons", lightIcon)),
         dark: context.asAbsolutePath(path.join("icons", icon))
@@ -1200,12 +1202,21 @@ class DenizenTreeProvider {
     constructor(context) {
         this.files = [];
         this.groups = [];
+        this.loaded = false;
         this.onDidChangeTreeDataEmitter = new vscode.EventEmitter();
         this.onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
         this.context = context;
     }
+    // Debounced: a rename arrives as a delete plus a create, and a folder move or a git checkout
+    // as dozens of events, each of which would otherwise rescan the whole workspace.
     refresh() {
-        this.loadFiles().then(() => this.onDidChangeTreeDataEmitter.fire(undefined));
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => {
+            this.refreshTimer = undefined;
+            this.loadFiles().then(() => this.onDidChangeTreeDataEmitter.fire(undefined));
+        }, 200);
     }
     getTreeItem(element) {
         return element;
@@ -1213,7 +1224,9 @@ class DenizenTreeProvider {
     getChildren(element) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!element) {
-                yield this.loadFiles();
+                if (!this.loaded) {
+                    yield this.loadFiles();
+                }
                 return this.groups.map(group => {
                     const item = new DenizenTreeItem(getKindLabel(group), vscode.TreeItemCollapsibleState.Expanded);
                     item.kindName = group;
@@ -1247,14 +1260,23 @@ class DenizenTreeProvider {
             const groups = new Set();
             this.files.forEach(uri => groups.add(getDenizenFileKind(path.basename(uri.fsPath))));
             this.groups = sortedSetValues(groups);
+            this.loaded = true;
+            // The view sits in the Explorer of every workspace, since the extension also activates on
+            // startup; this hides it where there is no Denizen script to list.
+            void vscode.commands.executeCommand('setContext', 'refinedDenizenscript.hasScripts', this.files.length > 0);
         });
     }
 }
 let denizenTreeProvider;
 function activateDenizenTree(context) {
-    denizenTreeProvider = new DenizenTreeProvider(context);
-    vscode.window.registerTreeDataProvider("denizenScripts", denizenTreeProvider);
-    denizenTreeProvider.refresh();
+    const provider = new DenizenTreeProvider(context);
+    denizenTreeProvider = provider;
+    context.subscriptions.push(vscode.window.registerTreeDataProvider("denizenScripts", provider));
+    // The **/*.dsc watcher in activateWorkspaceCompletions sees single files only. Deleting,
+    // moving or renaming a whole folder of scripts inside VS Code arrives here instead.
+    const refresh = () => provider.refresh();
+    context.subscriptions.push(vscode.workspace.onDidCreateFiles(refresh), vscode.workspace.onDidDeleteFiles(refresh), vscode.workspace.onDidRenameFiles(refresh), vscode.workspace.onDidChangeWorkspaceFolders(refresh));
+    provider.refresh();
 }
 function isDialogScriptDiagnostic(uri, diagnostic) {
     const message = diagnostic.message.toLowerCase();
@@ -1794,13 +1816,11 @@ function activate(context) {
         (0, argumentHintsProvider_1.activateArgumentHints)(context);
         (0, mathEvalProvider_1.activateMathEval)(context);
         (0, definitionValueHoverProvider_1.activateDefinitionValueHover)(context);
+        activateDenizenTree(context);
         vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.uri.toString().endsWith(".dsc")) {
                 tryLoadConfigYaml(doc);
                 workspaceIndex.updateDocument(doc);
-                if (denizenTreeProvider) {
-                    denizenTreeProvider.refresh();
-                }
                 forceRefresh("onDidOpenTextDocument");
             }
         }, null, context.subscriptions);
