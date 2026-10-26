@@ -140,6 +140,14 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 - Several comment lines of the same level in a row fold into one.
 - `##ignorewarning …` and other `##word` directives stay plain comments — they are instructions to the checker, not emphasis.
 - In theme-colour mode `##` and `###` use the `markup.changed` / `markup.deleted` scopes, which most themes colour yellow and red.
+
+### Settings page
+**`Refined DenizenScript: Settings`**, or the gear in the title bar of any `.dsc` editor, opens a page for the palette and the extension's options:
+- Each palette colour is a card showing a real line of script in that colour, with a HEX field, a colour picker and **B** / *I*. A live `test_script.dsc` preview beside the cards shows exactly what the editor will — it is coloured by the same highlighter — and hovering a card outlines what it colours there.
+- Suggestions, checks, inline text colours, the `config.yml` colour names and header symbols are cards too.
+- Everything is written to your **user** `settings.json`, so Settings Sync and hand edits keep working; a hand edit shows on the open page at once. A value overridden in the workspace is marked on its card.
+- With *VS Code theme colors* selected the preview can't show your theme's colours, so it shows the code in plain text.
+
 ### Script scaffolding
 - **`Refined DenizenScript: Create Category`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>C</kbd>
 - **`Refined DenizenScript: Create Script File`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>F</kbd>

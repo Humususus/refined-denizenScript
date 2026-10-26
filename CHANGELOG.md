@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.7.0
+
+### New features
+
+- **A settings page.** Open it with **Refined DenizenScript: Settings** from the Command Palette
+  or with the gear in the title bar of any `.dsc` editor. The palette is a list of cards, one per
+  colour, each showing a real line of script in that colour with a HEX field (`#RRGGBB`, `RRGGBB`
+  or `#RGB`), a colour picker and bold / italic toggles. A `test_script.dsc` preview stays in view
+  beside them — on top in a narrow window — and is coloured by the editor's own highlighter, so
+  it shows exactly what your files will look like, `###` band and `<&6>` text colours included;
+  hovering a card outlines what that colour paints. Colours change on the page while you drag or
+  type and are saved once, when you let go. Suggestions, checks, text colours, the `config.yml`
+  colour names and the header symbols are on the page too.
+- Edits go to your **user** settings, the level the palette is built from; Settings Sync and hand
+  edits of `settings.json` keep working, and the open page follows them. A value overridden in
+  the workspace is marked on its card. With VS Code theme colours selected, the preview shows the
+  code uncoloured with a note: the page cannot read the theme's colours.
+
 ## 2.6.1
 
 ### Fixes
