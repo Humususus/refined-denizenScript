@@ -31,6 +31,7 @@
         "onCommand:refinedDenizenscript.createScriptFile",
         "onCommand:refinedDenizenscript.showPerformanceReport",
         "onCommand:refinedDenizenscript.resetPerformanceStats",
+        "onCommand:refinedDenizenscript.openSettings",
         "onStartupFinished"
     ],
     "main": "./out/extension.js",
@@ -79,6 +80,11 @@
             {
                 "command": "refinedDenizenscript.resetPerformanceStats",
                 "title": "Refined DenizenScript: Reset Performance Stats"
+            },
+            {
+                "command": "refinedDenizenscript.openSettings",
+                "title": "Refined DenizenScript: Settings",
+                "icon": "$(gear)"
             }
         ],
         "keybindings": [
@@ -115,6 +121,13 @@
             }
         ],
         "menus": {
+            "editor/title": [
+                {
+                    "command": "refinedDenizenscript.openSettings",
+                    "when": "resourceExtname == .dsc",
+                    "group": "navigation@90"
+                }
+            ],
             "explorer/context": [
                 {
                     "command": "refinedDenizenscript.createCategory",

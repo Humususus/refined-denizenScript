@@ -4,8 +4,9 @@
 // The page never colours text itself: the host runs the real tokenizer over every sample and the
 // preview, and `lineSpans` turns the result into typed runs the webview paints by CSS variable.
 
-import { COLOR_TYPES, HighlightToken } from '../highlight/denizenHighlighter';
-import { FlatToken } from '../highlight/semanticEncoding';
+import { COLOR_TYPES, HighlightOptions, HighlightToken, highlightLines } from '../highlight/denizenHighlighter';
+import { criticalLines } from '../highlight/commentDecorations';
+import { FlatToken, flattenTokens } from '../highlight/semanticEncoding';
 
 export type ColorSection = 'Comments' | 'Keys and events' | 'Commands' | 'Tags' | 'Strings';
 
@@ -196,4 +197,58 @@ export function lineSpans(line: string, flat: FlatToken[], inline: HighlightToke
         c = end;
     }
     return spans;
+}
+
+const WRITABLE: ReadonlySet<string> = new Set([
+    ...COLOR_CARDS.map(c => `denizenscript.theme_colors.${c.type}`),
+    'denizenscript.theme_colors.text_color_map',
+    'denizenscript.behaviors.use_custom_syntax_colors',
+    ...OPTION_CARDS.map(c => optionSettingId(c.key)),
+]);
+
+/** The page writes only the settings it shows; the webview is not trusted to write anything else. */
+export function isWritableSetting(key: string): boolean {
+    return WRITABLE.has(key);
+}
+
+/** The preview script, the mockup's `test_script.dsc` plus one line for a tag parameter. */
+export const PREVIEW_SCRIPT = [
+    '# | ======= Header ====== |',
+    '## Warning: comments',
+    '### ASAP COMMENTS',
+    '### ASAP Comments',
+    '# TODO: Todo comments',
+    '# - narrate "Older commands"',
+    '# regular comment',
+    'reward_world:',
+    '    type: world',
+    '    events:',
+    '        after player breaks diamond_ore with:*_pickaxe:',
+    '        - define count:++',
+    '        - if <[count]> >= 10:',
+    '            - flag <player> rewards:+:1',
+    '            - narrate "<&6>Reward: <player.flag[rewards]>"',
+    '            - run give_reward def.item:\'diamond\'',
+    '            - teleport <player> <player.location.add[0,1,0]>',
+].join('\n');
+
+/** Every line of `text` as spans, exactly as the editor colours it (same tokenizer, same overlap rule). */
+export function documentSpans(lines: string[], opts: HighlightOptions): Span[][] {
+    const tokens = highlightLines(lines, opts);
+    const flat = flattenTokens(tokens, lines.map(l => l.length));
+    return lines.map((line, i) => lineSpans(line, flat, tokens, i));
+}
+
+export function previewState(opts: HighlightOptions): { preview: Span[][]; criticalLines: number[] } {
+    const lines = PREVIEW_SCRIPT.split('\n');
+    return { preview: documentSpans(lines, opts), criticalLines: criticalLines(lines, opts.headerSymbols) };
+}
+
+/** Each card's sample as spans, keyed by the card's type. */
+export function cardSpans(opts: HighlightOptions): Record<string, Span[]> {
+    const out: Record<string, Span[]> = {};
+    for (const card of COLOR_CARDS) {
+        out[card.type] = documentSpans([card.sample], opts)[0];
+    }
+    return out;
 }

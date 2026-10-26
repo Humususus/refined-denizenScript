@@ -70,6 +70,13 @@ describe('package.json — removed features stay removed', () => {
         const view = pkg.contributes.views.explorer.find((v: { id: string }) => v.id === 'denizenScripts');
         expect(view.when).toContain('config.denizenscript.behaviors.show_scripts_view');
     });
+    // R5: the settings page, from the palette and from the title bar of a .dsc editor.
+    it('ships the settings page command, its activation event and the editor gear', () => {
+        expect(commandIds).toContain('refinedDenizenscript.openSettings');
+        expect(pkg.activationEvents).toContain('onCommand:refinedDenizenscript.openSettings');
+        const gear = (pkg.contributes.menus['editor/title'] ?? []).find((m: { command: string }) => m.command === 'refinedDenizenscript.openSettings');
+        expect(gear.when).toContain('resourceExtname == .dsc');
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);
