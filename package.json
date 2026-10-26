@@ -32,6 +32,7 @@
         "onCommand:refinedDenizenscript.showPerformanceReport",
         "onCommand:refinedDenizenscript.resetPerformanceStats",
         "onCommand:refinedDenizenscript.openSettings",
+        "onCommand:refinedDenizenscript.reinstallMeta",
         "onStartupFinished"
     ],
     "main": "./out/extension.js",
@@ -85,6 +86,10 @@
                 "command": "refinedDenizenscript.openSettings",
                 "title": "Refined DenizenScript: Settings",
                 "icon": "$(gear)"
+            },
+            {
+                "command": "refinedDenizenscript.reinstallMeta",
+                "title": "Refined DenizenScript: Reinstall Meta Sources"
             }
         ],
         "keybindings": [

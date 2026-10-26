@@ -17,6 +17,16 @@ export function metaCacheDir(env: { LOCALAPPDATA?: string }, homedir: string): s
     return path.join(base, 'DenizenVSCodeExtension', 'cache', 'meta-sources');
 }
 
+/** What the server reports after each meta load (`denizen/metaStatus`), for the settings page. */
+export interface MetaStatus {
+    loadedAt: number;
+    sources: { url: string; state: 'downloaded' | 'unchanged' | 'cached-offline' | 'failed'; blocks: number }[];
+    commands: number;
+    tags: number;
+    events: number;
+    mechanisms: number;
+}
+
 export interface SourceInfo {
     name: string;
     url: string;

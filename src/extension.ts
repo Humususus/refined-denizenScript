@@ -3,6 +3,9 @@ import * as languageClient from "vscode-languageclient";
 import * as languageClientNode from "vscode-languageclient/node";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
+import { RestartScheduler } from "./metaClient";
+import { MetaStatus, metaCacheDir } from "./server/metaDocs/metaSources";
 import { MutedRegions, MuteRange, countNewLines, wholeLineMuteBounds } from './mutedDiagnostics';
 import { findSaveEntries, entryTagsFor } from "./entryTags";
 import { activateMapTagPeek, SCHEME as MAP_TAG_SCHEME } from "./mapTagPeek";
@@ -90,12 +93,16 @@ function buildSharedMiddleware() : languageClient.Middleware {
     }
 }
 
-function activateTsLanguageServer(context: vscode.ExtensionContext) {
-    let serverModule : string = context.asAbsolutePath(path.join("out", "server", "server.js"));
-    if (!fs.existsSync(serverModule)) {
-        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
-        return;
-    }
+let tsClient: languageClientNode.LanguageClient | undefined;
+let metaStatus: MetaStatus | undefined;
+const metaStatusEmitter = new vscode.EventEmitter<MetaStatus>();
+/** The last meta load the server reported, and an event for each new one (the settings page's status line). */
+export const onMetaStatus = metaStatusEmitter.event;
+export function getMetaStatus(): MetaStatus | undefined {
+    return metaStatus;
+}
+
+function startTsClient(serverModule: string): languageClientNode.LanguageClient {
     let serverOptions: languageClientNode.ServerOptions = {
         run: { module: serverModule, transport: languageClientNode.TransportKind.ipc },
         debug: { module: serverModule, transport: languageClientNode.TransportKind.ipc, options: { execArgv: ["--nolazy", "--inspect=6019"] } }
@@ -108,9 +115,64 @@ function activateTsLanguageServer(context: vscode.ExtensionContext) {
         middleware: buildSharedMiddleware()
     }
     let client = new languageClientNode.LanguageClient("DenizenTsLangServer", "Denizen Language Server (TypeScript)", serverOptions, clientOptions);
-    let disposable = client.start();
-    context.subscriptions.push(disposable);
+    client.start();
     registerDiagnosticClient(client);
+    client.onReady().then(() => {
+        client.onNotification("denizen/metaStatus", (status: MetaStatus) => {
+            metaStatus = status;
+            metaStatusEmitter.fire(status);
+        });
+    }, err => outputChannel.appendLine("Denizen language server did not start: " + err));
+    return client;
+}
+
+/**
+ * Stops the server and starts a fresh one, which re-reads the meta source settings (it reads them
+ * once, at start) and revalidates every cached source. `clearCache` is the Reinstall button: the
+ * per-source cache is deleted first, so every enabled source is downloaded again.
+ */
+async function restartLanguageServer(serverModule: string, clearCache: boolean): Promise<void> {
+    const old = tsClient;
+    tsClient = undefined;
+    if (old) {
+        unregisterDiagnosticClient(old);
+        try {
+            await old.stop();
+        }
+        catch (err) {
+            // A server that never finished starting cannot be stopped cleanly; start the new one anyway.
+            outputChannel.appendLine("Stopping the Denizen language server failed: " + err);
+        }
+    }
+    if (clearCache) {
+        fs.rmSync(metaCacheDir(process.env, os.homedir()), { recursive: true, force: true });
+    }
+    outputChannel.appendLine(`Restarting the Denizen language server${clearCache ? " with a cleared meta cache" : ""}.`);
+    tsClient = startTsClient(serverModule);
+}
+
+const META_SOURCE_SETTINGS = ["denizenscript.server.extra_sources", "denizenscript.server.enabled_addons", "denizenscript.server.replace_default_sources"];
+
+function activateTsLanguageServer(context: vscode.ExtensionContext) {
+    let serverModule : string = context.asAbsolutePath(path.join("out", "server", "server.js"));
+    if (!fs.existsSync(serverModule)) {
+        outputChannel.appendLine("TypeScript language server module not found at " + serverModule);
+        return;
+    }
+    tsClient = startTsClient(serverModule);
+    context.subscriptions.push({ dispose: () => tsClient?.stop() });
+    // Several switches clicked on the settings page within the delay are one restart.
+    const scheduler = new RestartScheduler(clearCache => restartLanguageServer(serverModule, clearCache), 1500);
+    vscode.workspace.onDidChangeConfiguration(event => {
+        if (META_SOURCE_SETTINGS.some(key => event.affectsConfiguration(key))) {
+            scheduler.request();
+        }
+    }, null, context.subscriptions);
+    context.subscriptions.push(vscode.commands.registerCommand("refinedDenizenscript.reinstallMeta", () => {
+        const message = vscode.window.setStatusBarMessage("$(sync~spin) Denizen meta: re-downloading…");
+        const done = onMetaStatus(() => { message.dispose(); done.dispose(); });
+        return scheduler.now(true);
+    }));
 }
 
 const highlightDecors: { [color: string]: vscode.TextEditorDecorationType } = {};
@@ -330,6 +392,13 @@ const diagnosticClients : languageClient.BaseLanguageClient[] = [];
 
 function registerDiagnosticClient(client: languageClient.BaseLanguageClient) : void {
     diagnosticClients.push(client);
+}
+
+function unregisterDiagnosticClient(client: languageClient.BaseLanguageClient) : void {
+    const index = diagnosticClients.indexOf(client);
+    if (index >= 0) {
+        diagnosticClients.splice(index, 1);
+    }
 }
 
 /** Adapter: the muted-region store keeps its own plain shapes so it can be unit-tested without vscode. */

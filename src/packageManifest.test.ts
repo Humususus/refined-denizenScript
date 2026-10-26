@@ -87,6 +87,10 @@ describe('package.json — removed features stay removed', () => {
         expect(items.anyOf.map(i => i.type)).toEqual(['string', 'object']);
         expect(items.anyOf[1].required).toEqual(['url']);
     });
+    it('ships the reinstall-meta command with its activation event', () => {
+        expect(commandIds).toContain('refinedDenizenscript.reinstallMeta');
+        expect(pkg.activationEvents).toContain('onCommand:refinedDenizenscript.reinstallMeta');
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);
