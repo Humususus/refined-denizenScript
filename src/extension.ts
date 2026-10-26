@@ -1108,11 +1108,9 @@ function activateWorkspaceCompletions(context: vscode.ExtensionContext) {
             denizenTreeProvider.refresh();
         }
     }, null, context.subscriptions);
+    // No tree refresh on change: groups come from the file name, which an edit does not touch.
     watcher.onDidChange(uri => {
         workspaceIndex.updateUri(uri);
-        if (denizenTreeProvider) {
-            denizenTreeProvider.refresh();
-        }
     }, null, context.subscriptions);
     watcher.onDidDelete(uri => {
         workspaceIndex.deleteUri(uri);
@@ -1228,6 +1226,10 @@ function getIconPath(context: vscode.ExtensionContext, kind: string) : any {
         icon = "command_d_icon.svg";
         lightIcon = "command_d_icon_light.svg";
     }
+    else if (kind == "world") {
+        icon = "worlds_d_icon.svg";
+        lightIcon = "worlds_d_icon_light.svg";
+    }
     return {
         light: context.asAbsolutePath(path.join("icons", lightIcon)),
         dark: context.asAbsolutePath(path.join("icons", icon))
@@ -1243,6 +1245,8 @@ class DenizenTreeProvider implements vscode.TreeDataProvider<DenizenTreeItem> {
     private context: vscode.ExtensionContext;
     private files : vscode.Uri[] = [];
     private groups : string[] = [];
+    private loaded = false;
+    private refreshTimer : NodeJS.Timeout | undefined;
     private onDidChangeTreeDataEmitter = new vscode.EventEmitter<DenizenTreeItem | undefined>();
     readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
@@ -1250,8 +1254,16 @@ class DenizenTreeProvider implements vscode.TreeDataProvider<DenizenTreeItem> {
         this.context = context;
     }
 
+    // Debounced: a rename arrives as a delete plus a create, and a folder move or a git checkout
+    // as dozens of events, each of which would otherwise rescan the whole workspace.
     refresh() {
-        this.loadFiles().then(() => this.onDidChangeTreeDataEmitter.fire(undefined));
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => {
+            this.refreshTimer = undefined;
+            this.loadFiles().then(() => this.onDidChangeTreeDataEmitter.fire(undefined));
+        }, 200);
     }
 
     getTreeItem(element: DenizenTreeItem) : vscode.TreeItem {
@@ -1260,7 +1272,9 @@ class DenizenTreeProvider implements vscode.TreeDataProvider<DenizenTreeItem> {
 
     async getChildren(element?: DenizenTreeItem) : Promise<DenizenTreeItem[]> {
         if (!element) {
-            await this.loadFiles();
+            if (!this.loaded) {
+                await this.loadFiles();
+            }
             return this.groups.map(group => {
                 const item = new DenizenTreeItem(getKindLabel(group), vscode.TreeItemCollapsibleState.Expanded);
                 item.kindName = group;
@@ -1293,15 +1307,28 @@ class DenizenTreeProvider implements vscode.TreeDataProvider<DenizenTreeItem> {
         const groups = new Set<string>();
         this.files.forEach(uri => groups.add(getDenizenFileKind(path.basename(uri.fsPath))));
         this.groups = sortedSetValues(groups);
+        this.loaded = true;
+        // The view sits in the Explorer of every workspace, since the extension also activates on
+        // startup; this hides it where there is no Denizen script to list.
+        void vscode.commands.executeCommand('setContext', 'refinedDenizenscript.hasScripts', this.files.length > 0);
     }
 }
 
 let denizenTreeProvider: DenizenTreeProvider | undefined;
 
 function activateDenizenTree(context: vscode.ExtensionContext) {
-    denizenTreeProvider = new DenizenTreeProvider(context);
-    vscode.window.registerTreeDataProvider("denizenScripts", denizenTreeProvider);
-    denizenTreeProvider.refresh();
+    const provider = new DenizenTreeProvider(context);
+    denizenTreeProvider = provider;
+    context.subscriptions.push(vscode.window.registerTreeDataProvider("denizenScripts", provider));
+    // The **/*.dsc watcher in activateWorkspaceCompletions sees single files only. Deleting,
+    // moving or renaming a whole folder of scripts inside VS Code arrives here instead.
+    const refresh = () => provider.refresh();
+    context.subscriptions.push(
+        vscode.workspace.onDidCreateFiles(refresh),
+        vscode.workspace.onDidDeleteFiles(refresh),
+        vscode.workspace.onDidRenameFiles(refresh),
+        vscode.workspace.onDidChangeWorkspaceFolders(refresh));
+    provider.refresh();
 }
 
 function isDialogScriptDiagnostic(uri: vscode.Uri, diagnostic: vscode.Diagnostic) : boolean {
@@ -1877,13 +1904,11 @@ export async function activate(context: vscode.ExtensionContext) {
     activateArgumentHints(context);
     activateMathEval(context);
     activateDefinitionValueHover(context);
+    activateDenizenTree(context);
     vscode.workspace.onDidOpenTextDocument(doc => {
         if (doc.uri.toString().endsWith(".dsc")) {
             tryLoadConfigYaml(doc);
             workspaceIndex.updateDocument(doc);
-            if (denizenTreeProvider) {
-                denizenTreeProvider.refresh();
-            }
             forceRefresh("onDidOpenTextDocument");
         }
     }, null, context.subscriptions);

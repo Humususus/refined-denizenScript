@@ -3,7 +3,7 @@
     "displayName": "refined DenizenScript",
     "description": "Denizen scripting for VS Code — highlighting, completion, hover and diagnostics, with an optional .NET-free language server.",
     "author": "Humusus_ and DenizenTeam",
-    "version": "2.6.0",
+    "version": "2.6.1",
     "publisher": "humusus",
     "license": "MIT",
     "repository": "https://github.com/Humususus/refined-denizenScript",
@@ -165,6 +165,17 @@
                 "path": "./themes/denizen-icon-theme.json"
             }
         ],
+        "views": {
+            "explorer": [
+                {
+                    "id": "denizenScripts",
+                    "name": "Denizen Scripts",
+                    "icon": "icons/dsc.svg",
+                    "contextualTitle": "Denizen",
+                    "when": "refinedDenizenscript.hasScripts"
+                }
+            ]
+        },
         "configurationDefaults": {
             "[denizenscript]": {
                 "editor.insertSpaces": true,

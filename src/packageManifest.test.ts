@@ -58,6 +58,12 @@ describe('package.json — removed features stay removed', () => {
     it('has no comment icons setting', () => {
         expect(props).not.toHaveProperty(['denizenscript.behaviors.comment_icons']);
     });
+    // The tree provider was registered in code for several releases while the manifest never
+    // declared the view, so nobody could see it.
+    it('declares the Denizen scripts view the tree provider is registered for', () => {
+        const viewIds = Object.values(pkg.contributes.views ?? {}).flat().map(v => (v as { id: string }).id);
+        expect(viewIds).toContain('denizenScripts');
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);

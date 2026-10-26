@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.6.1
+
+### Fixes
+
+- **The Denizen Scripts panel is finally visible.** It lists the workspace's `.dsc` files in a
+  "Denizen Scripts" section of the Explorer, grouped by what the file name says they are — handle,
+  data, dialog, entity, task, docs, command / cmd, world, inventory / inv, and the rest under
+  Scripts — each with its icon in light and dark themes; clicking a file opens it. The panel had
+  been written but never declared in the manifest nor switched on, so nobody had ever seen it. It
+  shows only in workspaces that contain a `.dsc` file, and it keeps up with files created, deleted
+  or renamed, including whole folders moved inside VS Code. World files now get the world icon.
+  The Explorer was chosen over an Activity Bar icon of its own: the list is a different view of
+  the same files, and it can still be dragged to its own place in the sidebar.
+
 ## 2.6.0
 
 ### New features
