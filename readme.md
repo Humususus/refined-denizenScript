@@ -162,6 +162,8 @@ Commands, tags and events come from the meta of the sources you enable. Manage t
 
 Switching a source restarts the language server by itself. Every start asks GitHub whether each source changed (an unchanged one costs no download), so an updated add-on is picked up on the next start; **Reinstall instances** (or the command *Refined DenizenScript: Reinstall Meta Sources*) clears the cache and downloads everything again. The settings behind the page are `denizenscript.server.enabled_addons`, `extra_sources` and `replace_default_sources`.
 
+When a command, tag or event is unknown and some source is switched off, the warning says which ones may have it, and the quick fix **Open meta sources** takes you there.
+
 ### Reporting lag
 If a large file feels slow, turn on `denizenscript.debug.performance`, work in that file for a minute — scroll, type — then run **`Refined DenizenScript: Show Performance Report`** and paste what it prints into your issue. It shows how long each editor feature took, so the report says which one to fix.
 

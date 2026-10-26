@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.9.0
+
+### New features
+
+- **Unknown names point at switched-off add-ons.** When the checker reports an unknown command,
+  tag, tag part, mechanism or event and some meta source is switched off, the message ends with
+  which ones — "may come from a meta source that is switched off: DenizenM, …" — and a quick fix,
+  **Open meta sources**, opens the settings page there. Nothing is downloaded to check; with every
+  source on, there is no hint. Ignored and muted warnings stay so: only the message changes.
+
 ## 2.8.0
 
 ### New features
