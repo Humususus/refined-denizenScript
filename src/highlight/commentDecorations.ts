@@ -1,47 +1,22 @@
-// What semantic tokens cannot draw for comments (2.6.0): the light red band behind `###` lines and
-// the icons before `# TODO` and `# -`. This decides WHERE and WHAT; extension.ts turns it into
-// decorations. No `vscode` import. Comment lines are few, so the whole document is cheap.
+// The light red band behind `###` comment lines (2.6.0) -- the one thing about comment levels that
+// semantic tokens cannot draw, since a token has no background. This decides WHERE; extension.ts
+// turns it into a decoration. No `vscode` import. Comment lines are few, so the whole document is
+// cheap.
+//
+// Icons before `# TODO` and `# -` were tried in the same release and removed by the user before
+// it shipped: they looked worse in the editor than in the mockup.
 
 import { commentKind } from './commentKind';
 
-export interface CommentMarks {
-    /** Lines that are `###` comments: a full-line background. */
-    critical: number[];
-    /** `# TODO` lines and the column of their `#`: an icon before it. */
-    todo: { line: number; column: number }[];
-    /** `# -` (commented-out code) lines and the column of their `#`. */
-    code: { line: number; column: number }[];
-}
-
-export function commentLines(lines: string[], headerSymbols: string): CommentMarks {
-    const marks: CommentMarks = { critical: [], todo: [], code: [] };
+/** The lines that are `###` comments. */
+export function criticalLines(lines: string[], headerSymbols: string): number[] {
+    const result: number[] = [];
     lines.forEach((line, i) => {
-        const kind = commentKind(line, headerSymbols);
-        const column = line.length - line.trimStart().length;
-        if (kind === 'comment_critical') {
-            marks.critical.push(i);
-        }
-        else if (kind === 'comment_todo') {
-            marks.todo.push({ line: i, column });
-        }
-        else if (kind === 'comment_code') {
-            marks.code.push({ line: i, column });
+        if (commentKind(line, headerSymbols) === 'comment_critical') {
+            result.push(i);
         }
     });
-    return marks;
-}
-
-/** The icon, as SVG text, matching the settings mockup's shapes. */
-export function iconSvg(kind: 'todo' | 'code', color: string): string {
-    if (kind === 'todo') {
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
-            + `<rect x="1" y="1" width="14" height="14" rx="3" fill="${color}"/>`
-            + '<path d="M4.5 8.2l2.3 2.3 4.7-5" stroke="#000000" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-            + '</svg>';
-    }
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
-        + `<path d="M4 3l9 5-9 5z" fill="${color}"/>`
-        + '</svg>';
+    return result;
 }
 
 /** The `###` band: the critical colour at ~16% alpha (0x29), as the mockup's color-mix(16%). */

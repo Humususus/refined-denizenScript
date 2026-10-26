@@ -135,13 +135,11 @@ A clickable **Expand tag** lens above any line holding a multi-entry `<map[…]>
 | `# note` | a plain comment (grey) |
 | `## careful` | a warning (yellow) |
 | `### do not touch` | a critical block (red, with a light red band across the line) |
-| `# TODO …` / `# - narrate …` | a TODO / commented-out code, with an icon in front |
+| `# TODO …` / `# - narrate …` | a TODO / commented-out code, each in its own palette colour |
 
 - Several comment lines of the same level in a row fold into one.
 - `##ignorewarning …` and other `##word` directives stay plain comments — they are instructions to the checker, not emphasis.
 - In theme-colour mode `##` and `###` use the `markup.changed` / `markup.deleted` scopes, which most themes colour yellow and red.
-- Turn the icons off with `denizenscript.behaviors.comment_icons`.
-
 ### Script scaffolding
 - **`Refined DenizenScript: Create Category`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>C</kbd>
 - **`Refined DenizenScript: Create Script File`** — <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> then <kbd>F</kbd>

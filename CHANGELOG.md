@@ -12,9 +12,6 @@
   and a yellow directive would read as a warning about itself.
 - **Runs of comments fold.** Two or more comment lines of the same level and indentation in a row
   get one fold, so a long note or a block of commented-out code collapses to a line.
-- **Icons on TODO and commented-out code.** A checkbox before `# TODO` and a ▸ before `# -`, in
-  their palette colours. They are drawn in front of the `#`, not instead of it — the file is not
-  changed. Turn them off with `denizenscript.behaviors.comment_icons`.
 
 ### Fixes
 

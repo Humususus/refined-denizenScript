@@ -54,12 +54,9 @@ describe('package.json — removed features stay removed', () => {
     it('uses the Denizen palette by default', () => {
         expect((props['denizenscript.behaviors.use_custom_syntax_colors'] as { default: unknown }).default).toBe(true);
     });
-    it('lets the comment icons be turned off, on by default', () => {
-        const setting = props['denizenscript.behaviors.comment_icons'] as { default: unknown; markdownDescription: string };
-        expect(setting.default).toBe(true);
-        // Once shipped with the two code spans missing ("before  and  (commented-out code)").
-        expect(setting.markdownDescription).toContain('`# TODO`');
-        expect(setting.markdownDescription).toContain('`# -`');
+    // The TODO / code comment icons were tried during 2.6.0 and removed by the user before release.
+    it('has no comment icons setting', () => {
+        expect(props).not.toHaveProperty(['denizenscript.behaviors.comment_icons']);
     });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
