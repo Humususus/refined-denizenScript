@@ -7,6 +7,7 @@
 import { COLOR_TYPES, HighlightOptions, HighlightToken, highlightLines } from '../highlight/denizenHighlighter';
 import { criticalLines } from '../highlight/commentDecorations';
 import { FlatToken, flattenTokens } from '../highlight/semanticEncoding';
+import { MetaStatus, OFFICIAL_SOURCES, SourceInfo, SourceSettings, readSourceSettings } from '../server/metaDocs/metaSources';
 
 export type ColorSection = 'Comments' | 'Keys and events' | 'Commands' | 'Tags' | 'Strings';
 
@@ -265,4 +266,22 @@ export function cardSpans(opts: HighlightOptions): Record<string, Span[]> {
         out[card.type] = documentSpans([card.sample], opts)[0];
     }
     return out;
+}
+
+/** The Meta sources section's data: the official sources (always loaded), the add-ons and the user's own. */
+export function sourcesState(extraSources: unknown, enabledAddons: unknown, replaceDefaults: unknown): SourceSettings & { official: SourceInfo[] } {
+    return { official: [...OFFICIAL_SOURCES], ...readSourceSettings(extraSources, enabledAddons, replaceDefaults) };
+}
+
+/** `Meta loaded 2 h ago · 6 sources · 1,214 commands, tags and events`, from the server's last report. */
+export function metaStatusLine(status: MetaStatus | null, now: number): string {
+    if (status === null) {
+        return 'Meta not loaded yet';
+    }
+    const minutes = Math.floor((now - status.loadedAt) / 60000);
+    const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 48 * 60 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} days ago`;
+    const loaded = status.sources.filter(s => s.state !== 'failed').length;
+    const failed = status.sources.length - loaded;
+    const objects = (status.commands + status.tags + status.events).toLocaleString('en-US');
+    return `Meta loaded ${age} · ${loaded} sources · ${objects} commands, tags and events${failed > 0 ? ` · ${failed} failed` : ''}`;
 }

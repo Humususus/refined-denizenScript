@@ -24,6 +24,29 @@
     postMessage: m => {
       if (m.kind === 'ready') {
         setTimeout(() => window.postMessage(window.DEV_STATE, '*'), 0);
+      } else if (m.kind === 'sources') {
+        window.DEV_WRITES.push(m);
+        window.DEV_STATE.sources = Object.assign({}, m.value, { official: window.DEV_STATE.sources.official });
+        setTimeout(() => window.postMessage(window.DEV_STATE, '*'), 30);
+      } else if (m.kind === 'addSource') {
+        window.DEV_WRITES.push(m);
+        // A rough stand-in for metaSources.sourceFromInput; the real rules are unit-tested.
+        const repo = /^(?:https?:\/\/)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(m.input.trim());
+        const zip = /^https:\/\/\S+\.zip$/.test(m.input.trim());
+        const ok = !!(repo || zip);
+        if (ok) {
+          const url = repo ? `https://github.com/${repo[1]}/${repo[2]}/archive/HEAD.zip` : m.input.trim();
+          window.DEV_STATE.sources.custom.push({ name: repo ? repo[2] : url.split('/').pop().replace(/\.zip$/, ''), url, enabled: true });
+          setTimeout(() => window.postMessage(window.DEV_STATE, '*'), 30);
+        }
+        setTimeout(() => window.postMessage({ kind: 'addResult', ok }, '*'), 10);
+      } else if (m.kind === 'reinstall') {
+        window.DEV_WRITES.push(m);
+        setTimeout(() => {
+          window.DEV_STATE.metaLoadedAt = Date.now();
+          window.DEV_STATE.metaStatusLine = 'Meta loaded just now · 6 sources · 1,214 commands, tags and events';
+          window.postMessage(window.DEV_STATE, '*');
+        }, 800);
       } else if (m.kind === 'set') {
         window.DEV_WRITES.push(m);
         // ?stale=1: before each write lands, a state from before it arrives (the echo of an

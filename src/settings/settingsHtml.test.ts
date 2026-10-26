@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { baseTagSpecialColors, HighlightOptions } from '../highlight/denizenHighlighter';
 import { settingsHtml } from './settingsHtml';
-import { COLOR_CARDS, OPTION_CARDS, PREVIEW_SCRIPT, cardSpans, isWritableSetting, optionSettingId, previewState } from './settingsModel';
+import { COLOR_CARDS, OPTION_CARDS, PREVIEW_SCRIPT, cardSpans, isWritableSetting, metaStatusLine, optionSettingId, previewState, sourcesState } from './settingsModel';
 
 const opts: HighlightOptions = { headerSymbols: '|+=_@/', doInlineColors: true, displayDarkColors: false, tagSpecialColors: baseTagSpecialColors, colorRef: {} };
 
@@ -45,6 +45,36 @@ describe('isWritableSetting', () => {
             'denizenscript.server.extra_sources', 'denizenscript.theme_colors.', '__proto__']) {
             expect(isWritableSetting(key), key).toBe(false);
         }
+    });
+});
+
+describe('meta sources on the page', () => {
+    // Sources are written only through writeSourceSettings, never by key from the webview.
+    it('cannot be written by key', () => {
+        for (const key of ['denizenscript.server.extra_sources', 'denizenscript.server.enabled_addons', 'denizenscript.server.replace_default_sources']) {
+            expect(isWritableSetting(key), key).toBe(false);
+        }
+    });
+    it('lists the official sources, the add-ons and the own sources', () => {
+        const state = sourcesState(['https://github.com/isnsest/denizen-reflect/archive/refs/heads/main.zip', 'https://my.fork/x.zip'], [], false);
+        expect(state.official.map(s => s.name)).toEqual(['Denizen', 'Denizen-Core', 'Depenizen', 'dDiscordBot']);
+        expect(state.addons.filter(a => a.enabled).map(a => a.id)).toEqual(['denizen-reflect']);
+        expect(state.custom).toEqual([{ name: 'x', url: 'https://my.fork/x.zip', enabled: true }]);
+        expect(state.replaceDefaults).toBe(false);
+    });
+    it('says when and what the meta loaded', () => {
+        const now = 1_800_000_000_000;
+        const status = {
+            loadedAt: now - 2 * 3600 * 1000,
+            sources: Array.from({ length: 6 }, (_, i) => ({ url: `u${i}`, state: 'unchanged' as const, blocks: 1 })),
+            commands: 200, tags: 900, events: 114, mechanisms: 50
+        };
+        expect(metaStatusLine(status, now)).toBe('Meta loaded 2 h ago · 6 sources · 1,214 commands, tags and events');
+        const failed = { ...status, sources: [...status.sources, { url: 'bad', state: 'failed' as const, blocks: 0 }] };
+        expect(metaStatusLine(failed, now)).toBe('Meta loaded 2 h ago · 6 sources · 1,214 commands, tags and events · 1 failed');
+        expect(metaStatusLine({ ...status, loadedAt: now - 30 * 1000 }, now)).toBe('Meta loaded just now · 6 sources · 1,214 commands, tags and events');
+        expect(metaStatusLine({ ...status, loadedAt: now - 5 * 60 * 1000 }, now)).toBe('Meta loaded 5 min ago · 6 sources · 1,214 commands, tags and events');
+        expect(metaStatusLine(null, now)).toBe('Meta not loaded yet');
     });
 });
 

@@ -81,7 +81,8 @@ pre .flash { outline: 1px dashed color-mix(in srgb, var(--fg) 45%, transparent);
 .opt .tx { flex: 1; min-width: 0; }
 .opt .d { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .sw { width: 34px; height: 20px; border-radius: 10px; background: var(--btn2); position: relative; cursor: pointer; flex: none; border: 0; padding: 0; }
-.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: left .12s; }
+/* the knob uses the switch background's own text colour, so it stays visible in light themes too */
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: color-mix(in srgb, var(--btn2-fg) 70%, transparent); transition: left .12s; }
 .sw.on { background: var(--accent); }
 .sw.on::after { left: 17px; background: var(--accent-fg); }
 
@@ -92,6 +93,26 @@ pre .flash { outline: 1px dashed color-mix(in srgb, var(--fg) 45%, transparent);
 .inp.bad, .inp.bad:focus { box-shadow: inset 0 0 0 1px var(--bad); }
 .opt > .inp { background: var(--btn2); color: var(--btn2-fg); height: auto; padding: 9px 16px; border-radius: 8px; font: 13px var(--mono); width: 110px; }
 code { font-family: var(--mono); font-size: 12px; background: var(--btn); color: var(--btn-fg); padding: 1px 5px; border-radius: 4px; }
+
+/* meta sources (R6) */
+.src .u { color: var(--muted); font: 12px var(--mono); word-break: break-all; margin-top: 2px; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: var(--btn2); color: var(--btn2-fg); margin-left: 6px; }
+.sw.locked { opacity: .5; cursor: default; }
+.x { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 4px; border-radius: 5px; }
+.x:hover { color: var(--fg); background: var(--btn); }
+.empty { color: var(--muted); font-size: 12px; margin: 0 0 8px 4px; }
+.add { display: flex; gap: 8px; margin-bottom: 8px; }
+/* outside cards the input matches the Add button beside it */
+.add .inp { flex: 1; min-width: 0; background: var(--btn2); color: var(--btn2-fg); height: auto; padding: 9px 16px; border-radius: 8px; font: 13px var(--vscode-font-family, "Segoe UI", system-ui, sans-serif); }
+.add .inp::placeholder { color: color-mix(in srgb, var(--btn2-fg) 60%, transparent); }
+.btn { background: var(--accent); color: var(--accent-fg); border: 0; padding: 9px 16px; border-radius: 8px; cursor: pointer; font: inherit; flex: none; }
+.btn:hover { background: var(--accent-h); }
+.btn:disabled { opacity: .6; cursor: default; }
+.btn.sec { background: var(--btn2); color: var(--btn2-fg); }
+.status { color: var(--muted); font-size: 12px; margin: 12px 0; }
+.reinstall { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reinstall .status { margin: 0; }
+#sources .ovr { margin: -4px 0 8px 14px; }
 
 /* theme-colour mode: the webview cannot read the theme's token colours */
 .theme #rows { opacity: .45; pointer-events: none; }

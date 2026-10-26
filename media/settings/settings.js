@@ -102,6 +102,7 @@
 
     const SECTIONS = [
         { id: 'colors', icon: '🎨', title: 'Syntax colors' },
+        { id: 'sources', icon: '📦', title: 'Meta sources' },
         { id: 'hints', icon: '💡', title: 'Suggestions' },
         { id: 'checks', icon: '✓', title: 'Checks' },
         { id: 'text', icon: 'Aa', title: 'Text colors' },
@@ -125,7 +126,7 @@
         note.append('Values live in your user settings — ', el('code', null, 'settings.json'), ' and Settings Sync keep working.');
         nav.appendChild(note);
 
-        main.append(buildColors(), buildOptions('hints', 'Suggestions'), buildOptions('checks', 'Checks'), buildText());
+        main.append(buildColors(), buildSources(), buildOptions('hints', 'Suggestions'), buildOptions('checks', 'Checks'), buildText());
         wrap.append(nav, main);
         app.appendChild(wrap);
         showSection(current);
@@ -309,6 +310,140 @@
         return sec;
     }
 
+    // ---------- meta sources (R6) ----------
+    //
+    // The page sends the whole edited list (`sources`) or a pasted link (`addSource`); the host
+    // re-reads both through metaSources.ts before writing. Lists are re-rendered on every state;
+    // the Add field is built once, so typing in it survives a state.
+
+    function sourceCard(name, url, badge) {
+        const opt = el('div', 'opt src');
+        const tx = el('div', 'tx', name);
+        if (badge) tx.appendChild(el('span', 'badge', badge));
+        tx.appendChild(el('div', 'u', url.replace(/^https:\/\//, '')));
+        opt.appendChild(tx);
+        return opt;
+    }
+
+    function sourceSwitch(on, onClick) {
+        const sw = el('button', 'sw' + (on ? ' on' : ''));
+        sw.setAttribute('role', 'switch');
+        sw.setAttribute('aria-checked', String(on));
+        if (onClick) sw.addEventListener('click', onClick);
+        else { sw.classList.add('locked'); sw.disabled = true; }
+        return sw;
+    }
+
+    /** A copy of the sources with one change applied, posted as the new list. */
+    function postSources(change) {
+        const next = JSON.parse(JSON.stringify(state.sources));
+        change(next);
+        vscode.postMessage({ kind: 'sources', value: next });
+    }
+
+    function buildSources() {
+        const sec = el('section');
+        sec.id = 'sources';
+        sec.appendChild(el('h2', null, 'Official'));
+        ui.official = el('div');
+        sec.appendChild(ui.official);
+        sec.appendChild(el('h2', null, 'Add-ons'));
+        ui.addons = el('div');
+        sec.appendChild(ui.addons);
+        sec.appendChild(el('h2', null, 'Custom'));
+        ui.custom = el('div');
+        sec.appendChild(ui.custom);
+
+        const add = el('div', 'add');
+        const input = el('input', 'inp');
+        input.placeholder = 'Direct .zip link or GitHub repository';
+        input.spellcheck = false;
+        const button = el('button', 'btn sec', 'Add');
+        const submit = () => {
+            if (input.value.trim() === '') return;
+            vscode.postMessage({ kind: 'addSource', input: input.value });
+        };
+        button.addEventListener('click', submit);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+        input.addEventListener('input', () => input.classList.remove('bad'));
+        add.append(input, button);
+        ui.addInput = input;
+        sec.appendChild(add);
+
+        const replace = el('div', 'opt');
+        const tx = el('div', 'tx');
+        tx.append('Use custom sources ', el('b', null, 'instead of'), ' official ones');
+        tx.appendChild(el('div', 'd', 'For a Denizen fork that removes things from upstream'));
+        ui.replace = sourceSwitch(false, () => postSources(s => { s.replaceDefaults = !s.replaceDefaults; }));
+        replace.append(tx, ui.replace);
+        sec.appendChild(replace);
+        ui.sourcesOvr = el('div', 'ovr', 'Overridden in this workspace — this edits your user value');
+        sec.appendChild(ui.sourcesOvr);
+
+        ui.status = el('div', 'status');
+        sec.appendChild(ui.status);
+        const reinstallRow = el('div', 'reinstall');
+        ui.reinstall = el('button', 'btn', '⟳ Reinstall instances');
+        ui.reinstall.addEventListener('click', () => {
+            ui.reinstallFrom = state.metaLoadedAt;
+            renderReinstall();
+            vscode.postMessage({ kind: 'reinstall' });
+        });
+        reinstallRow.append(ui.reinstall, el('span', 'status', 'Clear the cache, re-download enabled sources, restart the server'));
+        sec.appendChild(reinstallRow);
+        return sec;
+    }
+
+    function renderReinstall() {
+        // Busy from the click until the server reports a load newer than the one before it.
+        const busy = ui.reinstallFrom !== undefined && state.metaLoadedAt === ui.reinstallFrom;
+        if (!busy) ui.reinstallFrom = undefined;
+        ui.reinstall.disabled = busy;
+        ui.reinstall.textContent = busy ? 'Reinstalling…' : '⟳ Reinstall instances';
+    }
+
+    function renderSources() {
+        const s = state.sources;
+        const anyEnabled = s.addons.some(a => a.enabled) || s.custom.some(c => c.enabled);
+        const replaced = s.replaceDefaults && anyEnabled;
+
+        ui.official.textContent = '';
+        for (const o of s.official) {
+            const card = sourceCard(o.name, o.url, replaced ? 'replaced' : 'always');
+            card.appendChild(sourceSwitch(!replaced, null));
+            ui.official.appendChild(card);
+        }
+        ui.addons.textContent = '';
+        s.addons.forEach((a, i) => {
+            const card = sourceCard(a.name, a.url, a.author);
+            card.appendChild(sourceSwitch(a.enabled, () => postSources(n => { n.addons[i].enabled = !n.addons[i].enabled; })));
+            ui.addons.appendChild(card);
+        });
+        ui.custom.textContent = '';
+        s.custom.forEach((c, i) => {
+            const card = sourceCard(c.name, c.url, null);
+            const remove = el('button', 'x', '✕');
+            remove.title = 'Remove';
+            remove.addEventListener('click', () => postSources(n => { n.custom.splice(i, 1); }));
+            card.append(remove, sourceSwitch(c.enabled, () => postSources(n => { n.custom[i].enabled = !n.custom[i].enabled; })));
+            ui.custom.appendChild(card);
+        });
+        if (s.custom.length === 0) ui.custom.appendChild(el('div', 'empty', 'No sources of your own yet.'));
+
+        ui.replace.classList.toggle('on', s.replaceDefaults);
+        ui.replace.setAttribute('aria-checked', String(s.replaceDefaults));
+        ui.sourcesOvr.style.display = state.sourcesOverridden ? '' : 'none';
+        ui.status.textContent = state.metaStatusLine;
+        renderReinstall();
+    }
+
+    window.addEventListener('message', event => {
+        const message = event.data;
+        if (!message || message.kind !== 'addResult' || !ui.addInput) return;
+        if (message.ok) ui.addInput.value = '';
+        else ui.addInput.classList.add('bad');
+    });
+
     function buildText() {
         const sec = el('section');
         sec.id = 'text';
@@ -439,6 +574,7 @@
             o.ovr.style.display = v.overridden ? '' : 'none';
         }
         renderColorMap();
+        renderSources();
     }
 
     window.addEventListener('message', event => {
