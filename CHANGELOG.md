@@ -16,6 +16,14 @@
   their palette colours. They are drawn in front of the `#`, not instead of it — the file is not
   changed. Turn them off with `denizenscript.behaviors.comment_icons`.
 
+### Fixes
+
+- **Square brackets are the palette's colour again.** Since 2.5.0 the brackets in `<[x]>` and
+  `tag[...]` showed VS Code's per-depth bracket colours — yellow, then pink, then blue — instead of
+  the palette's `tag_param_bracket`, which made the palette look noticeably different from before.
+  Bracket-pair colouring is now off for Denizen files; the matching bracket is still highlighted
+  when the cursor is next to one.
+
 ### Changed
 
 - **Plain comments are grey by default** (`theme_colors.comment_normal`: `#007700` → `#8B8B8B`), so

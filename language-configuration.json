@@ -44,6 +44,13 @@
     "brackets": [
         ["[", "]"]
     ],
+    // NO PER-DEPTH BRACKET COLOURS. Reported 2026-10-26: once the palette became semantic tokens
+    // (2.5.0), VS Code's bracket-pair colours -- yellow, pink, blue by nesting depth -- showed
+    // through on every "<[x]>" and "tag[...]", which the 2.4.1 palette had painted over in
+    // tag_param_bracket. Denizen nests brackets in nearly every tag, so depth colours are noise
+    // here, and they made the palette look different from what its users are used to. This list
+    // only controls colouring: matching the pair under the cursor still uses "brackets" above.
+    "colorizedBracketPairs": [],
     // symbols that that can be used to surround a selection
     "surroundingPairs": [
         ["[", "]"],

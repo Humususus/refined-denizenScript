@@ -18,6 +18,14 @@ describe('language-configuration.json', () => {
         expect(config.brackets).toEqual([['[', ']']]);
     });
 
+    // Reported 2026-10-26: with the palette drawn as semantic tokens (2.5.0), VS Code's per-depth
+    // bracket colours (yellow / pink / blue) showed through on every <[x]> and tag[...], where the
+    // 2.4.1 palette had painted them in tag_param_bracket. Colouring is switched off; matching the
+    // pair under the cursor ("brackets" above) still works.
+    it('does not colourize bracket pairs by depth', () => {
+        expect(config.colorizedBracketPairs).toEqual([]);
+    });
+
     it('still auto-closes quotes and parentheses while typing', () => {
         expect(config.autoClosingPairs).toEqual(expect.arrayContaining([['(', ')'], ['"', '"'], ["'", "'"]]));
     });
