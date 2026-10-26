@@ -2059,6 +2059,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }));
     scheduleRefresh();
     outputChannel.appendLine('Denizen extension has been activated');
+    // The extension's API: what the server last loaded. Used by the Extension Host checks.
+    return { getMetaStatus, onMetaStatus };
 }
 
 function provideHexColors(document: vscode.TextDocument): vscode.ColorInformation[] {
