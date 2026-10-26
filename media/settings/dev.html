@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- Browser harness for the settings page (not shipped). Regenerate the state with
+     `node scripts/make-settings-dev-state.js`. ?light=1 swaps in Light+ theme variables, and
+     ?nostyle=1 drops the dark set (shows the CSS fallbacks). Writes are logged and applied
+     to the canned state, so the page behaves as it would against the host. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Denizen: Settings (dev)</title>
+<link rel="stylesheet" href="dev-theme.css">
+<link rel="stylesheet" href="settings.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="dev-state.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.documentElement.className = q.get('light') ? 'light' : (q.get('nostyle') ? '' : 'dark');
+  window.DEV_WRITES = [];
+  window.acquireVsCodeApi = () => ({
+    getState: () => null,
+    setState: () => {},
+    postMessage: m => {
+      if (m.kind === 'ready') {
+        setTimeout(() => window.postMessage(window.DEV_STATE, '*'), 0);
+      } else if (m.kind === 'set') {
+        window.DEV_WRITES.push(m);
+        console.log('set', m.key, JSON.stringify(m.value));
+        const s = window.DEV_STATE;
+        const color = m.key.replace(/^denizenscript\.theme_colors\./, '');
+        if (m.key === 'denizenscript.behaviors.use_custom_syntax_colors') s.paletteOn = m.value;
+        else if (color === 'text_color_map') s.colorMap = m.value.split(',').map(e => { const [name, c] = e.split('='); return { name, color: c }; });
+        else if (s.colors[color]) {
+          const [head, ...parts] = m.value.split('|');
+          s.colors[color] = { color: head, text: head, bold: parts.includes('weight=bold'), italic: parts.includes('style=italic'), rest: parts.filter(p => !/^(weight|style)=/.test(p)), overridden: false };
+        } else {
+          for (const k in s.options) if (m.key.endsWith(k)) s.options[k].value = m.value;
+        }
+        setTimeout(() => window.postMessage(s, '*'), 30);
+      }
+    },
+  });
+</script>
+<script src="settings.js"></script>
+</body>
+</html>

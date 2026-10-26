@@ -35,6 +35,9 @@ extension.md
 prompt.md
 trouble.md
 
+# The settings page's browser harness (R5): dev.html and its theme variables and canned state.
+media/settings/dev*
+
 # Repo metadata and any previously built package.
 .gitignore
 .gitattributes

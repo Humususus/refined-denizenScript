@@ -1,0 +1,137 @@
+/* Denizen settings page (R5), built to docs/superpowers/specs/2026-10-25-settings-page-mockup.html.
+   Chrome colours come from the active theme's --vscode-* variables (the fallbacks are the mockup's
+   dark greys, used only outside VS Code). Code colours are --c-<type> / --w-<type> / --s-<type>,
+   set by settings.js through CSSOM -- the page's CSP allows no inline <style>. */
+
+:root {
+  --bg: var(--vscode-editor-background, #1e1e1e);
+  --card: var(--vscode-editorWidget-background, #151515);
+  --card-h: var(--vscode-list-hoverBackground, #1b1b1b);
+  --border: var(--vscode-widget-border, var(--vscode-editorWidget-border, #2e2e2e));
+  --fg: var(--vscode-foreground, #d4d4d4);
+  --strong: var(--vscode-editor-foreground, #ffffff);
+  --muted: var(--vscode-descriptionForeground, #8b8b8b);
+  --accent: var(--vscode-button-background, #0e63c4);
+  --accent-fg: var(--vscode-button-foreground, #ffffff);
+  --accent-h: var(--vscode-button-hoverBackground, #1177dd);
+  --focus: var(--vscode-focusBorder, #0e63c4);
+  /* controls inside a card: dark, like B / I */
+  --btn: var(--vscode-input-background, #000000);
+  --btn-fg: var(--vscode-input-foreground, #ffffff);
+  /* controls outside cards: lighter, like Add */
+  --btn2: var(--vscode-button-secondaryBackground, #2a2a2a);
+  --btn2-fg: var(--vscode-button-secondaryForeground, #ffffff);
+  --bad: var(--vscode-inputValidation-errorBorder, #e05252);
+  --outline: color-mix(in srgb, var(--fg) 6%, transparent);
+  --code-fg: var(--vscode-editor-foreground, #d4d4d4);
+  --radius: 10px;
+  --mono: var(--vscode-editor-font-family, "JetBrains Mono", Consolas, "Courier New", monospace);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 var(--vscode-font-family, "Segoe UI", system-ui, sans-serif); }
+.wrap { display: flex; gap: 20px; padding: 16px; align-items: flex-start; }
+
+/* sidebar */
+nav { width: 210px; flex: none; position: sticky; top: 16px; display: flex; flex-direction: column; gap: 8px; }
+nav a { display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: var(--card); border: 1px solid transparent; border-radius: var(--radius); color: var(--fg); cursor: pointer; user-select: none; text-decoration: none; }
+nav a:hover { background: var(--card-h); }
+nav a.on { border-color: var(--focus); color: var(--strong); }
+nav a .ic { width: 18px; text-align: center; opacity: .85; }
+nav .note { padding: 6px 4px; color: var(--muted); font-size: 11.5px; }
+
+main { flex: 1; min-width: 0; }
+section { display: none; }
+section.on { display: block; }
+.cols { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(400px, 1fr); gap: 20px; align-items: start; }
+h2 { font-size: 20px; font-weight: 400; color: var(--strong); margin: 6px 0 10px; }
+h2:not(:first-child) { margin-top: 20px; }
+.lbl { color: var(--muted); margin: 10px 0 6px; font-size: 13px; }
+
+/* cards */
+.card { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: var(--radius); padding: 13px 14px; margin-bottom: 8px; border: 1px solid transparent; transition: background .1s; }
+.card:hover { background: var(--card-h); border-color: var(--border); }
+.card .sample { flex: 1; min-width: 0; font-family: var(--mono); font-size: 14px; white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.card .ctl { display: flex; gap: 6px; align-items: center; flex: none; }
+.card .ovr, .opt .ovr { color: var(--vscode-editorWarning-foreground, #cca700); font-size: 11.5px; margin-top: 2px; }
+.cardwrap .ovr { margin: -4px 0 8px 14px; }
+.dot { width: 22px; height: 22px; border-radius: 50%; position: relative; cursor: pointer; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 12%, transparent); flex: none; }
+.dot input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; padding: 0; border: 0; }
+.tg { width: 24px; height: 24px; border-radius: 5px; background: var(--btn); color: var(--btn-fg); border: 0; cursor: pointer; font: 600 13px var(--mono); padding: 0; }
+.tg.i { font-style: italic; font-weight: 400; }
+.tg.on { background: var(--accent); color: var(--accent-fg); }
+.hl { background: color-mix(in srgb, var(--fg) 9%, transparent); border-radius: 3px; padding: 1px 2px; margin: 0 -2px; }
+
+/* preview */
+.preview { position: sticky; top: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.preview .ph { padding: 14px 20px; border-bottom: 1px solid var(--border); color: var(--fg); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; }
+.preview .ph span:last-child { color: var(--muted); font-size: 12px; text-align: right; }
+pre { margin: 0; padding: 14px 0 18px; font: 14px/1.75 var(--mono); overflow-x: auto; color: var(--code-fg); }
+pre .ln { display: block; padding: 0 20px; min-height: 1.75em; white-space: pre; }
+pre .blk { background: color-mix(in srgb, var(--c-comment_critical) 16%, transparent); }
+.theme pre .blk { background: transparent; }
+pre .flash { outline: 1px dashed color-mix(in srgb, var(--fg) 45%, transparent); outline-offset: 1px; border-radius: 2px; }
+
+.seg { display: inline-flex; background: var(--card); border-radius: var(--radius); padding: 4px; gap: 4px; margin-bottom: 12px; }
+.seg button { background: transparent; color: var(--fg); border: 0; padding: 7px 14px; border-radius: 7px; cursor: pointer; font: inherit; }
+.seg button.on { background: var(--accent); color: var(--accent-fg); }
+
+/* other settings */
+.opt { display: flex; align-items: center; gap: 14px; background: var(--card); border-radius: var(--radius); padding: 13px 14px; margin-bottom: 8px; }
+.opt .tx { flex: 1; min-width: 0; }
+.opt .d { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.sw { width: 34px; height: 20px; border-radius: 10px; background: var(--btn2); position: relative; cursor: pointer; flex: none; border: 0; padding: 0; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: left .12s; }
+.sw.on { background: var(--accent); }
+.sw.on::after { left: 17px; background: var(--accent-fg); }
+
+/* inputs: the button of their context, plus a 1px outline */
+.inp { background: var(--btn); color: var(--btn-fg); border: 0; border-radius: 5px; height: 24px; padding: 0 8px; font: 600 13px var(--mono); outline: none; box-shadow: inset 0 0 0 1px var(--outline); }
+.inp:focus { box-shadow: inset 0 0 0 1px var(--focus); }
+.inp.hex { width: 84px; text-transform: uppercase; }
+.inp.bad, .inp.bad:focus { box-shadow: inset 0 0 0 1px var(--bad); }
+.opt > .inp { background: var(--btn2); color: var(--btn2-fg); height: auto; padding: 9px 16px; border-radius: 8px; font: 13px var(--mono); width: 110px; }
+code { font-family: var(--mono); font-size: 12px; background: var(--btn); color: var(--btn-fg); padding: 1px 5px; border-radius: 4px; }
+
+/* theme-colour mode: the webview cannot read the theme's token colours */
+.theme #rows { opacity: .45; pointer-events: none; }
+.theme pre [data-k], .theme pre .inl { color: var(--code-fg) !important; font-weight: 400 !important; font-style: normal !important; }
+
+@media (max-width: 1050px) {
+  .cols { grid-template-columns: 1fr; }
+  /* narrow: the preview sticks to the top, capped at ~40% height, scrolling inside */
+  .preview { order: -1; position: sticky; top: 0; z-index: 5; box-shadow: 0 8px 16px -8px var(--vscode-widget-shadow, rgba(0, 0, 0, .6)); }
+  .preview pre { max-height: 38vh; overflow: auto; }
+  nav { width: 170px; }
+}
+@media (max-width: 640px) {
+  .wrap { flex-direction: column; }
+  nav { width: 100%; position: static; flex-direction: row; flex-wrap: wrap; }
+  nav .note { display: none; }
+}
+
+/* Code colours, one rule per palette type. */
+[data-k="comment_header"] { color: var(--c-comment_header); font-weight: var(--w-comment_header); font-style: var(--s-comment_header); }
+[data-k="comment_normal"] { color: var(--c-comment_normal); font-weight: var(--w-comment_normal); font-style: var(--s-comment_normal); }
+[data-k="comment_todo"] { color: var(--c-comment_todo); font-weight: var(--w-comment_todo); font-style: var(--s-comment_todo); }
+[data-k="comment_code"] { color: var(--c-comment_code); font-weight: var(--w-comment_code); font-style: var(--s-comment_code); }
+[data-k="comment_warning"] { color: var(--c-comment_warning); font-weight: var(--w-comment_warning); font-style: var(--s-comment_warning); }
+[data-k="comment_critical"] { color: var(--c-comment_critical); font-weight: var(--w-comment_critical); font-style: var(--s-comment_critical); }
+[data-k="key"] { color: var(--c-key); font-weight: var(--w-key); font-style: var(--s-key); }
+[data-k="key_inline"] { color: var(--c-key_inline); font-weight: var(--w-key_inline); font-style: var(--s-key_inline); }
+[data-k="command"] { color: var(--c-command); font-weight: var(--w-command); font-style: var(--s-command); }
+[data-k="quote_double"] { color: var(--c-quote_double); font-weight: var(--w-quote_double); font-style: var(--s-quote_double); }
+[data-k="quote_single"] { color: var(--c-quote_single); font-weight: var(--w-quote_single); font-style: var(--s-quote_single); }
+[data-k="def_name"] { color: var(--c-def_name); font-weight: var(--w-def_name); font-style: var(--s-def_name); }
+[data-k="event_line"] { color: var(--c-event_line); font-weight: var(--w-event_line); font-style: var(--s-event_line); }
+[data-k="event_switch"] { color: var(--c-event_switch); font-weight: var(--w-event_switch); font-style: var(--s-event_switch); }
+[data-k="event_switch_value"] { color: var(--c-event_switch_value); font-weight: var(--w-event_switch_value); font-style: var(--s-event_switch_value); }
+[data-k="tag"] { color: var(--c-tag); font-weight: var(--w-tag); font-style: var(--s-tag); }
+[data-k="tag_dot"] { color: var(--c-tag_dot); font-weight: var(--w-tag_dot); font-style: var(--s-tag_dot); }
+[data-k="tag_param"] { color: var(--c-tag_param); font-weight: var(--w-tag_param); font-style: var(--s-tag_param); }
+[data-k="tag_param_bracket"] { color: var(--c-tag_param_bracket); font-weight: var(--w-tag_param_bracket); font-style: var(--s-tag_param_bracket); }
+[data-k="normal"] { color: var(--c-normal); font-weight: var(--w-normal); font-style: var(--s-normal); }
+[data-k="colons"] { color: var(--c-colons); font-weight: var(--w-colons); font-style: var(--s-colons); }
+[data-k="if_operators"] { color: var(--c-if_operators); font-weight: var(--w-if_operators); font-style: var(--s-if_operators); }
+[data-k="data_actions"] { color: var(--c-data_actions); font-weight: var(--w-data_actions); font-style: var(--s-data_actions); }
+[data-k="space"] { color: var(--c-space); }

@@ -1,0 +1,45 @@
+/* Dev harness only: the --vscode-* variables VS Code would inject, for Dark Modern and Light+. */
+html.dark {
+  --vscode-font-family: "Segoe UI", system-ui, sans-serif;
+  --vscode-editor-font-family: Consolas, "Courier New", monospace;
+  --vscode-editor-background: #1f1f1f;
+  --vscode-editor-foreground: #cccccc;
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-editorWidget-background: #202020;
+  --vscode-widget-border: #313131;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-button-background: #0078d4;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-input-background: #313131;
+  --vscode-input-foreground: #cccccc;
+  --vscode-focusBorder: #0078d4;
+  --vscode-inputValidation-errorBorder: #be1100;
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-widget-shadow: rgba(0, 0, 0, .36);
+}
+html.light {
+  --vscode-font-family: "Segoe UI", system-ui, sans-serif;
+  --vscode-editor-font-family: Consolas, "Courier New", monospace;
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #000000;
+  --vscode-foreground: #616161;
+  --vscode-descriptionForeground: #717171;
+  --vscode-editorWidget-background: #f3f3f3;
+  --vscode-widget-border: #d4d4d4;
+  --vscode-list-hoverBackground: #e8e8e8;
+  --vscode-button-background: #007acc;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #0062a3;
+  --vscode-button-secondaryBackground: #5f6a79;
+  --vscode-button-secondaryForeground: #ffffff;
+  --vscode-input-background: #ffffff;
+  --vscode-input-foreground: #616161;
+  --vscode-focusBorder: #0090f1;
+  --vscode-inputValidation-errorBorder: #be1100;
+  --vscode-editorWarning-foreground: #bf8803;
+  --vscode-widget-shadow: rgba(0, 0, 0, .16);
+}
