@@ -13,6 +13,8 @@
   or renamed, including whole folders moved inside VS Code. World files now get the world icon.
   The Explorer was chosen over an Activity Bar icon of its own: the list is a different view of
   the same files, and it can still be dragged to its own place in the sidebar.
+- **The panel can be switched off** with `denizenscript.behaviors.show_scripts_view`. Off, the
+  section disappears and the workspace is no longer scanned for it.
 
 ## 2.6.0
 

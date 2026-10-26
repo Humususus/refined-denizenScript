@@ -64,6 +64,12 @@ describe('package.json — removed features stay removed', () => {
         const viewIds = Object.values(pkg.contributes.views ?? {}).flat().map(v => (v as { id: string }).id);
         expect(viewIds).toContain('denizenScripts');
     });
+    // The view appeared unasked in 2.6.1; the user asked for a way to switch it off (2026-10-26).
+    it('lets the Denizen scripts view be switched off', () => {
+        expect(props).toHaveProperty(['denizenscript.behaviors.show_scripts_view']);
+        const view = pkg.contributes.views.explorer.find((v: { id: string }) => v.id === 'denizenScripts');
+        expect(view.when).toContain('config.denizenscript.behaviors.show_scripts_view');
+    });
     it('keeps the TypeScript meta-source settings', () => {
         expect(props).toHaveProperty(['denizenscript.server.extra_sources']);
         expect(props).toHaveProperty(['denizenscript.server.replace_default_sources']);

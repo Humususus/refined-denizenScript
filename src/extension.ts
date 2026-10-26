@@ -1257,6 +1257,10 @@ class DenizenTreeProvider implements vscode.TreeDataProvider<DenizenTreeItem> {
     // Debounced: a rename arrives as a delete plus a create, and a folder move or a git checkout
     // as dozens of events, each of which would otherwise rescan the whole workspace.
     refresh() {
+        // Switched off, the view is hidden by its `when` clause and the workspace is not scanned for it.
+        if (!vscode.workspace.getConfiguration("denizenscript").get<boolean>("behaviors.show_scripts_view", true)) {
+            return;
+        }
         if (this.refreshTimer) {
             clearTimeout(this.refreshTimer);
         }
@@ -1327,8 +1331,13 @@ function activateDenizenTree(context: vscode.ExtensionContext) {
         vscode.workspace.onDidCreateFiles(refresh),
         vscode.workspace.onDidDeleteFiles(refresh),
         vscode.workspace.onDidRenameFiles(refresh),
-        vscode.workspace.onDidChangeWorkspaceFolders(refresh));
-    provider.refresh();
+        vscode.workspace.onDidChangeWorkspaceFolders(refresh),
+        vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration("denizenscript.behaviors.show_scripts_view")) {
+                refresh();
+            }
+        }));
+    refresh();
 }
 
 function isDialogScriptDiagnostic(uri: vscode.Uri, diagnostic: vscode.Diagnostic) : boolean {

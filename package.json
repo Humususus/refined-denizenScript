@@ -172,7 +172,7 @@
                     "name": "Denizen Scripts",
                     "icon": "icons/dsc.svg",
                     "contextualTitle": "Denizen",
-                    "when": "refinedDenizenscript.hasScripts"
+                    "when": "refinedDenizenscript.hasScripts && config.denizenscript.behaviors.show_scripts_view"
                 }
             ]
         },
@@ -449,6 +449,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Colour scripts with the Denizen palette (denizenscript.theme_colors.*). Off: use your VS Code theme's colours."
+                },
+                "denizenscript.behaviors.show_scripts_view": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show the Denizen Scripts section in the Explorer, listing the workspace's .dsc files grouped by file name. Off: the section is hidden and the workspace is not scanned for it."
                 },
                 "denizenscript.behaviors.track_full_workspace": {
                     "type": "boolean",
