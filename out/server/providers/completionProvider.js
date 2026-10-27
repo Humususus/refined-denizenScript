@@ -8,6 +8,8 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.provideCompletions = exports.completeTag = exports.completeKeyLineValues = exports.completeEnumValues = exports.completeCommandArguments = exports.completeCommandNames = void 0;
+const containerCompleters_1 = require("./containerCompleters");
+const scriptTypes_1 = require("../checker/scriptTypes");
 const vscode_languageserver_1 = require("vscode-languageserver");
 const eventLineMatch_1 = require("../checker/eventLineMatch");
 const describe_1 = require("./describe");
@@ -942,7 +944,22 @@ function provideCompletions(docs, extra, text, offset, line, trace = true, works
         return [];
     }
     if (ctx.kind === 'line') {
+        // R9, spec 9-10: completions that depend on the container around the line.
+        const place = (0, containerCompleters_1.containerAt)(text.split('\n'), line, ctx.indent);
+        const typeLine = /^type:(\s*)([a-z_]*)$/.exec(ctx.trimmed);
+        if (place !== null && place.parentIsContainer && typeLine !== null) {
+            const from = ctx.indent + 'type:'.length + typeLine[1].length;
+            return (0, containerCompleters_1.completeScriptType)(docs, scriptTypes_1.KNOWN_SCRIPT_TYPES.keys(), typeLine[2], { start: { line, character: from }, end: { line, character: ctx.indent + ctx.trimmed.length } });
+        }
+        if (place !== null && place.type === 'entity' && place.parentKey === 'mechanisms' && /^[a-z0-9_]*$/.test(ctx.trimmed)) {
+            return (0, containerCompleters_1.completeEntityMechanisms)(docs, ctx.trimmed, { start: { line, character: ctx.indent }, end: { line, character: ctx.indent + ctx.trimmed.length } });
+        }
         const enumResults = completeKeyLineValues(extra, ctx, line);
+        const entityType = /^entity_type:(\s*)([a-z0-9_]*)$/.exec(ctx.trimmed);
+        if (place !== null && entityType !== null && workspace !== null) {
+            const from = ctx.indent + 'entity_type:'.length + entityType[1].length;
+            enumResults.push(...(0, containerCompleters_1.completeEntityScripts)(workspace.scripts.values(), place.name, entityType[2], { start: { line, character: from }, end: { line, character: ctx.indent + ctx.trimmed.length } }));
+        }
         if (enumResults.length > 0) {
             return enumResults;
         }
@@ -1008,6 +1025,13 @@ function provideCompletions(docs, extra, text, offset, line, trace = true, works
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
+    // R9, spec 8: `- define name:` / `- flag <obj> name:` offer the meta's data actions. Before tag
+    // completion is safe: a key holding a `<` never matches, and neither does a lone `<` after the
+    // colon (completeDataAction leaves that to tag completion), so tags are not hijacked.
+    const actionResults = (0, containerCompleters_1.completeDataAction)(docs, ctx, line);
+    if (actionResults !== null) {
+        return actionResults;
+    }
     const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace, text);
     if (sharedTagResults !== null) {
         return sharedTagResults;
