@@ -6,7 +6,8 @@
  * mechanism, event, and workspace-driven completions arrive in later phases.
  */
 
-import { completeDataAction } from './containerCompleters';
+import { completeDataAction, completeEntityMechanisms, completeEntityScripts, completeScriptType, containerAt } from './containerCompleters';
+import { KNOWN_SCRIPT_TYPES } from '../checker/scriptTypes';
 import { Command, CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand, MetaTag, MetaEvent } from '../metaDocs/metaTypes';
 import { matchEventLine, contextNamesForEvent } from '../checker/eventLineMatch';
@@ -960,7 +961,22 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
         return [];
     }
     if (ctx.kind === 'line') {
+        // R9, spec 9-10: completions that depend on the container around the line.
+        const place = containerAt(text.split('\n'), line, ctx.indent);
+        const typeLine = /^type:(\s*)([a-z_]*)$/.exec(ctx.trimmed);
+        if (place !== null && place.parentIsContainer && typeLine !== null) {
+            const from = ctx.indent + 'type:'.length + typeLine[1].length;
+            return completeScriptType(docs, KNOWN_SCRIPT_TYPES.keys(), typeLine[2], { start: { line, character: from }, end: { line, character: ctx.indent + ctx.trimmed.length } });
+        }
+        if (place !== null && place.type === 'entity' && place.parentKey === 'mechanisms' && /^[a-z0-9_]*$/.test(ctx.trimmed)) {
+            return completeEntityMechanisms(docs, ctx.trimmed, { start: { line, character: ctx.indent }, end: { line, character: ctx.indent + ctx.trimmed.length } });
+        }
         const enumResults = completeKeyLineValues(extra, ctx, line);
+        const entityType = /^entity_type:(\s*)([a-z0-9_]*)$/.exec(ctx.trimmed);
+        if (place !== null && entityType !== null && workspace !== null) {
+            const from = ctx.indent + 'entity_type:'.length + entityType[1].length;
+            enumResults.push(...completeEntityScripts(workspace.scripts.values(), place.name, entityType[2], { start: { line, character: from }, end: { line, character: ctx.indent + ctx.trimmed.length } }));
+        }
         if (enumResults.length > 0) {
             return enumResults;
         }

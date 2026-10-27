@@ -87,3 +87,55 @@ describe('data actions (spec 8)', () => {
         expect(labels(complete(SCRIPT + '    - define x:5'))).not.toContain('++');
     });
 });
+
+describe('container types on type: (spec 9)', () => {
+    it('offers every container type the meta documents, with its first paragraph', () => {
+        const items = complete('my_script:\n    type: ');
+        expect(labels(items)).toEqual(expect.arrayContaining(['task', 'world', 'entity', 'dialog']));
+        const task = items.find(i => i.label === 'task')!;
+        expect(JSON.stringify(task.documentation)).toContain('Task script containers are generic script containers');
+        expect(JSON.stringify(task.documentation)).not.toContain('Second paragraph');
+    });
+    it('filters by what is typed', () => {
+        expect(labels(complete('my_script:\n    type: wo'))).toEqual(['world']);
+    });
+    it('only on the type: line directly under a container', () => {
+        expect(labels(complete('my_script:\n    type: data\n    data:\n        type: '))).not.toContain('task');
+    });
+});
+
+describe('entity containers (spec 10)', () => {
+    function workspace(...scripts: [string, string][]): ScriptingWorkspaceData {
+        const ws = new ScriptingWorkspaceData();
+        for (const [name, type] of scripts) {
+            const data = new ScriptContainerData();
+            data.name = name;
+            data.type = type;
+            ws.scripts.set(name, data);
+        }
+        return ws;
+    }
+
+    it('entity_type: offers entity scripts from the workspace beside the vanilla types', () => {
+        const ws = workspace(['space_zombie', 'entity'], ['spawn_task', 'task'], ['my_mob', 'entity']);
+        const items = complete('my_mob:\n    type: entity\n    entity_type: sp', ws);
+        expect(labels(items)).toEqual(['spider', 'space_zombie']);
+        const script = items.find(i => i.label === 'space_zombie')!;
+        expect(script.detail).toBe('Entity script');
+        // The container being written is not offered as its own type.
+        expect(labels(complete('my_mob:\n    type: entity\n    entity_type: my', ws))).toEqual([]);
+    });
+
+    it('offers EntityTag mechanisms as keys under mechanisms:', () => {
+        const items = complete('my_mob:\n    type: entity\n    entity_type: zombie\n    mechanisms:\n        cus');
+        expect(labels(items)).toEqual(['custom_name']);
+        const edit = items[0].textEdit as { newText: string };
+        expect(edit.newText).toBe('custom_name: ');
+        expect(labels(complete('my_mob:\n    type: entity\n    mechanisms:\n        '))).toEqual(['age', 'custom_name']);
+    });
+
+    // Review Focus 2.
+    it('nothing from this list under mechanisms: of another container type', () => {
+        expect(labels(complete('my_item:\n    type: item\n    mechanisms:\n        '))).not.toContain('custom_name');
+    });
+});

@@ -122,9 +122,10 @@ describe('provideCompletions', () => {
         expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 0).map(i => i.label)).toEqual(['narrate']);
     });
 
+    // Was `type: ta`, which R9 (spec 9) now completes with container types on purpose.
     it('returns nothing on a line that is not a command line', () => {
         const docs = docsWith(NARRATE());
-        const text = 'my_task:\n  type: ta';
+        const text = 'my_task:\n  description: some te';
         expect(provideCompletions(docs, createEmptyExtraData(), text, text.length, 1)).toEqual([]);
     });
 
