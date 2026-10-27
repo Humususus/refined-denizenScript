@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.10.0
+
+### New features
+
+- **Data actions after `- define name:` and `- flag <object> name:`.** `++`, `--`, `!`, `+:`,
+  `-:`, `*:`, `/:`, `->:`, `<-:`, `|:`, each with the meta's own description and example, read
+  from Denizen's *Data Actions* documentation rather than a built-in list. Typing after the colon
+  narrows them; a tag or an ordinary value is left alone.
+- **Container types on `type:`.** Every script container type the meta documents, with its
+  description.
+- **Entity scripts on `entity_type:`.** Your workspace's entity scripts are offered beside the
+  vanilla entity types.
+- **Mechanisms in an entity container.** A key under `mechanisms:` offers the EntityTag
+  mechanisms and properties, each with its input type and description, inserted as `name: `.
+
 ## 2.9.1
 
 ### Fixes

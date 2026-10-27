@@ -58,6 +58,9 @@ Each of these was an empty suggestion list before:
 
 - **`<entry[123].…>`** — the sub-tags of the command that wrote the `save:`, narrowed to that command. Entry tags are documented per command, so they are absent from the tag index entirely.
 - **Event lines** under a world container's `events:` key, with the `on `/`after ` prefix handled and `<block>`-style placeholders turned into tabstops.
+- **Data actions** after `- define name:` and `- flag <object> name:` — `++`, `--`, `+:`, `->:`, `|:` and the rest, described from the meta.
+- **Container types** on a container's `type:` line, and your **entity scripts** beside the vanilla types on `entity_type:`.
+- **EntityTag mechanisms** as keys under an entity container's `mechanisms:`.
 - **Event switch values** — `bukkit_priority:`, `cancelled:` and `ignorecancelled:`. Only these three: the rest take flag names, permissions, areas and numbers, where there is no list to offer.
 - **Implicit definitions** — `<[value]>`, `<[loop_index]>`, your own `as:`/`key:` names inside a loop, and `<[filter_value]>` / `<[parse_value]>` inside the tag that provides them.
 - **`<map[…]>` keys** and mechanism names in `- adjust`, read from the meta rather than a hand-kept list.
