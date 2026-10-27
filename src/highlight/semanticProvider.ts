@@ -13,6 +13,7 @@ import * as vscode from 'vscode';
 import { HighlightOptions } from './denizenHighlighter';
 import { SEMANTIC_TYPES, buildSemanticTokens } from './semanticEncoding';
 import { perf } from '../perfStats';
+import { SCHEME as MAP_TAG_SCHEME } from '../mapTagPeek';
 
 export const SEMANTIC_LEGEND = new vscode.SemanticTokensLegend([...SEMANTIC_TYPES]);
 
@@ -40,6 +41,6 @@ export class DenizenSemanticTokensProvider implements vscode.DocumentSemanticTok
         if (!this.enabled) {
             return new vscode.SemanticTokens(new Uint32Array(0));
         }
-        return perf.time('semantic.provide', () => new vscode.SemanticTokens(buildSemanticTokens(document.getText().split('\n'), this.options())));
+        return perf.time('semantic.provide', () => new vscode.SemanticTokens(buildSemanticTokens(document.getText().split('\n'), this.options(), document.uri.scheme === MAP_TAG_SCHEME)));
     }
 }

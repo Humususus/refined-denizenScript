@@ -21,7 +21,7 @@ import { definitionsInScope } from "./scopeDefinitions";
 import { DENIZEN_EVENTS, isInWorldEvents, eventSnippet, parseEventLinePrefix, parseEventSwitchValue, EVENT_SWITCH_VALUES } from "./denizenEvents";
 import { findHexColors, formatHexColor } from "./hexColors";
 import { perf } from "./perfStats";
-import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
+import { COLOR_TYPES as colorTypes, HighlightOptions, baseTagSpecialColors, getTagColor, highlightFragment, highlightLines, setHighlightOptions } from "./highlight/denizenHighlighter";
 import { DenizenSemanticTokensProvider, SEMANTIC_LEGEND } from "./highlight/semanticProvider";
 import { mergeRules, mergeTextMateRules, paletteRules, textMateRules, userLevel } from "./highlight/paletteRules";
 import { SettingsPanel } from "./settings/settingsPanel";
@@ -1488,7 +1488,10 @@ function decorateFile(editor: vscode.TextEditor) {
     if (Object.keys(highlight.lastDecorations).length === 0) {
         highlight.needRefreshStartLine = -1;
     }
-    if (highlight.needRefreshStartLine == -1) {
+    // The expanded tag view is a fragment, coloured whole every time (R8): a few lines, and a
+    // partial refresh would keep the other lines' old ranges beside the new full set.
+    const fragment : boolean = editor.document.uri.scheme === MAP_TAG_SCHEME;
+    if (highlight.needRefreshStartLine == -1 || fragment) {
         for (const c in highlightDecors) {
             decorations[c] = [];
         }
@@ -1520,8 +1523,8 @@ function decorateFile(editor: vscode.TextEditor) {
     const fullText : string = editor.document.getText();
     const splitText : string[] = fullText.split('\n');
     const totalLines = splitText.length;
-    const startLine : number = (highlight.needRefreshStartLine == -1 ? 0 : highlight.needRefreshStartLine);
-    const endLine : number = (highlight.needRefreshStartLine == -1 ? totalLines : Math.min(highlight.needRefreshEndLine + 1, totalLines));
+    const startLine : number = (highlight.needRefreshStartLine == -1 || fragment ? 0 : highlight.needRefreshStartLine);
+    const endLine : number = (highlight.needRefreshStartLine == -1 || fragment ? totalLines : Math.min(highlight.needRefreshEndLine + 1, totalLines));
     if (debugHighlighting) {
         if (highlight.needRefreshStartLine == -1) {
             let type : String = "normal";
@@ -1537,7 +1540,8 @@ function decorateFile(editor: vscode.TextEditor) {
             outputChannel.appendLine("Doing partial highlight of file from start " + startLine + " to end " + endLine + ", for file: " + editor.document.fileName);
         }
     }
-    for (const t of highlightLines(splitText, highlightOptions(), startLine, endLine)) {
+    const tokens = fragment ? highlightFragment(splitText, highlightOptions()) : highlightLines(splitText, highlightOptions(), startLine, endLine);
+    for (const t of tokens) {
         if (!(t.type in highlightDecors)) {
             if (!t.type.startsWith("auto:")) {
                 continue;
