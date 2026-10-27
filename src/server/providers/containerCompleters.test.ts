@@ -80,6 +80,14 @@ describe('data actions (spec 8)', () => {
         expect(labels(complete(SCRIPT + '    - flag rewards:'))).not.toContain('++');
     });
 
+    // Final review, R9 (critical): `<` is a trigger character and also starts `<-:`, so `- define x:<`
+    // offered only "List remove" instead of tags -- on one of the commonest lines in Denizen.
+    it('a lone < after the colon is the start of a tag, not of <-:', () => {
+        expect(labels(complete(SCRIPT + '    - define x:<'))).not.toContain('<-:');
+        expect(labels(complete(SCRIPT + '    - flag player x:<'))).not.toContain('<-:');
+        expect(labels(complete(SCRIPT + '    - define x:<-'))).toEqual(['<-:']);
+    });
+
     // Review Focus 1: a value is not an action.
     it('leaves tags and ordinary values alone', () => {
         expect(labels(complete(SCRIPT + '    - define x:<pl'))).not.toContain('++');

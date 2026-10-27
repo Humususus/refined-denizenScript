@@ -72,6 +72,12 @@ export function completeDataAction(docs: MetaDocs, ctx: CommandCursorContext, li
         return null;
     }
     const typed = match[2];
+    // A lone `<` opens a tag far more often than it starts `<-:` -- and `<` is a trigger character,
+    // so answering it here hid tag completion on `- define x:<` (final review, R9). `<-` still
+    // offers `<-:`, since `-` is a trigger character too.
+    if (typed === '<') {
+        return null;
+    }
     const from = ctx.argStart + match[1].length + 1;
     const range: Range = { start: { line, character: from }, end: { line, character: ctx.argEnd } };
     const actions = parseDataActions(docs);
