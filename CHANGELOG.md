@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.9.1
+
+### Fixes
+
+- **The expanded `<list[…]>` / `<map[…]>` view is no longer red.** Its document is one tag
+  spread over several lines, and the highlighter read each line as a script line — no command,
+  key or comment — and marked it as an error. It is now coloured as the one tag it is: every
+  character the same colour as when the tag is written on one line, nested tags and `if_null[…]`
+  included.
+
 ## 2.9.0
 
 ### New features
