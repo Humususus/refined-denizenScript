@@ -6,6 +6,7 @@
  * mechanism, event, and workspace-driven completions arrive in later phases.
  */
 
+import { completeDataAction } from './containerCompleters';
 import { Command, CompletionItem, CompletionItemKind, MarkupKind, Range, TextEdit } from 'vscode-languageserver';
 import { MetaDocs, MetaCommand, MetaTag, MetaEvent } from '../metaDocs/metaTypes';
 import { matchEventLine, contextNamesForEvent } from '../checker/eventLineMatch';
@@ -1026,6 +1027,12 @@ export function provideCompletions(docs: MetaDocs, extra: ExtraData, text: strin
     // C# resolves the same conflict the same way round: :504 asks whether the base
     // contains a '[' before offering bases, and :529 asks whether the component contains
     // a '[' before offering parts. The bracket question is decided first on both paths.
+    // R9, spec 8: `- define name:` / `- flag <obj> name:` offer the meta's data actions. Before tag
+    // completion is safe: an argument holding a `<` never matches, so tags are not hijacked.
+    const actionResults = completeDataAction(docs, ctx, line);
+    if (actionResults !== null) {
+        return actionResults;
+    }
     const sharedTagResults = completeTagAt(docs, extra, ctx.argThusFar, ctx.argStart, line, trace, workspace, text);
     if (sharedTagResults !== null) {
         return sharedTagResults;
