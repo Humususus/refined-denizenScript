@@ -77,10 +77,14 @@ function flattenTokens(tokens, lineLengths) {
     return out;
 }
 exports.flattenTokens = flattenTokens;
-/** The whole pipeline for one document, split on '\n' as the highlighter expects. */
-function buildSemanticTokens(splitText, opts) {
+/**
+ * The whole pipeline for one document, split on '\n' as the highlighter expects. `fragment` is the
+ * expanded tag view, coloured as one argument rather than as script lines (R8).
+ */
+function buildSemanticTokens(splitText, opts, fragment = false) {
     const lineLengths = splitText.map(line => line.endsWith('\r') ? line.length - 1 : line.length);
-    return encodeSemanticTokens(flattenTokens((0, denizenHighlighter_1.highlightLines)(splitText, opts), lineLengths));
+    const tokens = fragment ? (0, denizenHighlighter_1.highlightFragment)(splitText, opts) : (0, denizenHighlighter_1.highlightLines)(splitText, opts);
+    return encodeSemanticTokens(flattenTokens(tokens, lineLengths));
 }
 exports.buildSemanticTokens = buildSemanticTokens;
 /** Standard LSP relative encoding: deltaLine, deltaStart, length, tokenType, modifiers (none). */

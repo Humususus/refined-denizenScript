@@ -37,6 +37,7 @@ exports.DenizenSemanticTokensProvider = exports.SEMANTIC_LEGEND = void 0;
 const vscode = __importStar(require("vscode"));
 const semanticEncoding_1 = require("./semanticEncoding");
 const perfStats_1 = require("../perfStats");
+const mapTagPeek_1 = require("../mapTagPeek");
 exports.SEMANTIC_LEGEND = new vscode.SemanticTokensLegend([...semanticEncoding_1.SEMANTIC_TYPES]);
 class DenizenSemanticTokensProvider {
     constructor(options) {
@@ -60,7 +61,7 @@ class DenizenSemanticTokensProvider {
         if (!this.enabled) {
             return new vscode.SemanticTokens(new Uint32Array(0));
         }
-        return perfStats_1.perf.time('semantic.provide', () => new vscode.SemanticTokens((0, semanticEncoding_1.buildSemanticTokens)(document.getText().split('\n'), this.options())));
+        return perfStats_1.perf.time('semantic.provide', () => new vscode.SemanticTokens((0, semanticEncoding_1.buildSemanticTokens)(document.getText().split('\n'), this.options(), document.uri.scheme === mapTagPeek_1.SCHEME)));
     }
 }
 exports.DenizenSemanticTokensProvider = DenizenSemanticTokensProvider;

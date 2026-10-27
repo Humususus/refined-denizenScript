@@ -1430,7 +1430,10 @@ function decorateFile(editor) {
     if (Object.keys(highlight.lastDecorations).length === 0) {
         highlight.needRefreshStartLine = -1;
     }
-    if (highlight.needRefreshStartLine == -1) {
+    // The expanded tag view is a fragment, coloured whole every time (R8): a few lines, and a
+    // partial refresh would keep the other lines' old ranges beside the new full set.
+    const fragment = editor.document.uri.scheme === mapTagPeek_1.SCHEME;
+    if (highlight.needRefreshStartLine == -1 || fragment) {
         for (const c in highlightDecors) {
             decorations[c] = [];
         }
@@ -1462,8 +1465,8 @@ function decorateFile(editor) {
     const fullText = editor.document.getText();
     const splitText = fullText.split('\n');
     const totalLines = splitText.length;
-    const startLine = (highlight.needRefreshStartLine == -1 ? 0 : highlight.needRefreshStartLine);
-    const endLine = (highlight.needRefreshStartLine == -1 ? totalLines : Math.min(highlight.needRefreshEndLine + 1, totalLines));
+    const startLine = (highlight.needRefreshStartLine == -1 || fragment ? 0 : highlight.needRefreshStartLine);
+    const endLine = (highlight.needRefreshStartLine == -1 || fragment ? totalLines : Math.min(highlight.needRefreshEndLine + 1, totalLines));
     if (debugHighlighting) {
         if (highlight.needRefreshStartLine == -1) {
             let type = "normal";
@@ -1479,7 +1482,8 @@ function decorateFile(editor) {
             outputChannel.appendLine("Doing partial highlight of file from start " + startLine + " to end " + endLine + ", for file: " + editor.document.fileName);
         }
     }
-    for (const t of (0, denizenHighlighter_1.highlightLines)(splitText, highlightOptions(), startLine, endLine)) {
+    const tokens = fragment ? (0, denizenHighlighter_1.highlightFragment)(splitText, highlightOptions()) : (0, denizenHighlighter_1.highlightLines)(splitText, highlightOptions(), startLine, endLine);
+    for (const t of tokens) {
         if (!(t.type in highlightDecors)) {
             if (!t.type.startsWith("auto:")) {
                 continue;
@@ -1504,7 +1508,9 @@ function decorateFile(editor) {
         }
         perfStats_1.perf.gauge('highlight.ranges', ranges);
     }
-    applyCommentDecorations(editor, splitText);
+    // A fragment has no comments: `<list[### hot|b]>` expands to a line starting `###`, which would
+    // otherwise get the critical band (final review, R8). An empty list clears any band.
+    applyCommentDecorations(editor, fragment ? [] : splitText);
     highlight.lastDecorations = decorations;
     highlight.needRefreshStartLine = -1;
     highlight.needRefreshEndLine = -1;

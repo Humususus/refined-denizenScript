@@ -11,7 +11,7 @@
 // Deliberate changes since the move, each marked where it happens: the definition-name and
 // dotted-name off-by-ones (2.5.0), and comment classification delegated to ./commentKind (2.6.0).
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.highlightLines = exports.getTagColor = exports.baseTagSpecialColors = exports.setHighlightOptions = exports.COLOR_TYPES = void 0;
+exports.highlightLines = exports.highlightFragment = exports.getTagColor = exports.baseTagSpecialColors = exports.setHighlightOptions = exports.COLOR_TYPES = void 0;
 const commentKind_1 = require("./commentKind");
 exports.COLOR_TYPES = [
     "comment_header", "comment_normal", "comment_todo", "comment_code",
@@ -646,6 +646,33 @@ function decorateEventLine(line, preLength, lineNumber, decorations) {
         charIndex += arg.length + 1;
     }
 }
+/**
+ * Colours the expanded tag view (R8): a FRAGMENT, one `<list[…]>` / `<map[…]>` tag spread over
+ * several lines, not a script. Read as script lines, none is a command, a key or a comment, so
+ * `decorateLine` painted every line `bad_space` -- the reported "red list". Here the lines are
+ * joined into one argument, exactly as a command continued onto deeper lines is, and coloured as
+ * that argument; `decorFixes` maps the offsets back to lines and columns.
+ */
+function highlightFragment(splitText, opts) {
+    setHighlightOptions(opts);
+    const decorations = [];
+    decorFixes = [];
+    let text = '';
+    splitText.forEach((line, i) => {
+        const clean = line.endsWith('\r') ? line.substring(0, line.length - 1) : line;
+        if (i > 0) {
+            decorFixes.push(text.length + 1);
+            text += '\n';
+        }
+        text += clean;
+    });
+    if (text.trim().length > 0) {
+        decorateArg(text, 0, 0, decorations, false, 'non-script');
+    }
+    decorFixes = [];
+    return decorations;
+}
+exports.highlightFragment = highlightFragment;
 /**
  * Tokenizes `splitText` (the document split on '\n'). Scans from line 0 so that key and data-block
  * state is right, but emits only for lines at or after `startLine` -- the partial-refresh contract
