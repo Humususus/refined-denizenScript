@@ -690,11 +690,6 @@ function decorateEventLine(line : string, preLength: number, lineNumber: number,
 }
 
 /**
- * Tokenizes `splitText` (the document split on '\n'). Scans from line 0 so that key and data-block
- * state is right, but emits only for lines at or after `startLine` -- the partial-refresh contract
- * decorateFile relied on.
- */
-/**
  * Colours the expanded tag view (R8): a FRAGMENT, one `<list[…]>` / `<map[…]>` tag spread over
  * several lines, not a script. Read as script lines, none is a command, a key or a comment, so
  * `decorateLine` painted every line `bad_space` -- the reported "red list". Here the lines are
@@ -721,6 +716,11 @@ export function highlightFragment(splitText: string[], opts: HighlightOptions): 
     return decorations;
 }
 
+/**
+ * Tokenizes `splitText` (the document split on '\n'). Scans from line 0 so that key and data-block
+ * state is right, but emits only for lines at or after `startLine` -- the partial-refresh contract
+ * decorateFile relied on.
+ */
 export function highlightLines(splitText: string[], opts: HighlightOptions, startLine: number = 0, endLine: number = splitText.length): HighlightToken[] {
     setHighlightOptions(opts);
     const decorations: HighlightToken[] = [];

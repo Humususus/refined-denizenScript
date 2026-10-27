@@ -1566,7 +1566,9 @@ function decorateFile(editor: vscode.TextEditor) {
         }
         perf.gauge('highlight.ranges', ranges);
     }
-    applyCommentDecorations(editor, splitText);
+    // A fragment has no comments: `<list[### hot|b]>` expands to a line starting `###`, which would
+    // otherwise get the critical band (final review, R8). An empty list clears any band.
+    applyCommentDecorations(editor, fragment ? [] : splitText);
     highlight.lastDecorations = decorations;
     highlight.needRefreshStartLine = -1;
     highlight.needRefreshEndLine = -1;
